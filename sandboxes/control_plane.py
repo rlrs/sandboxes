@@ -2625,7 +2625,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             payload = {}
         return status, payload if isinstance(payload, dict) else {}
 
-    def _create_sandbox_on_node_locked(
+    def _create_sandbox_on_node_locked(  # noqa: C901
         self,
         spec: SandboxSpec,
         *,
@@ -4169,7 +4169,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             return
         self._write_missing_sandbox_route(sandbox_id)
 
-    def _route_sandbox_request_admitted(self, sandbox_id: str, path: str) -> None:
+    def _route_sandbox_request_admitted(self, sandbox_id: str, path: str) -> None:  # noqa: C901
         prefetched, self._prefetched_route = getattr(self, "_prefetched_route", None), None
         if prefetched is not None and prefetched[0] == sandbox_id:
             route = prefetched[1]

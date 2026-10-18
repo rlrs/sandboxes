@@ -1,6 +1,6 @@
 """Run against real PostgreSQL on Linux; HTTP tests use the production app."""
 
-from contextlib import asynccontextmanager, closing
+from contextlib import asynccontextmanager
 import asyncio
 import os
 import time
@@ -1403,131 +1403,6 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         ) as response:
             self.assertEqual(response.status, 200, await response.text())
 
-    async def test_idle_cutover_preserves_tokens_and_replay_and_fences_legacy_writer(
-        self,
-    ):
-        from pathlib import Path
-        from tempfile import TemporaryDirectory
-        from sandboxes.shared_control.migration import (
-            import_idle_relay,
-            assert_relay_cutover,
-        )
-
-        with TemporaryDirectory() as raw:
-            path = (Path(raw) / "relay.sqlite").resolve()
-            from tests.legacy_relay_fixture import write_legacy_journal
-            old = await self.new_state()
-            reg = await old.register_rollout("imported")
-            req = await old.enqueue(
-                rollout_id="imported",
-                endpoint="/v1/responses",
-                body={"q": 1},
-                headers={},
-                idempotency_key="replay",
-            )
-            (leased,) = await old.poll(
-                rollout_id="imported",
-                registration_token=reg["registration_token"],
-                timeout_seconds=0,
-            )
-            result = await old.respond(
-                request_id=req.request_id,
-                registration_token=reg["registration_token"],
-                lease_id=leased.lease_id,
-                response=api.RelayWorkerResponse(200, b"sampled-once"),
-            )
-            write_legacy_journal(path, rollouts=[reg], requests=[result.request])
-            store = PostgresDatabase(DSN, "import", schema=self.schema)
-            await store.open()
-            try:
-                summary = await import_idle_relay(store, path)
-                self.assertEqual(summary["responses"], 1)
-                self.assertEqual(summary, await import_idle_relay(store, path))
-                assert_relay_cutover(path, "import", self.schema)
-                import sqlite3
-                from sandboxes.shared_control.legacy_relay import SQLITE_RELAY_VERSION
-                with closing(sqlite3.connect(path)) as source:
-                    self.assertEqual(int(source.execute("SELECT value FROM relay_meta WHERE key='version'").fetchone()[0]), SQLITE_RELAY_VERSION + 1)
-                with self.assertRaisesRegex(ValueError, "0.5.114 requires PostgreSQL"):
-                    api.create_model_relay_app(state_path=path)
-            finally:
-                await old.aclose()
-                await store.close()
-            state = PostgresRelayState(
-                PostgresDatabase(DSN, "import", schema=self.schema)
-            )
-            await state.open()
-            self.states.append(state)
-            await state.require_current_registration(
-                "imported", reg["registration_token"]
-            )
-            replay = await state.enqueue(
-                rollout_id="imported",
-                endpoint="/v1/responses",
-                body={"q": 1},
-                headers={},
-                idempotency_key="replay",
-            )
-            self.assertEqual(replay.request_id, req.request_id)
-            self.assertEqual(
-                (await state.wait_for_response(replay, timeout_seconds=1)).body,
-                b"sampled-once",
-            )
-
-    async def test_import_refuses_active_requests_without_changing_source(self):
-        from pathlib import Path
-        from tempfile import TemporaryDirectory
-        from sandboxes.shared_control.migration import import_idle_relay
-
-        with TemporaryDirectory() as raw:
-            path = (Path(raw) / "relay.sqlite").resolve()
-            from tests.legacy_relay_fixture import write_legacy_journal
-            old = await self.new_state()
-            reg = await old.register_rollout("busy")
-            req = await old.enqueue(
-                rollout_id="busy", endpoint="/v1/responses", body={}, headers={}
-            )
-            write_legacy_journal(path, rollouts=[reg], requests=[req])
-            before = path.read_bytes()
-            with self.assertRaisesRegex(ValueError, "idle"):
-                await import_idle_relay(self.state.store, path)
-            self.assertEqual(path.read_bytes(), before)
-            await old.aclose()
-
-    async def test_import_recovers_after_source_fence_before_target_activation(self):
-        from contextlib import asynccontextmanager
-        from pathlib import Path
-        from tempfile import TemporaryDirectory
-        from tests.legacy_relay_fixture import write_legacy_journal
-        from sandboxes.shared_control.migration import import_idle_relay, assert_relay_cutover
-        with TemporaryDirectory() as raw:
-            path = Path(raw) / 'old.sqlite'
-            registration = await self.state.register_rollout('offline-import')
-            write_legacy_journal(path, rollouts=[registration])
-            store = PostgresDatabase(DSN, 'interrupted-import', schema=self.schema)
-            await store.open()
-            original = store.transaction
-            @asynccontextmanager
-            async def interrupted(operation, **kwargs):
-                if operation == 'relay_activate_import':
-                    raise RuntimeError('crash after source fence')
-                async with original(operation, **kwargs) as connection:
-                    yield connection
-            try:
-                with patch.object(store, 'transaction', interrupted):
-                    with self.assertRaisesRegex(RuntimeError, 'after source fence'):
-                        await import_idle_relay(store, path)
-                identity = assert_relay_cutover(path, store.deployment_id, store.schema)
-                self.assertTrue(identity['source_digest'])
-                async with store.transaction('inspect_unactivated') as connection:
-                    row = await (await connection.execute(
-                        'SELECT active FROM relay_imports WHERE deployment_id=%s', (store.deployment_id,),
-                    )).fetchone()
-                self.assertFalse(row['active'])
-                self.assertTrue((await import_idle_relay(store, path))['active'])
-            finally:
-                await store.close()
-
     async def test_gc_reclaims_reserved_space_without_losing_retained_response(self):
         state = await self.new_state(
             storage_budget_bytes=RESPONSE_RESERVATION + 1000,
@@ -1798,31 +1673,14 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "disagree"):
             await peer.open()
 
-    async def test_source_fence_cannot_activate_an_empty_other_database(self):
-        from pathlib import Path
-        from tempfile import TemporaryDirectory
-        from sandboxes.shared_control.migration import import_idle_relay
-
-        with TemporaryDirectory() as raw:
-            path = (Path(raw) / "relay.sqlite").resolve()
-            from tests.legacy_relay_fixture import write_legacy_journal
-            reg = await self.state.register_rollout("old")
-            write_legacy_journal(path, rollouts=[reg])
-            imported = PostgresDatabase(DSN, "import", schema=self.schema)
-            await imported.open()
-            try:
-                await import_idle_relay(imported, path)
-                async with imported.transaction("simulate_wrong_empty_target") as conn:
-                    await conn.execute(
-                        "DELETE FROM relay_imports WHERE deployment_id='import'"
-                    )
-                    await conn.execute(
-                        "DELETE FROM relay_rollouts WHERE deployment_id='import'"
-                    )
-                with self.assertRaisesRegex(ValueError, "resurrect"):
-                    await import_idle_relay(imported, path)
-            finally:
-                await imported.close()
+    async def test_unactivated_relay_import_is_refused(self):
+        async with self.state.store.transaction("simulate_unfinished_import") as conn:
+            await conn.execute(
+                "INSERT INTO relay_imports(deployment_id,source_digest) VALUES ('unfinished','d')"
+            )
+        state = PostgresRelayState(PostgresDatabase(DSN, "unfinished", schema=self.schema))
+        with self.assertRaisesRegex(ValueError, "not activated"):
+            await state.open()
 
     async def test_reattach_reads_one_snapshot_while_peer_commits_result(self):
         peer = await self.new_state()

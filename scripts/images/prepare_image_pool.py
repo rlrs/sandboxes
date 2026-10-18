@@ -422,7 +422,7 @@ def register_import_alias(store, record, alias):
         return "registered"
 
 
-def main():
+def main():  # noqa: C901
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--sdk-wheel", type=Path, required=True)

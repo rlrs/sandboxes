@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UCloud Sandboxes Dashboard</title>
+  <link rel="stylesheet" href="/dashboard/dashboard.css">
+</head>
+<body>
+  <a class="skip-link" href="#pageHeading">Skip to dashboard content</a>
+  <header class="app-bar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+      <span class="brand-copy">
+        <strong>UCloud Sandboxes</strong>
+      </span>
+    </div>
+    <div class="app-context">
+      <span id="pageKicker" class="visually-hidden">Control plane</span>
+      <h1 id="pageHeading" tabindex="-1">Overview</h1>
+      <p id="pageDescription" class="visually-hidden">Overview</p>
+    </div>
+    <div class="top-controls" aria-label="Dashboard controls">
+      <span id="connectionStatus" class="status-pill status-warn" aria-live="polite">Waiting</span>
+      <span id="lastUpdated" class="last-updated">Not refreshed</span>
+      <button id="authToggleButton" type="button" aria-expanded="false" aria-controls="authPanel">Bearer token</button>
+      <label class="select-control">
+        <span class="clock-mark" aria-hidden="true"></span>
+        <span class="visually-hidden">Session chart range</span>
+        <select id="timeRangeSelect">
+          <option value="900000">Session 15m</option>
+          <option value="3600000" selected>Session 1h</option>
+          <option value="21600000">Session 6h</option>
+        </select>
+      </label>
+      <button id="refreshNowButton" class="icon-button" type="button" title="Refresh now" aria-label="Refresh now">
+        <span class="refresh-mark" aria-hidden="true"></span>
+      </button>
+      <button id="themeButton" class="icon-button" type="button" title="Toggle dark charts" aria-label="Toggle dark charts">
+        <span class="moon-mark" aria-hidden="true"></span>
+      </button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section id="authPanel" class="auth-panel" aria-label="Metrics authentication" hidden>
+      <label class="token-field">
+        <span>Gateway bearer token</span>
+        <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Required for /v1/metrics">
+      </label>
+      <button id="saveTokenButton" type="button">Save</button>
+      <button id="clearTokenButton" type="button">Clear</button>
+    </section>
+
+    <nav class="page-tabs" role="tablist" aria-label="Dashboard pages" aria-orientation="horizontal">
+      <span class="nav-section-label" role="presentation">Monitor</span>
+      <button id="overviewTab" class="page-tab is-active" role="tab" aria-selected="true" aria-controls="overviewPage" type="button" data-page-target="overview">
+        <span class="nav-label"><i class="nav-icon nav-icon-overview" aria-hidden="true"></i>Overview</span><span id="overviewNavBadge" class="nav-badge">Live</span>
+      </button>
+      <button id="schedulerTab" class="page-tab" role="tab" aria-selected="false" aria-controls="schedulerPage" type="button" data-page-target="scheduler">
+        <span class="nav-label"><i class="nav-icon nav-icon-scheduler" aria-hidden="true"></i>Demand &amp; scaling</span><span id="schedulerNavBadge" class="nav-badge">0</span>
+      </button>
+      <button id="nodesTab" class="page-tab" role="tab" aria-selected="false" aria-controls="nodesPage" type="button" data-page-target="nodes">
+        <span class="nav-label"><i class="nav-icon nav-icon-nodes" aria-hidden="true"></i>Fleet</span><span id="nodesNavBadge" class="nav-badge">0</span>
+      </button>
+      <span class="nav-section-label nav-section-manage" role="presentation">Manage</span>
+      <button id="sandboxesTab" class="page-tab" role="tab" aria-selected="false" aria-controls="sandboxesPage" type="button" data-page-target="sandboxes">
+        <span class="nav-label"><i class="nav-icon nav-icon-sandboxes" aria-hidden="true"></i>Sandboxes</span><span id="sandboxesNavBadge" class="nav-badge">0</span>
+      </button>
+      <button id="registryTab" class="page-tab" role="tab" aria-selected="false" aria-controls="registryPage" type="button" data-page-target="registry">
+        <span class="nav-label"><i class="nav-icon nav-icon-registry" aria-hidden="true"></i>Images</span><span id="registryNavBadge" class="nav-badge">0</span>
+      </button>
+    </nav>
+
+    <section id="overviewPage" class="overview-page" role="tabpanel" aria-labelledby="overviewTab">
+      <section class="command-grid overview-section" aria-label="Current operational posture">
+        <article class="health-strip">
+          <div class="health-primary">
+            <span id="healthBadge" class="health-icon health-neutral" aria-hidden="true"></span>
+            <div>
+              <span class="eyebrow">Status</span>
+              <strong id="healthTitle">No data</strong>
+              <span id="healthDetail">Metrics unavailable</span>
+            </div>
+          </div>
+          <div id="healthSignals" class="health-signals" aria-live="polite"></div>
+          <div class="health-actions">
+            <button id="copyDiagnosticsButton" class="table-action" type="button">Copy summary</button>
+            <button id="downloadSnapshotButton" class="table-action" type="button">Download snapshot</button>
+          </div>
+        </article>
+
+        <article class="decision-brief">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">Autoscaler</span>
+              <h2 id="overviewDecisionTitle">No decision</h2>
+            </div>
+          </div>
+          <p id="autoscalerSummary" class="decision-summary">No cycle</p>
+          <div id="overviewDecisionReasons" class="decision-reasons"></div>
+          <div class="decision-facts">
+            <div><span>Ready / booting / unreachable</span><strong id="overviewSupplyValue">-</strong></div>
+            <div><span>Projected free</span><strong id="overviewProjectedValue">-</strong></div>
+            <div><span>Deficit</span><strong id="overviewDeficitValue">-</strong></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="section-heading overview-section overview-heading">
+        <div>
+          <span class="eyebrow">Current</span>
+          <h2>Workload</h2>
+        </div>
+      </section>
+
+      <section class="metric-grid overview-section" aria-label="Current demand and capacity">
+        <article class="metric-card">
+          <span class="metric-label">Ready for a tool call</span>
+          <strong id="readyWakeValue">-</strong>
+          <span id="readyWakeDetail" class="metric-detail">Oldest -</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Ready capacity</span>
+          <strong id="activeNodesValue">-</strong>
+          <span id="activeNodesDetail" class="metric-detail">Ready / provisioning / total</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Sandbox fleet</span>
+          <strong id="runningSandboxesValue">-</strong>
+          <span id="runningSandboxesDetail" class="metric-detail">Running / parked / waking</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Hard disk committed</span>
+          <strong id="diskCommitValue">-</strong>
+          <span id="diskCommitDetail" class="metric-detail">Free -</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Waiting on the model</span>
+          <strong id="modelWaitValue">-</strong>
+          <span id="modelWaitDetail" class="metric-detail">Oldest -</span>
+        </article>
+        <article class="metric-card">
+          <span class="metric-label">Response → ready p95</span>
+          <strong id="wakeLatencyValue">-</strong>
+          <span id="wakeLatencyDetail" class="metric-detail">Session p95</span>
+        </article>
+      </section>
+
+      <section class="overview-workbench overview-section" aria-label="Capacity and request flow">
+        <article class="capacity-card">
+          <div class="section-heading compact">
+            <div>
+              <span class="eyebrow">Placement headroom</span>
+              <h2>Resource fit</h2>
+            </div>
+            <span id="capacityFitBadge" class="inline-badge badge-muted">Waiting</span>
+          </div>
+          <p id="capacitySummary" class="workspace-copy">No data</p>
+          <div class="headroom-list">
+            <div class="headroom-row">
+              <div class="headroom-label"><span>CPU</span><strong id="capacityCpuValue">-</strong></div>
+              <div class="dual-meter" aria-label="CPU actual and reserved utilization">
+                <span id="capacityCpuActualMeter" class="meter-actual"></span>
+                <span id="capacityCpuReservedMeter" class="meter-reserved"></span>
+              </div>
+              <span id="capacityCpuDetail" class="headroom-detail">actual / reserved</span>
+            </div>
+            <div class="headroom-row">
+              <div class="headroom-label"><span>Memory</span><strong id="capacityMemoryValue">-</strong></div>
+              <div class="dual-meter" aria-label="Memory actual and reserved utilization">
+                <span id="capacityMemoryActualMeter" class="meter-actual"></span>
+                <span id="capacityMemoryReservedMeter" class="meter-reserved"></span>
+              </div>
+              <span id="capacityMemoryDetail" class="headroom-detail">actual / reserved</span>
+            </div>
+            <div class="headroom-row hard-limit">
+              <div class="headroom-label"><span>Hard disk</span><strong id="capacityDiskValue">-</strong></div>
+              <div class="dual-meter single" aria-label="Hard disk committed utilization">
+                <span id="capacityDiskMeter" class="meter-disk"></span>
+              </div>
+              <span id="capacityDiskDetail" class="headroom-detail">committed / total</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="pipeline-card">
+          <div class="section-heading compact">
+            <div>
+              <span class="eyebrow">Agent lifecycle</span>
+              <h2>Request flow</h2>
+            </div>
+            <span id="programSummary" class="section-summary">No requests loaded</span>
+          </div>
+          <div class="overview-pipeline">
+            <div class="pipeline-stage forecast">
+              <span>Model generation</span>
+              <strong id="programModelWaitValue">-</strong>
+              <small id="overviewModelWaitAge">No active wait</small>
+            </div>
+            <span class="pipeline-connector" aria-hidden="true"></span>
+            <div class="pipeline-stage attention">
+              <span>Ready for tool</span>
+              <strong id="programReadyValue">-</strong>
+              <small id="programOldestReadyValue">No ready work</small>
+            </div>
+            <span class="pipeline-connector" aria-hidden="true"></span>
+            <div class="pipeline-stage">
+              <span>Restoring</span>
+              <strong id="overviewWakingValue">-</strong>
+              <small>Restore</small>
+            </div>
+            <span class="pipeline-connector" aria-hidden="true"></span>
+            <div class="pipeline-stage success">
+              <span>Tool executing</span>
+              <strong id="overviewActingValue">-</strong>
+              <small>Active</small>
+            </div>
+          </div>
+          <div class="latency-strip">
+            <div><span>Model wait p95</span><strong id="overviewModelLatency">-</strong></div>
+            <div><span>Response → ready p95</span><strong id="programWakeLatencyValue">-</strong></div>
+            <div><span>Node provisioning p95</span><strong id="autoscalerProvisioningValue">-</strong></div>
+            <div><span>Idle grace</span><strong id="autoscalerIdleGraceValue">-</strong></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="section-heading overview-section overview-heading">
+        <div>
+          <span class="eyebrow">Session</span>
+          <h2>Trends</h2>
+        </div>
+      </section>
+
+      <section class="trend-grid overview-section" aria-label="Operational trends">
+        <article class="chart-panel trend-supply">
+          <div class="panel-header">
+            <div><h2>Fleet</h2></div>
+          </div>
+          <canvas id="activeNodesChart" class="chart-canvas" width="760" height="230"></canvas>
+          <div class="legend"><span><i class="swatch blue"></i>Ready nodes</span><span><i class="swatch green"></i>Sandbox routes</span></div>
+        </article>
+        <article class="chart-panel trend-demand">
+          <div class="panel-header">
+            <div><h2>Queues</h2></div>
+          </div>
+          <canvas id="queueDepthChart" class="chart-canvas" width="760" height="230"></canvas>
+          <div class="legend"><span><i class="swatch green"></i>Ready to wake</span><span><i class="swatch purple"></i>Sandbox creates</span><span><i class="swatch orange"></i>Image builds</span></div>
+        </article>
+        <article class="chart-panel trend-pressure">
+          <div class="panel-header"><div><h2>CPU</h2></div></div>
+          <canvas id="cpuPressureChart" class="chart-canvas small" width="560" height="190"></canvas>
+          <div class="legend"><span><i class="swatch green"></i>Actual</span><span><i class="swatch blue-dash"></i>Reserved</span></div>
+        </article>
+        <article class="chart-panel trend-pressure">
+          <div class="panel-header"><div><h2>Memory</h2></div></div>
+          <canvas id="memoryPressureChart" class="chart-canvas small" width="560" height="190"></canvas>
+          <div class="legend"><span><i class="swatch orange"></i>Actual</span><span><i class="swatch blue-dash"></i>Reserved</span></div>
+        </article>
+        <article class="chart-panel trend-latency">
+          <div class="panel-header">
+            <div><h2>Latency</h2></div>
+          </div>
+          <canvas id="sandboxStartChart" class="chart-canvas small" width="760" height="190"></canvas>
+          <div class="legend"><span><i class="swatch purple"></i>Model wait p95</span><span><i class="swatch green"></i>Response → ready p95</span></div>
+        </article>
+      </section>
+
+      <section class="section-heading overview-section overview-heading">
+        <div><span class="eyebrow">Recent</span><h2>Activity</h2></div>
+      </section>
+      <section class="activity-grid overview-section" aria-label="Recent operational activity">
+        <section class="event-panel activity-event-panel" aria-label="Recent autoscaler events">
+          <div class="panel-header table-header"><h2>Autoscaler</h2><span id="eventSummary">No events</span></div>
+          <div class="table-wrap"><table><thead><tr><th>Time</th><th>Severity</th><th>Event</th><th>Details</th></tr></thead><tbody id="eventRows"><tr><td colspan="4" class="empty-cell">No metrics loaded</td></tr></tbody></table></div>
+        </section>
+        <details class="event-panel diagnostic-disclosure build-panel">
+          <summary><span>Builds</span><span id="buildSummary">No builds</span></summary>
+          <div class="table-wrap"><table><thead><tr><th>Status</th><th>Image</th><th>Tag</th><th>Location</th><th>Age</th><th>Details</th></tr></thead><tbody id="buildRows"><tr><td colspan="6" class="empty-cell">No builds loaded</td></tr></tbody></table></div>
+        </details>
+        <details class="event-panel diagnostic-disclosure trace-panel">
+          <summary><span>Telemetry export</span><span id="telemetrySummary">Disabled</span></summary>
+          <div class="table-wrap"><table><thead><tr><th>State</th><th>Queue</th><th>Accepted</th><th>Exported</th><th>Dropped / failed</th></tr></thead><tbody id="telemetryRows"><tr><td colspan="5" class="empty-cell">Telemetry is disabled</td></tr></tbody></table></div>
+        </details>
+      </section>
+    </section>
+
+    <section id="schedulerPage" class="workspace-page" role="tabpanel" aria-labelledby="schedulerTab" hidden>
+      <section class="decision-hero">
+        <div class="decision-copy">
+          <div class="eyebrow">Autoscaler</div>
+          <div class="decision-title-row">
+            <h2 id="schedulerDecisionTitle">Waiting for a decision</h2>
+          </div>
+          <p id="schedulerDecisionDetail" class="workspace-copy">No data</p>
+          <div id="schedulerReasons" class="reason-list"></div>
+        </div>
+        <div class="decision-stats">
+          <div class="stat-box">
+            <span>Ready nodes</span>
+            <strong id="schedulerReadyNodesValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Provisioning</span>
+            <strong id="schedulerProvisioningValue">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="flow-panel" aria-label="Program lifecycle">
+        <div class="section-heading">
+          <div>
+            <div class="eyebrow">Requests</div>
+            <h2>Flow</h2>
+          </div>
+          <span id="programFlowSummary" class="section-summary">No program requests loaded</span>
+        </div>
+        <div class="program-flow">
+          <div class="flow-stage">
+            <span class="flow-index">All</span>
+            <strong id="flowAllValue">-</strong>
+            <small>active requests</small>
+          </div>
+          <span class="flow-arrow" aria-hidden="true">→</span>
+          <div class="flow-stage">
+            <span class="flow-index">Model wait</span>
+            <strong id="flowModelWaitValue">-</strong>
+            <small id="flowModelWaitDetail">waiting on model</small>
+          </div>
+          <span class="flow-arrow" aria-hidden="true">→</span>
+          <div class="flow-stage">
+            <span class="flow-index">Ready</span>
+            <strong id="flowReadyValue">-</strong>
+            <small id="flowReadyDetail">ready to wake</small>
+          </div>
+          <span class="flow-arrow" aria-hidden="true">→</span>
+          <div class="flow-stage">
+            <span class="flow-index">Waking</span>
+            <strong id="flowWakingValue">-</strong>
+            <small>waking</small>
+          </div>
+          <span class="flow-arrow" aria-hidden="true">→</span>
+          <div class="flow-stage">
+            <span class="flow-index">Acting</span>
+            <strong id="flowActingValue">-</strong>
+            <small>acting</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="scheduler-grid">
+        <article class="workspace-card capacity-equation-card">
+          <div class="section-heading compact">
+            <div>
+              <div class="eyebrow">Placement</div>
+              <h2>Capacity equation</h2>
+            </div>
+            <span id="decisionPressureValue" class="section-summary">No pressure samples</span>
+          </div>
+          <div class="table-wrap capacity-equation-wrap">
+            <table class="capacity-equation-table">
+              <thead><tr><th>Stage</th><th>vCPU</th><th>Memory</th><th>Hard disk</th></tr></thead>
+              <tbody>
+                <tr><th>Immediate demand</th><td id="equationImmediateCpu">-</td><td id="equationImmediateMemory">-</td><td id="equationImmediateDisk">-</td></tr>
+                <tr class="supply-row"><th>Already prepared</th><td id="equationPreparedCpu">-</td><td id="equationPreparedMemory">-</td><td id="equationPreparedDisk">-</td></tr>
+                <tr class="supply-row"><th>Free after commitments</th><td id="equationFreeCpu">-</td><td id="equationFreeMemory">-</td><td id="equationFreeDisk">-</td></tr>
+                <tr class="deficit-row"><th>Uncovered demand</th><td id="equationDeficitCpu">-</td><td id="equationDeficitMemory">-</td><td id="equationDeficitDisk">-</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="equation-footnote"><span id="decisionIdleGraceValue">Idle grace -</span></div>
+        </article>
+        <details class="workspace-card policy-card" open>
+          <summary class="section-heading compact">
+            <div>
+              <div class="eyebrow">Policy</div>
+              <h2>Current tuning</h2>
+            </div>
+            <span class="read-only-badge">Read only</span>
+          </summary>
+          <dl id="policyValues" class="policy-values">
+            <div><dt>Node range</dt><dd>-</dd></div>
+          </dl>
+        </details>
+      </section>
+
+    </section>
+
+    <section id="nodesPage" class="workspace-page" role="tabpanel" aria-labelledby="nodesTab" hidden>
+      <section class="workspace-hero">
+        <div>
+          <div class="eyebrow">Fleet</div>
+          <h2>Placement supply</h2>
+          <p id="nodesPageDetail" class="workspace-copy">No heartbeats</p>
+        </div>
+        <div class="node-hero-stats">
+          <div class="stat-box"><span>Schedulable</span><strong id="nodesReadyValue">-</strong></div>
+          <div class="stat-box"><span>Provisioning</span><strong id="nodesProvisioningValue">-</strong></div>
+          <div class="stat-box"><span>Draining</span><strong id="nodesDrainingValue">-</strong></div>
+          <div class="stat-box"><span>Stale / incompatible</span><strong id="nodesIncompatibleValue">-</strong></div>
+          <div class="stat-box"><span>Hard disk free</span><strong id="nodesDiskFreeValue">-</strong></div>
+        </div>
+      </section>
+      <section class="fleet-signal-grid" aria-label="Fleet pressure summary">
+        <article><span>CPU actual / reserved</span><strong id="nodesCpuPressureValue">-</strong><small id="nodesCpuPressureDetail">No fresh samples</small></article>
+        <article><span>Memory actual / reserved</span><strong id="nodesMemoryPressureValue">-</strong><small id="nodesMemoryPressureDetail">No fresh samples</small></article>
+        <article><span>Memory PSI full</span><strong id="nodesPsiValue">-</strong><small>10-second average</small></article>
+        <article><span>Storage queue</span><strong id="nodesStorageQueueValue">-</strong><small id="nodesStorageQueueDetail">active / waiting / limit</small></article>
+        <article><span>Volume errors</span><strong id="nodesVolumeErrorsValue">-</strong><small>storage-native volumes</small></article>
+      </section>
+      <section class="queue-toolbar node-toolbar" aria-label="Node filters">
+        <label class="inline-search">
+          <span class="visually-hidden">Search nodes</span>
+          <input id="nodeSearchInput" type="search" autocomplete="off" spellcheck="false" placeholder="Node or job id">
+        </label>
+        <label class="inline-select">
+          <span class="visually-hidden">Node state filter</span>
+          <select id="nodeStateFilter">
+            <option value="all">All nodes</option>
+            <option value="ready">Ready</option>
+            <option value="constrained">Constrained</option>
+            <option value="draining">Draining / closed</option>
+            <option value="stale">Stale / incompatible</option>
+          </select>
+        </label>
+        <span id="nodeTableSummary" class="section-summary">No nodes loaded</span>
+      </section>
+      <section class="event-panel">
+        <div class="table-wrap">
+          <table class="node-table">
+            <thead>
+              <tr>
+                <th>State</th>
+                <th>Node</th>
+                <th>Work</th>
+                <th>CPU actual / reserved</th>
+                <th>Memory actual / reserved</th>
+                <th>Hard disk free</th>
+                <th>Pressure</th>
+                <th>Heartbeat</th>
+              </tr>
+            </thead>
+            <tbody id="nodeRows">
+              <tr><td colspan="8" class="empty-cell">No node metrics loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="sandboxesPage" class="sandboxes-page" role="tabpanel" aria-labelledby="sandboxesTab" hidden>
+      <section class="sandbox-hero">
+        <div class="sandbox-hero-main">
+          <div class="panel-header">
+            <h2>Lifecycle</h2>
+            <span id="sandboxesPageStatusBadge" class="inline-badge badge-muted">Not loaded</span>
+          </div>
+          <p id="sandboxesPageDetail" class="registry-copy">No data</p>
+        </div>
+        <div class="sandbox-stat-grid">
+          <div class="stat-box">
+            <span>Loaded</span>
+            <strong id="sandboxesPageRowsValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Running</span>
+            <strong id="sandboxesPageTerminableValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Parked</span>
+            <strong id="sandboxesPagePendingValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Waking / moving</span>
+            <strong id="sandboxesPageRoutesValue">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="sandbox-toolbar" aria-label="Sandbox controls">
+        <label class="sandbox-search">
+          <span>Search sandboxes</span>
+          <input id="sandboxSearchInput" type="search" autocomplete="off" spellcheck="false" placeholder="Sandbox id, image, node, label">
+        </label>
+        <label class="sandbox-filter">
+          <span>Lifecycle state</span>
+          <select id="sandboxStateFilter">
+            <option value="all">All states</option>
+            <option value="attention">Needs attention</option>
+            <option value="running">Running</option>
+            <option value="parked">Parked</option>
+            <option value="transitioning">Parking / waking / migrating</option>
+            <option value="pending">Pending / creating</option>
+            <option value="failed">Failed / stale</option>
+          </select>
+        </label>
+        <button id="refreshSandboxesButton" class="table-action" type="button">Refresh</button>
+        <div id="sandboxesPageSummary" class="registry-copy">No sandboxes loaded</div>
+      </section>
+
+      <section class="event-panel sandbox-list-panel" aria-label="Latest sandboxes">
+        <div class="panel-header table-header">
+          <h2>Latest Sandboxes</h2>
+          <span id="sandboxListSummary">No sandboxes loaded</span>
+        </div>
+        <div class="table-wrap">
+          <table class="sandbox-table">
+            <thead>
+              <tr>
+                <th>State</th>
+                <th>Sandbox</th>
+                <th>Image</th>
+                <th>Node</th>
+                <th>Resources</th>
+                <th>Age</th>
+                <th>Labels</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sandboxRows">
+              <tr><td colspan="8" class="empty-cell">No sandboxes loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section id="registryPage" class="registry-page" role="tabpanel" aria-labelledby="registryTab" hidden>
+      <section class="registry-hero">
+        <div class="registry-hero-main">
+          <div class="panel-header">
+            <h2>Registry</h2>
+            <span id="registryPageStatusBadge" class="inline-badge badge-muted">Unknown</span>
+          </div>
+          <div id="registryPageUrl" class="registry-url registry-url-large">No registry configured</div>
+          <p id="registryPageHealthDetail" class="registry-copy">No data</p>
+        </div>
+        <div class="registry-stat-grid">
+          <div class="stat-box">
+            <span>Repositories</span>
+            <strong id="registryPageReposValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Scanned tags</span>
+            <strong id="registryPageTagsValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Active builds</span>
+            <strong id="registryActiveBuildsValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Failed builds</span>
+            <strong id="registryFailedBuildsValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Visible tags</span>
+            <strong id="registryPageVisibleTagsValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Coverage</span>
+            <strong id="registryPageCoverageValue">-</strong>
+          </div>
+          <div class="stat-box">
+            <span>Disk</span>
+            <strong id="registryPageDiskValue">-</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="image-supply-grid" aria-label="Image build supply">
+        <article class="ops-panel builder-service">
+          <div class="panel-header">
+            <div><span class="eyebrow">Builders</span><h2>Capacity</h2></div>
+            <span id="builderSummary">No builder metrics loaded</span>
+          </div>
+          <div class="stat-strip">
+            <div class="stat-box"><span>Ready</span><strong id="builderReadyValue">-</strong></div>
+            <div class="stat-box"><span>Prepared</span><strong id="builderPreparedValue">-</strong></div>
+            <div class="stat-box"><span>Building</span><strong id="builderActiveBuildsValue">-</strong></div>
+            <div class="stat-box"><span>CPU</span><strong id="builderCpuValue">-</strong></div>
+            <div class="stat-box"><span>Memory</span><strong id="builderMemoryValue">-</strong></div>
+          </div>
+          <canvas id="builderBuildsChart" class="chart-canvas compact" width="760" height="150"></canvas>
+          <div class="legend"><span><i class="swatch orange"></i>Active builds</span><span><i class="swatch blue-dash"></i>Ready builders</span></div>
+        </article>
+        <article class="workspace-card image-queue-summary">
+          <div class="section-heading compact"><div><span class="eyebrow">Builds</span><h2>Queue</h2></div></div>
+          <div class="resource-vector-list">
+            <div class="resource-vector"><span>Pending builds</span><strong id="registryPendingBuildsValue">-</strong></div>
+            <div class="resource-vector"><span>Oldest pending</span><strong id="registryOldestBuildValue">-</strong></div>
+            <div class="resource-vector"><span>Active builds</span><strong id="registryActiveBuildsSummaryValue">-</strong></div>
+            <div class="resource-vector emphasis"><span>Failed builds</span><strong id="registryFailedBuildsSummaryValue">-</strong></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="registry-toolbar" aria-label="Registry filters">
+        <label class="registry-search">
+          <span>Search registry</span>
+          <input id="registrySearchInput" type="search" autocomplete="off" spellcheck="false" placeholder="Repository, tag, image id">
+        </label>
+        <label class="registry-select">
+          <span>Filter</span>
+          <select id="registryFilterSelect">
+            <option value="all">All repositories</option>
+            <option value="with-builds">With tracked builds</option>
+            <option value="truncated">Tag list truncated</option>
+            <option value="empty">No visible tags</option>
+          </select>
+        </label>
+        <div id="registryPageSummary" class="registry-copy">No repositories loaded</div>
+      </section>
+
+      <section class="registry-full-grid" aria-label="Registry details">
+        <article class="event-panel registry-panel">
+          <div class="panel-header table-header">
+            <h2>Repositories</h2>
+            <span id="registryRepoSummary">No repositories loaded</span>
+          </div>
+          <div class="table-wrap">
+            <table class="registry-table">
+              <thead>
+                <tr>
+                  <th>Repository</th>
+                  <th>Tags</th>
+                  <th>Latest</th>
+                  <th>Builds</th>
+                  <th>Visible Tags</th>
+                </tr>
+              </thead>
+              <tbody id="registryRepoRows">
+                <tr><td colspan="5" class="empty-cell">No repositories loaded</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="event-panel registry-panel">
+          <div class="panel-header table-header">
+            <h2>Tags</h2>
+            <span id="registryTagSummary">No tags loaded</span>
+          </div>
+          <div class="table-wrap">
+            <table class="registry-table">
+              <thead>
+                <tr>
+                  <th>Repository</th>
+                  <th>Tag</th>
+                  <th>Build Status</th>
+                  <th>Image</th>
+                  <th>Location</th>
+                </tr>
+              </thead>
+              <tbody id="registryTagRows">
+                <tr><td colspan="5" class="empty-cell">No tags loaded</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="event-panel registry-builds-panel" aria-label="Registry backed image builds">
+        <div class="panel-header table-header">
+          <h2>Pushed Image Builds</h2>
+          <span id="registryBuildSummary">No pushed builds loaded</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Image</th>
+                <th>Tag</th>
+                <th>Location</th>
+                <th>Age</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="registryBuildRows">
+              <tr><td colspan="6" class="empty-cell">No pushed builds loaded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+  <script src="/dashboard/dashboard.js" defer></script>
+</body>
+</html>

@@ -29,7 +29,6 @@ postgres = ["psycopg[binary,pool]>=3.2,<4"]
 sandboxes = "sandboxes.cli:main"
 sandboxes-storage = "sandboxes.storage_native_service:main"
 sandboxes-snapshot-gc = "sandboxes.storage_native_s3_gc:main"
-sandboxes-registry-migrate = "sandboxes.registry_storage_migration:main"
 
 [dependency-groups]
 dev = [
@@ -47,4 +46,6 @@ exclude = ["/ucloud-sandboxes-sdk"]
 select = ["C901", "E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 70
+# Functions above this carry `# noqa: C901`. Lower it, and drop their
+# noqa, as functions are split.
+max-complexity = 40

@@ -2221,7 +2221,7 @@ def _validate_pause_tier(options: VmInitOptions) -> None:
                          "Rust node execs and the Rust node pause tier.")
 
 
-def validate_vm_init_options(options: VmInitOptions) -> None:
+def validate_vm_init_options(options: VmInitOptions) -> None:  # noqa: C901
     from .environment_bootstrap import validate as validate_environment_bootstrap
     validate_environment_bootstrap(options)
     if not options.job_id:

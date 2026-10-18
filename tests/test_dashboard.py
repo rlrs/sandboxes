@@ -1,15 +1,15 @@
+import hashlib
 from html.parser import HTMLParser
-from pathlib import Path
+from importlib.resources import files
 import re
 import shutil
 import subprocess
-import tempfile
 import unittest
 
-from sandboxes.dashboard import (
-    DASHBOARD_HTML,
-    DASHBOARD_JS,
-)
+from sandboxes.dashboard import dashboard_asset
+
+DASHBOARD_HTML = dashboard_asset("/dashboard").body.decode("utf-8")
+DASHBOARD_JS = dashboard_asset("/dashboard/dashboard.js").body.decode("utf-8")
 
 
 class _DashboardParser(HTMLParser):
@@ -75,14 +75,31 @@ class DashboardTests(unittest.TestCase):
         node = shutil.which("node")
         if node is None:
             self.skipTest("node is not installed")
-        with tempfile.TemporaryDirectory() as raw_dir:
-            script = Path(raw_dir) / "dashboard.js"
-            script.write_text(DASHBOARD_JS, encoding="utf-8")
-            completed = subprocess.run(
-                [node, "--check", str(script)],
-                capture_output=True,
-                check=False,
-                text=True,
-            )
+        script = files("sandboxes.dashboard").joinpath("dashboard.js")
+        completed = subprocess.run(
+            [node, "--check", str(script)],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_served_assets_are_byte_identical_to_the_inline_strings(self) -> None:
+        # SHA-256 of the bytes served before the assets moved out of
+        # dashboard.py. Update these only for an intended dashboard change.
+        expected = {
+            "/": ("baf08a290628ab99682a4250f99043248c4236644838d49dd446b563c9ee8f6e", "text/html; charset=utf-8"),
+            "/dashboard": ("baf08a290628ab99682a4250f99043248c4236644838d49dd446b563c9ee8f6e", "text/html; charset=utf-8"),
+            "/dashboard/": ("baf08a290628ab99682a4250f99043248c4236644838d49dd446b563c9ee8f6e", "text/html; charset=utf-8"),
+            "/dashboard/dashboard.css": ("ed109eb5c92abad90c8b5bd8deb3535359dfbd7e7381bc37238c832782200a6f", "text/css; charset=utf-8"),
+            "/dashboard/dashboard.js": ("56bdf6843ba8b3ca681a4dca5a17a33747336bf0afd3faad7ce75571e3205966", "application/javascript; charset=utf-8"),
+        }
+        for path, (digest, content_type) in expected.items():
+            with self.subTest(path=path):
+                asset = dashboard_asset(path)
+                self.assertIsNotNone(asset)
+                assert asset is not None
+                self.assertEqual(hashlib.sha256(asset.body).hexdigest(), digest)
+                self.assertEqual(asset.content_type, content_type)
+        self.assertIsNone(dashboard_asset("/dashboard/index.html"))

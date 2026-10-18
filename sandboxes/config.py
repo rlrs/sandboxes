@@ -988,9 +988,6 @@ class DeploymentConfig:
     def relay_worker_token_file(self) -> Path:
         return self._state_file("relay-worker-token")
 
-    def relay_state_file(self) -> Path:
-        return self._state_file("model-relay.sqlite3")
-
     def init_ssh_private_key_file(self) -> Path:
         return self._state_file("ssh/gateway-init")
 

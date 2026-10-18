@@ -262,10 +262,6 @@ class AllInOneDeployPlan:
         return str(self.config.relay_worker_token_file())
 
     @property
-    def relay_state_file(self) -> str:
-        return str(self.config.relay_state_file())
-
-    @property
     def init_ssh_private_key_file(self) -> str:
         return str(self.config.init_ssh_private_key_file())
 

@@ -122,7 +122,7 @@ def execution_context(root, item, mappings, prefixes=()):
     return context, base
 
 
-def main():
+def main():  # noqa: C901
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--sdk-wheel", required=True, type=Path)
