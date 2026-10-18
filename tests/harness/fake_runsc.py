@@ -702,7 +702,7 @@ def _tar(runtime: _Runtime, args: list[str]) -> int:
         merged = state["fake"]["rootfs"]
         table = Path(json.loads(Path(runtime.config["mount_config"]).read_text(encoding="utf-8"))["table"])
         try:
-            lower = Path(json.loads(fake_mount._entry(table, merged).read_text(encoding="utf-8"))["lower"])
+            lower = Path(json.loads(fake_mount._entry(table, merged).read_text(encoding="utf-8"))["lowers"][0])
         except FileNotFoundError:
             raise RunscError("the container rootfs is not an overlay mount") from None
         with tempfile.TemporaryDirectory(dir=output.parent) as staging:

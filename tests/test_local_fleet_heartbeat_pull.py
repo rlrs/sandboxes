@@ -15,7 +15,6 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tests.harness import LocalFleet
-from tests.harness.fleet import DEFAULT_IMAGE
 from sandboxes.agent import build_heartbeat
 from sandboxes.gateway import heartbeats
 from sandboxes.gateway.heartbeats import PULL_TIMEOUT_SECONDS, HeartbeatIngest, HeartbeatOutcome
@@ -66,7 +65,7 @@ class HeartbeatPullTests(unittest.TestCase):
             store.upsert_heartbeat(replace(current, labels={**current.labels, "pool": "a"}))
             fleet.expire_heartbeat(node)
             replay = fleet.request("POST", "/v1/sandboxes", token="sandbox", payload={
-                "id": "alpha", "image": DEFAULT_IMAGE, "cpus": 1, "memory_mb": 256,
+                "id": "alpha", "image": fleet.image, "cpus": 1, "memory_mb": 256,
                 "disk_mb": 1024, "network": "none"})
             self.assertEqual((replay.status, fleet.route("alpha").state), (200, "running"))
             # The sender's labels, which a pull cannot see, survive it.

@@ -40,7 +40,7 @@ from sandboxes.telemetry import Telemetry
 
 TEST_TIER = "contract"
 DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
-SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
+SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 ROOT = "sha256:" + "7" * 64
 HASH = "a" * 64
 
@@ -53,14 +53,14 @@ class TwoGatewayTests(unittest.TestCase):
                         nodes=2, gateways=2, create_placement=mode, postgres=postgres) as fleet:
                     names = [f"{mode}-{index}" for index in range(6)]
                     for index, name in enumerate(names):
-                        response = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC},
+                        response = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image},
                                                  token="sandbox", gateway=index % 2)
                         self.assertEqual(response.status, 201, response.body)
                     for name in names:
                         route = fleet.route(name)
                         self.assertEqual((route.generation, route.state), (1, "running"))
                         self.assertIsNotNone(fleet.node_for(name).registration(name))
-                    retried = fleet.request("POST", "/v1/sandboxes", payload={"id": names[0], **SPEC},
+                    retried = fleet.request("POST", "/v1/sandboxes", payload={"id": names[0], **SPEC, "image": fleet.image},
                                             token="sandbox", gateway=1)
                     self.assertEqual((retried.status, retried.json()["recovered"]), (200, True))
                     self.assertEqual(fleet.exec(names[1], ["cat", "/opt/greeting"]).stdout,
@@ -115,7 +115,7 @@ class TwoGatewayTests(unittest.TestCase):
             fleet.create("seed")  # Its image is cached: the create itself is refused.
             fleet.heartbeat()
             self.assertEqual(node.drain("solo").status, 200)  # The gateway does not know.
-            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "refused", **SPEC}, token="sandbox")
+            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "refused", **SPEC, "image": fleet.image}, token="sandbox")
             self.assertEqual(refused.status, 503, refused.body)
             self.assertEqual((refused.json()["error_code"], refused.json()["retryable"]),
                              ("node_admission_closed", True))
@@ -128,10 +128,10 @@ class TwoGatewayTests(unittest.TestCase):
     def test_a_dispatched_root_needs_a_capable_worker(self):
         with LocalFleet(create_placement="power_of_k") as fleet:
             handler = fleet.gateway.RequestHandlerClass
-            mapped = {"harness/base:1": ROOT}
+            mapped = {fleet.image: ROOT}
             handler.dispatch_environment_roots = True
             handler.services.registry_refs.dependency_resolver = SimpleNamespace(root=mapped.get)
-            pinned = fleet.request("POST", "/v1/sandboxes", payload={"id": "pinned", **SPEC}, token="sandbox")
+            pinned = fleet.request("POST", "/v1/sandboxes", payload={"id": "pinned", **SPEC, "image": fleet.image}, token="sandbox")
             self.assertEqual((pinned.status, pinned.json()["error_code"]), (503, "no_ready_node"), pinned.body)
             self.assertIsNone(fleet.route("pinned"))
             mapped.clear()
@@ -176,7 +176,7 @@ class QueuedCreateTests(unittest.TestCase):
             names = [f"q-{index}" for index in range(4)]
             with ThreadPoolExecutor(4) as pool:
                 answers = list(pool.map(lambda name: fleet.request(
-                    "POST", "/v1/sandboxes", payload={"id": name, **SPEC}, token="sandbox",
+                    "POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image}, token="sandbox",
                     gateway=int(name[-1]) % 2), names))
             self.assertEqual([answer.status for answer in answers], [201] * 4, answers[0].body)
             self.assertEqual([len(ran) for ran in seen], [2, 2])
@@ -192,7 +192,7 @@ class QueuedCreateTests(unittest.TestCase):
         with self.fleet() as fleet:
             seen = claimed(fleet)
             created = fleet.request("POST", "/v1/sandboxes:batch", token="sandbox", gateway=1,
-                                    payload={"group_id": "g", "count": 3, "spec": SPEC})
+                                    payload={"group_id": "g", "count": 3, "spec": {**SPEC, "image": fleet.image}})
             self.assertEqual((created.status, created.json()["counts"]), (201, {"running": 3}), created.body)
             self.assertEqual(seen[0] + seen[1], [("group", "g")])
             self.assertEqual(fleet.gateway.RequestHandlerClass.routing_store.sandbox_group("g").placed,
@@ -208,7 +208,7 @@ class QueuedCreateTests(unittest.TestCase):
             seen = claimed(fleet)
             with ThreadPoolExecutor(1) as pool:
                 answer = pool.submit(fleet.request, "POST", "/v1/sandboxes", token="sandbox",
-                                     payload={"id": "requeued", **SPEC})
+                                     payload={"id": "requeued", **SPEC, "image": fleet.image})
                 deadline = time.monotonic() + 10
                 while len(seen[0] + seen[1]) < 2 and time.monotonic() < deadline:
                     time.sleep(0.01)
@@ -261,7 +261,7 @@ class CreateLoopTests(unittest.TestCase):
             _confirm_sandbox_observation=lambda route, confirm: confirm(route),
         )
         root = SimpleNamespace(set_attribute=lambda *_args: None, status="ok")
-        self.placement.create(ex, SandboxSpec.from_dict({"id": "s", **SPEC, **spec}), root)
+        self.placement.create(ex, SandboxSpec.from_dict({"id": "s", "image": "harness/base:1", **SPEC, **spec}), root)
         return calls, written
 
     def test_an_accepted_create_is_confirmed_and_stays_charged(self):

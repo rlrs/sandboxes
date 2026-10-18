@@ -25,7 +25,7 @@ from tests.harness import LocalFleet
 from tests.harness.assembly import fixed_metrics
 
 TEST_TIER = "contract"
-SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
+SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 WAIT = 1.5
 
 
@@ -62,7 +62,7 @@ class DrainAdmissionTests(unittest.TestCase):
             # The gateway knows from the heartbeat; a local park has no other destination.
             self.assert_retryable(fleet.wake("resting", generation=fleet.route("resting").generation),
                                   "wake_destination_unavailable")
-            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "beta", **SPEC}, token="sandbox")
+            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "beta", **SPEC, "image": fleet.image}, token="sandbox")
             self.assert_retryable(refused, "no_ready_node")
             # Pending demand now holds this create as well as the waiting wake.
             pending = refused.json()["pending_resources"]
@@ -87,10 +87,10 @@ class DrainAdmissionTests(unittest.TestCase):
             node = fleet.nodes[0]
             # Blocked mounting its rootfs: admitted, quota prepared but committed
             # only with the rootfs (C5.2), not yet active.
-            node.arm_fault("mount", "hang")
+            node.arm_fault("mount", "hang", sandbox_id="alpha")
             result: dict = {}
             create = threading.Thread(target=lambda: result.setdefault("response", fleet.request(
-                "POST", "/v1/sandboxes", payload={"id": "alpha", **SPEC}, token="sandbox")), daemon=True)
+                "POST", "/v1/sandboxes", payload={"id": "alpha", **SPEC, "image": fleet.image}, token="sandbox")), daemon=True)
             create.start()
             node.wait_hung("mount")
 
@@ -103,7 +103,7 @@ class DrainAdmissionTests(unittest.TestCase):
                  [(item["sandbox_id"], item["state"]) for item in during["inventory"]]),
                 (True, 1, [("alpha", "planned")]),
             )
-            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "beta", **SPEC}, token="sandbox")
+            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "beta", **SPEC, "image": fleet.image}, token="sandbox")
             self.assert_retryable(refused, "no_ready_node")
 
             node.release("mount")
@@ -128,7 +128,7 @@ class DrainAdmissionTests(unittest.TestCase):
                 return call(), time.monotonic() - started
 
             def create(name):
-                return fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC}, token="sandbox")
+                return fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image}, token="sandbox")
 
             # CPU load is advice, not a veto: commands run and creates are
             # admitted without waiting for a lower sample.

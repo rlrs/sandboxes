@@ -26,13 +26,13 @@ from sandboxes.routing import RoutingStore, SandboxGroup, SandboxGroupDeletedErr
 
 TEST_TIER = "contract"
 DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
-SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
+SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 HASH = "a" * 64
 
 
 def post_group(fleet, group_id, count, **changes):
     return fleet.request("POST", "/v1/sandboxes:batch", token="sandbox", payload={
-        "group_id": group_id, "count": count, "spec": {**SPEC, **changes}})
+        "group_id": group_id, "count": count, "spec": {**SPEC, "image": fleet.image, **changes}})
 
 
 def placed(fleet, response):
@@ -73,8 +73,9 @@ class GroupFleetTests(unittest.TestCase):
                 self.assertEqual([fleet.route(f"g-{index:04d}") for index in range(4)], [None] * 4)
                 self.assertEqual(post_group(fleet, "g", 4).json()["error_code"], "sandbox_group_deleted")
                 self.assertEqual(fleet.request("GET", "/v1/sandboxes:batch/none", token="sandbox").status, 404)
-                for payload in ({"group_id": "-g", "count": 1, "spec": SPEC}, {"group_id": "g", "count": 0, "spec": SPEC},
-                                {"group_id": "g", "count": 1, "spec": {**SPEC, "id": "x"}}):
+                spec = {**SPEC, "image": fleet.image}
+                for payload in ({"group_id": "-g", "count": 1, "spec": spec}, {"group_id": "g", "count": 0, "spec": spec},
+                                {"group_id": "g", "count": 1, "spec": {**spec, "id": "x"}}):
                     self.assertEqual(fleet.request("POST", "/v1/sandboxes:batch", payload=payload,
                                                    token="sandbox").status, 400)
 

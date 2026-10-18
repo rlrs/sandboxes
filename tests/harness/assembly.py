@@ -8,7 +8,7 @@ the image store and, where ``os.pidfd_open`` is missing, the fencer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import os
@@ -24,9 +24,14 @@ from sandboxes.direct_warden import (
     SubprocessCommandRunner,
 )
 from sandboxes.disk_claims import DiskClaimPolicy
+from sandboxes.environment_artifact import EnvironmentArtifactRegistry
+from sandboxes.environment_backend import EnvironmentBackendClient
+from sandboxes.environment_manifest import HOST_EROFS_ABI
+from sandboxes.environment_rootfs import EnvironmentRootfsStore
 from sandboxes.hibernation import HibernationRuntimeFingerprint
 from sandboxes.image_rootfs import OverlayRootfsManager
 from sandboxes.images import DockerImageRuntime
+from sandboxes.managed_registry import RegistryClient
 from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
 from sandboxes.heartbeat_sender import HeartbeatSenderConfig
 from sandboxes.node_agent import build_direct_node_agent_server
@@ -42,24 +47,34 @@ def _canonical_sha256(payload: object) -> str:
     ).hexdigest()
 
 
-# One fleet-wide fingerprint, like one pinned runsc on every node: nodes stay
-# migration-compatible although each has its own wrapper file.
-FINGERPRINT = HibernationRuntimeFingerprint(
-    runsc_sha256=hashlib.sha256((HARNESS / "fake_runsc.py").read_bytes()).hexdigest(),
-    runsc_commit="f" * 40,
-    platform="systrap",
-    architecture=os.uname().machine,
-    page_size=os.sysconf("SC_PAGE_SIZE"),
-    cpu_features_sha256=hashlib.sha256(b"fake-runsc-cpu").hexdigest(),
-    boot_config_sha256=_canonical_sha256({
-        "network": "none",
-        "platform": "systrap",
-        "rootfs_format": "ucloud-overlay2-rootfs-v1",
-        "quota_layout": "storage-native-v1",
-        "runtime": "fake-runsc-v1",
-    }),
-    rootfs_sha256="0" * 64,
-)
+# A fake pool of NBD devices: the image store's device budget and metrics.
+ENVIRONMENT_BLOCK_DEVICES = 16
+
+
+def fingerprint(rootfs_format: str) -> HibernationRuntimeFingerprint:
+    """One fleet-wide fingerprint per image store, like one pinned runsc on
+    every node: nodes stay migration-compatible although each has its own
+    wrapper file. The rootfs format is ``build_direct_runtime_service``'s."""
+    return HibernationRuntimeFingerprint(
+        runsc_sha256=hashlib.sha256((HARNESS / "fake_runsc.py").read_bytes()).hexdigest(),
+        runsc_commit="f" * 40,
+        platform="systrap",
+        architecture=os.uname().machine,
+        page_size=os.sysconf("SC_PAGE_SIZE"),
+        cpu_features_sha256=hashlib.sha256(b"fake-runsc-cpu").hexdigest(),
+        boot_config_sha256=_canonical_sha256({
+            "network": "none",
+            "platform": "systrap",
+            "rootfs_format": rootfs_format,
+            "quota_layout": "storage-native-v1",
+            "runtime": "fake-runsc-v1",
+        }),
+        rootfs_sha256="0" * 64,
+    )
+
+
+FINGERPRINT = fingerprint("ucloud-overlay2-rootfs-v1")
+ENVIRONMENT_FINGERPRINT = fingerprint(HOST_EROFS_ABI)
 
 
 def fixed_metrics() -> NodeRuntimeMetrics:
@@ -99,6 +114,56 @@ class NodeAgentConfig:
     # Node admission in a real noded (LocalFleet(rust_admission=True)): noded
     # owns the registry and this agent is a foreign writer, as in production.
     rust_admission: bool = False
+    # Environment images (LocalFleet(environments=True)): the registry, its
+    # environments repository and trusted keys (key id -> raw key, hex), and
+    # this node's environment backend socket and fake mount table.
+    environment_registry_url: str = ""
+    environment_repository: str = ""
+    environment_trusted_keys: dict = field(default_factory=dict)
+    environment_backend_socket: str = ""
+    mount_table: str = ""
+
+
+class FakeMountRunner:
+    """Runs the image store's mount commands on this node's fake binaries.
+
+    ``env -C dir VAR=value mount ...`` (a composed image's mount) keeps the
+    real ``env``, so relative lowers resolve as they do in production.
+    """
+
+    commands = ("mount", "umount", "mountpoint")
+
+    def __init__(self, bin_dir: Path) -> None:
+        self.bin = bin_dir
+        self.runner = SubprocessCommandRunner()
+
+    def run(self, argv, *, timeout: float):
+        argv = [str(item) for item in argv]
+        index = 0
+        if argv[0] == "env":
+            index = next(position for position, item in enumerate(argv) if item in self.commands)
+        if argv[index] not in self.commands:
+            raise ValueError(f"the harness image store runs only {self.commands}: {argv}")
+        argv[index] = str(self.bin / argv[index])
+        return self.runner.run(argv, timeout=timeout)
+
+
+def environment_rootfs_store(config: NodeAgentConfig, *, referenced) -> EnvironmentRootfsStore:
+    """The production immutable image store, as ``build_direct_runtime_service``
+    builds it, with the fake mount binaries, a fixed device pool and
+    ``referenced(path)`` for the kernel's overlay dependencies: whether the
+    fake mount table names ``path`` as a lower (``fake_mount.has_dependents``,
+    which this module may not import)."""
+    registry = EnvironmentArtifactRegistry(
+        RegistryClient(config.environment_registry_url), config.environment_repository,
+        {key: bytes.fromhex(value) for key, value in config.environment_trusted_keys.items()},
+    )
+    return EnvironmentRootfsStore(
+        Path(config.state_root) / "image-cache", registry,
+        EnvironmentBackendClient(Path(config.environment_backend_socket)),
+        runner=FakeMountRunner(Path(config.bin)), referenced=referenced,
+        block_devices=ENVIRONMENT_BLOCK_DEVICES,
+    )
 
 
 def assemble_node_agent(config: NodeAgentConfig, *, rootfs_store, fencer, sample_metrics):
@@ -121,7 +186,8 @@ def assemble_node_agent(config: NodeAgentConfig, *, rootfs_store, fencer, sample
             memory_root=Path(config.volumes),
             bundle_root=state_root / "bundles",
             journal_root=state_root / "journals",
-            runtime_fingerprint=FINGERPRINT,
+            runtime_fingerprint=(ENVIRONMENT_FINGERPRINT if rootfs_store.backend_abi == HOST_EROFS_ABI
+                                 else FINGERPRINT),
             proc_root=Path(config.proc_root),
             network="none",
             command_timeout_seconds=30.0,

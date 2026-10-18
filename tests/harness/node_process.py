@@ -16,6 +16,7 @@ children die with it: an aborted test run leaves no agent serving.
 """
 
 import ctypes
+from functools import partial
 import json
 import os
 from pathlib import Path
@@ -26,7 +27,8 @@ import traceback
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from assembly import NodeAgentConfig, assemble_node_agent, fixed_metrics  # noqa: E402
+from assembly import NodeAgentConfig, assemble_node_agent, environment_rootfs_store, fixed_metrics  # noqa: E402
+from fake_mount import has_dependents  # noqa: E402
 from images import ImageCatalog, LocalRootfsStore  # noqa: E402
 from pidfd import SyscallPidfdFencer, native_pidfd_available  # noqa: E402
 
@@ -37,7 +39,9 @@ def serve(config: dict, ready_path: str, catalog_root: str) -> int:
     agent = NodeAgentConfig(**config)
     server, _service = assemble_node_agent(
         agent,
-        rootfs_store=LocalRootfsStore(
+        rootfs_store=environment_rootfs_store(
+            agent, referenced=partial(has_dependents, Path(agent.mount_table)),
+        ) if agent.environment_registry_url else LocalRootfsStore(
             Path(agent.state_root) / "image-cache", ImageCatalog(Path(catalog_root))
         ),
         fencer=None if native_pidfd_available() else SyscallPidfdFencer(proc_root=Path(agent.proc_root)),

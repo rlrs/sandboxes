@@ -7,8 +7,8 @@ thread, on an interval no scenario reaches: `node.start()` returns once the
 gateway accepted a heartbeat from the new agent, and `fleet.heartbeat()` makes
 every sender send one more and requires the gateway to accept it. Each node
 runs the real `DirectSandboxService`, provisioner, registry,
-`DirectRunscWarden`, hibernation journal, `OverlayRootfsManager` and
-storage-native service over its unix socket. Routing is SQLite, or
+`DirectRunscWarden`, hibernation journal, `OverlayRootfsManager`,
+`EnvironmentRootfsStore` and storage-native service over its unix socket. Routing is SQLite, or
 PostgreSQL through the production descriptor with `LocalFleet(postgres=True)`
 and `UCLOUD_TEST_POSTGRES_DSN`. It needs no root, runsc, Docker, ublk or
 network. Fleet roots live on `/dev/shm` when it allows exec, because commit
@@ -27,10 +27,15 @@ zygote, which exits with the test process.
 | --- | --- | --- |
 | patched `runsc` | `fake_runsc.py` behind `bin/runsc` | `DirectRunscWardenConfig.runsc` |
 | `/proc` provenance | `proc/<pid>/{stat,cmdline,exe}` symlinks to the real `/proc`, plus a fake `cgroup` line and `boot_id` | `DirectRunscWardenConfig.proc_root` |
-| overlayfs `mount`/`umount`/`mountpoint` | `fake_mount.py` behind `bin/` wrappers | `OverlayRootfsManager(mount_binary=…)` |
+| overlayfs `mount`/`umount`/`mountpoint`, `mount --bind` | `fake_mount.py` behind `bin/` wrappers | `OverlayRootfsManager(mount_binary=…)`, `EnvironmentRootfsStore(runner=assembly.FakeMountRunner)` |
+| kernel overlay lower references | `fake_mount.has_dependents` over the fake mount table | `EnvironmentRootfsStore(referenced=)` |
 | ublk/overlaybd devices, mkfs/mount/freeze | `storage.FakeBlockBackend`, `storage.FakeStorageHost` | `StorageNativeNodeService(backend=, host=)` |
-| Docker overlay2 image store | `images.ImageCatalog` + `images.LocalRootfsStore` | `OverlayRootfsManager(image_store)` |
-| `docker pull` | `DockerImageRuntime(dry_run=True)` | `build_direct_node_agent_server(image_runtime=)` |
+| managed OCI registry | `environments.FakeOciRegistry`, real HTTP | `RegistryClient(url)` |
+| trusted environment builder | `environments.EnvironmentPublisher`, from `fleet.catalog.add` | the registry |
+| artifact-I/O backend (NBD + EROFS) | `environments.FakeEnvironmentBackend`: components unpacked from signed tars, behind the real `EnvironmentBackendServer` | `EnvironmentBackendClient(socket)` |
+| `/dev/nbd*` pool | 16 devices | `EnvironmentRootfsStore(block_devices=)` |
+| Docker overlay2 image store (`environments=False`) | `images.ImageCatalog` + `images.LocalRootfsStore` | `OverlayRootfsManager(image_store)` |
+| `docker pull` (`environments=False`) | `DockerImageRuntime(dry_run=True)` | `build_direct_node_agent_server(image_runtime=)` |
 | host CPU/memory sampling | `node.sample_metrics()`, a fixed sample unless the test sets it; read uncached | `runtime_metrics_provider=` |
 | `os.pidfd_open` (missing in uv's Python 3.10) | `pidfd.SyscallPidfdFencer`, the same syscalls through libc | `DirectRunscWarden(fencer=)`, only when missing |
 
@@ -54,6 +59,20 @@ content only through the overlay and storage seal. `tar rootfs-upper` writes
 the rootfs's difference from its lower, deletions as 0:0 character devices
 (C3.1 commit); it includes the node's host-written files, which runsc keeps
 below the Sentry's upper.
+
+**Images.** By default images are signed, immutable environments, as in
+production. `fleet.catalog.add(name, files, toolkits=[...])` publishes the
+base and each toolkit as a signed component, the components as a signed
+root, and annotates the image's OCI manifest with it, on the fleet's
+registry; sandboxes name it by `fleet.catalog.ref(name)` (the default image
+is `fleet.image`). Each node runs the production `EnvironmentRootfsStore`,
+which resolves and authenticates the root over HTTP and asks its backend to
+attach each component. The backend authenticates the component, checks the
+image digest and unpacks it, where production would attach EROFS on NBD.
+One component is bind-mounted; several are a read-only overlay. Like the
+storage daemon, the backend outlives agent restarts. `LocalFleet(environments=False)`
+keeps the legacy local image store, for tests whose images or roots live
+elsewhere.
 
 **Storage.** The journal, fencing, protocol and client are production code.
 A device is a directory whose entries are renamed into the mountpoint on mount
@@ -93,6 +112,8 @@ direct probe; the rest of an autoscaler cycle is not modeled yet.
   fault injection; the Warden itself never issues them.
 - Split memory backing, RAM or reflink restore, published or compacted storage
   layers, snapshot publication, migration and checkpoint registries.
+- EROFS, per-layer and RAFS (chunk-store) components, nydusd, prefetch and
+  the backend's block cache; a component image is a tar.
 - Host reboots beyond guest processes and the boot ID. Mount tables, storage
   devices and checkpoint memory images survive `node.reboot()`.
 - Resident memory sampling (no sandbox cgroup) and disk-quota enforcement.
@@ -120,7 +141,10 @@ node registry (`node.registration`), the runtime state file
 (`node.runsc_state`), surviving sentries (`node.live_sentries()`), storage
 devices (`node.storage_backend.devices`), requests a node received
 (`node.requests`), routing-store calls the gateway made
-(`with fleet.routing_calls() as calls`), and files under the node root. Add
-images with `fleet.catalog.add(ref, {path: bytes})`. Teach a fake a new runsc
+(`with fleet.routing_calls() as calls`), the mount table (`node.mounts()`),
+components a backend attached (`node.environment_backend.attached`), and
+files under the node root. Add images with
+`fleet.catalog.add(name, {path: bytes})` and create from
+`fleet.catalog.ref(name)`. Teach a fake a new runsc
 flag only together with its semantics. The fakes reject any invocation they
 do not model.

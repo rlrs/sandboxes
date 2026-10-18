@@ -16,7 +16,7 @@ import unittest
 
 from tests.harness import LocalFleet, process_alive
 
-SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
+SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 
 
 def in_background(call):
@@ -41,7 +41,7 @@ class DeleteRaceTests(unittest.TestCase):
             node = fleet.nodes[0]
             node.arm_fault("create", "hang", sandbox_id="alpha")
             create, created = in_background(lambda: fleet.request(
-                "POST", "/v1/sandboxes", payload={"id": "alpha", **SPEC}, token="sandbox"))
+                "POST", "/v1/sandboxes", payload={"id": "alpha", **SPEC, "image": fleet.image}, token="sandbox"))
             node.wait_hung("create")
             self.assertEqual((fleet.route("alpha").state, node.registration("alpha").phase),
                              ("creating", "rootfs_ready"))

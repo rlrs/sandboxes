@@ -24,7 +24,7 @@ from tests.harness import LocalFleet, process_alive
 from sandboxes.control_state import QUARANTINE_REASON
 from sandboxes.models import utc_now
 
-SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
+SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 
 
 def in_background(call) -> threading.Thread:
@@ -211,7 +211,7 @@ class WorkerLossTests(unittest.TestCase):
             fleet.create("ghost")
             # The gateway forgets a route whose registration the worker keeps.
             fleet.gateway.RequestHandlerClass.routing_store.delete_sandbox("ghost")
-            again = fleet.request("POST", "/v1/sandboxes", payload={"id": "ghost", **SPEC}, token="sandbox")
+            again = fleet.request("POST", "/v1/sandboxes", payload={"id": "ghost", **SPEC, "image": fleet.image}, token="sandbox")
             self.assertEqual(again.status, 409, again.body)
             self.assertEqual({key: again.json()[key] for key in ("error_code", "retryable")},
                              {"error_code": "sandbox_registration_conflict", "retryable": False})
@@ -238,7 +238,7 @@ class WorkerLossTests(unittest.TestCase):
 
             # What the autoscaler does when provider readiness is unverified.
             store.quarantine_node(node.job_id, "provider_readiness_unverified")
-            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "gamma", **SPEC}, token="sandbox")
+            refused = fleet.request("POST", "/v1/sandboxes", payload={"id": "gamma", **SPEC, "image": fleet.image}, token="sandbox")
             self.assertEqual(refused.status, 503, refused.body)
             self.assertEqual((refused.json()["error_code"], refused.json()["retryable"]), ("no_ready_node", True))
             self.assertEqual(fleet.exec("alpha", ["cat", "/opt/greeting"]).stdout, "hello from the image\n")
