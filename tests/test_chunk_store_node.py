@@ -110,6 +110,18 @@ class ChunkStoreNodeTests(unittest.TestCase):
             ChunkStoreClient(store.url, READ).warm([{"key": key}])
         self.assertEqual(caught.exception.status_code, 401)
 
+    def test_stopping_closes_idle_keep_alive_connections(self):
+        import http.client
+        store = StoreNode(self, self.objects, self.root)
+        connection = http.client.HTTPConnection("127.0.0.1", store.server.server_address[1], timeout=5)
+        self.addCleanup(connection.close)
+        connection.request("GET", "/v1/metrics", headers={"Authorization": "Bearer " + READ})
+        response = connection.getresponse()
+        response.read()
+        self.assertEqual(response.status, 200)
+        store.stop()
+        self.assertEqual(connection.sock.recv(1), b"")  # The server hung up; it did not wait for the client.
+
     def test_a_slow_disk_read_never_stalls_other_requests(self):
         # A replica on a Volume: a cold read takes milliseconds. It is faulted in
         # on a read thread, never on the loop that serves every other request.
