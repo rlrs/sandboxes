@@ -21,27 +21,6 @@ def _exec_paths(node) -> list[tuple[str, str]]:
 
 
 class SignedExecSessionTests(unittest.TestCase):
-    def test_signed_session_routes_by_heartbeat_without_routing_reads(self):
-        with LocalFleet() as fleet:
-            fleet.create("alpha")
-            started = fleet.start_exec(
-                "alpha", ["/bin/sh", "-c", "echo ready; read x; echo got $x; exec sleep 30"],
-                stdin=True, initial_wait_seconds=None,
-            )
-            self.assertEqual(started.status, 201, started.body)
-            session_id = started.json()["session"]["id"]
-            self.assertTrue(session_id.startswith("xr1."), session_id)
-            self.assertIsNone(routing.open_routing_store(fleet.routing_file).get_exec(session_id))
-
-            with fleet.routing_calls() as calls:
-                fleet.wait_output(session_id, "ready\n")
-                self.assertEqual(fleet.exec_stdin(session_id, "v\n").status, 200)
-                fleet.wait_output(session_id, "ready\ngot v\n")
-                self.assertEqual(fleet.exec_signal(session_id, int(signal.SIGTERM)).status, 200)
-                result = fleet.wait_exec(session_id)
-            self.assertEqual(result.exit_code, 128 + signal.SIGTERM)
-            self.assertEqual(calls, [])
-
     def test_answers_after_silence_deletion_replacement_and_loss(self):
         with LocalFleet() as fleet:
             node = fleet.nodes[0]

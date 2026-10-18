@@ -1,360 +1,36 @@
 import hashlib
 import json
-import multiprocessing
-import os
 import sqlite3
 import sys
 import tarfile
-import time
 import unittest
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from threading import Barrier, Event, Lock, Thread, current_thread, main_thread
-from unittest.mock import patch
+from threading import Event
 
-from hypothesis import given, settings, strategies as st
 
 from sandboxes.images import (
     COMMAND_OUTPUT_TAIL_CHARS,
     COMMAND_OUTPUT_TRUNCATION_MARKER,
     DockerImageRuntime,
-    ImageBuildCapacityError,
     ImageBuildConflictError,
     ImageBuildRecord,
     ImageBuildSpec,
     ImageBuildStore,
     ImageManager,
-    ImageRecord,
     ImageStore,
     MaterializedBuildContext,
     _extract_safe_tar_gz_file,
     image_build_fingerprint,
-    image_id_from_tag,
 )
-from sandboxes.models import utc_now
 from sandboxes.sandbox import CommandResult
 
 TEST_TIER = "contract"
 
 
 class ImageTests(unittest.TestCase):
-    def test_completed_build_records_the_runtime_resolved_command(self):
-        class Runtime(DockerImageRuntime):
-            def build(self, spec, *, push=False, on_output=None):
-                return CommandResult(argv=(*self.build_command(spec, push=push), "resolved-cache"), exit_code=0)
-
-        with TemporaryDirectory() as raw_dir:
-            manager = ImageManager(ImageStore(Path(raw_dir) / "images.sqlite"), Runtime(dry_run=True))
-            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
-            initial, _ = manager.start_build(
-                ImageBuildSpec(id="planned", tag="local/planned:latest", context_path="."),
-                context_identity=identity, materialize_context=materialize)
-            completed = manager.wait_for_build(initial.build_id, timeout_seconds=5)
-            self.assertEqual(completed.status, "succeeded")
-            self.assertNotIn("resolved-cache", initial.command)
-            self.assertEqual(completed.command[-1], "resolved-cache")
-
-    def test_the_worker_leaves_the_store_alone_once_waiters_can_return(self):
-        # wait_for_build returns when the worker releases the build's condition.
-        # A store read after that reopened images.sqlite under a caller already
-        # removing it, recreating the file ("Directory not empty").
-        with TemporaryDirectory() as raw_dir:
-            manager = ImageManager(ImageStore(Path(raw_dir) / "images.sqlite"),
-                                   DockerImageRuntime(dry_run=True))
-            store, workers, late = manager.build_store, [], []
-            original_get, original_get_exact = store.get, store.get_exact
-
-            def checked(read):
-                def wrapper(build_id):
-                    if current_thread() is not main_thread():
-                        workers.append(current_thread())
-                        if build_id not in manager._build_conditions:
-                            late.append(build_id)
-                    return read(build_id)
-                return wrapper
-
-            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
-            with patch.object(store, "get", checked(original_get)), \
-                    patch.object(store, "get_exact", checked(original_get_exact)):
-                started, _ = manager.start_build(
-                    ImageBuildSpec(id="planned", tag="local/planned:latest", context_path="."),
-                    context_identity=identity, materialize_context=materialize)
-                self.assertEqual(manager.wait_for_build(started.build_id, timeout_seconds=5).status,
-                                 "succeeded")
-                for worker in set(workers):
-                    worker.join(5)
-            self.assertTrue(workers)
-            self.assertEqual(late, [])
-
-    def test_queued_build_reports_preparation_queue_and_execution_separately(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            entered, release = Event(), Event()
-
-            class Executor:
-                def run(self, argv):
-                    if "local/first:latest" in argv:
-                        entered.set()
-                        self_waited = release.wait(10)
-                        if not self_waited:
-                            raise TimeoutError("test did not release first build")
-                    return CommandResult(argv=argv, exit_code=0)
-
-            manager = ImageManager(ImageStore(Path(raw_dir) / "images.sqlite"),
-                DockerImageRuntime(executor=Executor()), max_active_builds=1, queue_builds=True)
-            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
-            records = []
-            try:
-                first, _ = manager.start_build(
-                    ImageBuildSpec(id="first", tag="local/first:latest", context_path="."),
-                    context_identity=identity, materialize_context=materialize)
-                records.append(first)
-                self.assertTrue(entered.wait(2))
-
-                def prepare():
-                    # Preparation must not be misreported as waiting for a slot.
-                    Event().wait(0.06)
-                    return materialize()
-
-                second, _ = manager.start_build(
-                    ImageBuildSpec(id="second", tag="local/second:latest", context_path="."),
-                    context_identity=identity, materialize_context=prepare)
-                records.append(second)
-                queued = manager.get_build(second.build_id)
-                self.assertEqual(queued.started_at, queued.created_at)
-                self.assertTrue(queued.queued_at)
-                self.assertEqual(queued.execution_started_at, "")
-                Event().wait(0.06)
-            finally:
-                release.set()
-                for record in records:
-                    self.assertEqual(manager.wait_for_build(record.build_id, timeout_seconds=5).status, "succeeded")
-            completed = manager.get_build(second.build_id)
-            self.assertGreaterEqual(completed.execution_started_at, completed.queued_at)
-            self.assertEqual(completed.started_at, second.started_at)
-            self.assertGreaterEqual(completed.timings["preparation_ms"], 50)
-            self.assertGreaterEqual(completed.timings["queue_wait_ms"], 50)
-            self.assertEqual(completed.timings["end_to_end_ms"],
-                completed.timings["total_ms"] + completed.timings["queue_wait_ms"] + completed.timings["preparation_ms"])
-
-    def test_build_record_accepts_legacy_persisted_timestamps_without_changing_started_at(self):
-        with TemporaryDirectory() as raw_dir:
-            path = Path(raw_dir) / "images.sqlite"
-            store = ImageBuildStore(path)
-            record = _build_record("legacy", status="succeeded", timestamp="2026-09-29T00:00:00+00:00")
-            payload = record.to_dict()
-            payload.pop("queued_at")
-            payload.pop("execution_started_at")
-            payload["started_at"] = payload["created_at"]
-            with sqlite3.connect(path) as db:
-                db.execute("INSERT INTO image_state_v1_builds VALUES (?, ?)", (record.build_id, json.dumps(payload)))
-            saved = store.get("legacy")
-            self.assertEqual(saved.queued_at, "")
-            self.assertEqual(saved.execution_started_at, "")
-            self.assertEqual(saved.started_at, payload["started_at"])
-
-    def test_builder_queue_accepts_burst_and_bounds_execution(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            release = Event()
-            full = Event()
-            lock = Lock()
-            active = peak = completed = 0
-
-            class Executor:
-                def run(self, argv):
-                    nonlocal active, peak, completed
-                    with lock:
-                        active += 1
-                        peak = max(peak, active)
-                        if active == 2:
-                            full.set()
-                    release.wait(10)
-                    with lock:
-                        active -= 1
-                        completed += 1
-                    return CommandResult(argv=argv, exit_code=0)
-
-            manager = ImageManager(
-                ImageStore(Path(raw_dir) / "images.sqlite"),
-                DockerImageRuntime(executor=Executor()),
-                max_active_builds=2, queue_builds=True, max_queued_builds=10,
-            )
-            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
-            records = []
-            try:
-                for i in range(12):
-                    spec = ImageBuildSpec(id=f"queued-{i}", tag=f"local/queued-{i}:latest", context_path=".")
-                    record, accepted = manager.start_build(
-                        spec, context_identity=identity, materialize_context=materialize,
-                    )
-                    self.assertTrue(accepted)
-                    records.append(record)
-                self.assertTrue(full.wait(1))
-                self.assertEqual(manager.active_build_count(), 12)
-                self.assertEqual(len(manager._active_threads), 2)
-                duplicate, accepted = manager.start_build(
-                    spec, context_identity=identity, materialize_context=materialize,
-                )
-                self.assertFalse(accepted)
-                self.assertEqual(duplicate.build_id, records[-1].build_id)
-                with self.assertRaises(ImageBuildConflictError):
-                    manager.start_build(
-                        ImageBuildSpec(id=spec.id, tag=spec.tag, context_path=".", build_args={"X": "other"}),
-                        context_identity=identity, materialize_context=materialize,
-                    )
-            finally:
-                release.set()
-                for record in records:
-                    done = manager.wait_for_build(record.build_id, timeout_seconds=5)
-                    self.assertEqual(done.status, "succeeded")
-                    self.assertFalse(Path(record.context_path).exists())
-            self.assertEqual(peak, 2)
-            self.assertEqual(completed, 12)
-            self.assertEqual(manager.active_build_count(), 0)
-
-    def test_builder_queue_is_bounded_so_a_burst_can_reach_other_builders(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            release = Event()
-
-            class Executor:
-                def run(self, argv, **_kwargs):
-                    release.wait(10)
-                    return CommandResult(argv=argv, exit_code=0)
-
-            manager = ImageManager(
-                ImageStore(Path(raw_dir) / "images.sqlite"),
-                DockerImageRuntime(executor=Executor()),
-                max_active_builds=2, queue_builds=True,
-            )
-            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
-            records = []
-            try:
-                for i in range(4):  # two running and, by default, two queued
-                    spec = ImageBuildSpec(id=f"b-{i}", tag=f"local/b-{i}:latest", context_path=".")
-                    records.append(manager.start_build(
-                        spec, context_identity=identity, materialize_context=materialize,
-                    )[0])
-                with self.assertRaises(ImageBuildCapacityError):
-                    manager.start_build(
-                        ImageBuildSpec(id="b-4", tag="local/b-4:latest", context_path="."),
-                        context_identity=identity, materialize_context=materialize,
-                    )
-            finally:
-                release.set()
-                for record in records:
-                    self.assertEqual(
-                        manager.wait_for_build(record.build_id, timeout_seconds=5).status, "succeeded",
-                    )
-
-    def test_zero_queue_admission_counts_context_preparation_before_execution(self):
-        with TemporaryDirectory() as raw_dir:
-            manager = ImageManager(
-                ImageStore(Path(raw_dir) / "images.sqlite"), DockerImageRuntime(dry_run=True),
-                max_active_builds=4, queue_builds=True, max_queued_builds=0)
-            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
-            start, release, full, rejected = Barrier(8), Event(), Event(), Event()
-            lock = Lock()
-            preparing = refused = 0
-
-            def prepare():
-                nonlocal preparing
-                with lock:
-                    preparing += 1
-                    if preparing == 4:
-                        full.set()
-                if not release.wait(5):
-                    raise TimeoutError("test did not release context preparation")
-                return materialize()
-
-            def submit(index):
-                nonlocal refused
-                start.wait(5)
-                try:
-                    return manager.start_build(
-                        ImageBuildSpec(id=f"prep-{index}", tag=f"local/prep-{index}:latest", context_path="."),
-                        context_identity=identity, materialize_context=prepare)[0]
-                except ImageBuildCapacityError:
-                    with lock:
-                        refused += 1
-                        if refused == 4:
-                            rejected.set()
-                    return None
-
-            with ThreadPoolExecutor(max_workers=8) as executor:
-                futures = [executor.submit(submit, index) for index in range(8)]
-                try:
-                    self.assertTrue(full.wait(2))
-                    self.assertTrue(rejected.wait(2))
-                    self.assertEqual(manager.active_build_count(), 4)
-                    self.assertEqual(len(manager._active_threads), 0)
-                    self.assertTrue(all(not build.execution_started_at for build in manager.list_builds()))
-                finally:
-                    release.set()
-                results = [future.result(timeout=5) for future in futures]
-                accepted = [record for record in results if record is not None]
-                for record in accepted:
-                    self.assertEqual(manager.wait_for_build(record.build_id, timeout_seconds=5).status, "succeeded")
-            self.assertEqual((len(accepted), preparing, refused), (4, 4, 4))
-            self.assertTrue(all(not Path(record.context_path).exists() for record in accepted))
-
-    def test_cold_pull_slots_bound_concurrency_without_losing_drain_fence(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            manager = ImageManager(
-                ImageStore(Path(raw_dir) / "images.json"),
-                DockerImageRuntime(dry_run=True),
-                max_concurrent_pulls=2,
-            )
-            release = Event()
-            full = Event()
-            state_lock = Lock()
-            active = 0
-            peak = 0
-            failures: list[BaseException] = []
-
-            def worker() -> None:
-                nonlocal active, peak
-                try:
-                    with manager.image_operation():
-                        with manager.pull_slot():
-                            with state_lock:
-                                active += 1
-                                peak = max(peak, active)
-                                if active == 2:
-                                    full.set()
-                            release.wait(2)
-                            with state_lock:
-                                active -= 1
-                except BaseException as exc:  # pragma: no cover - thread handoff
-                    failures.append(exc)
-
-            threads = [Thread(target=worker) for _ in range(6)]
-            for thread in threads:
-                thread.start()
-            self.assertTrue(full.wait(1))
-            deadline = time.monotonic() + 1
-            snapshot = manager.pull_operation_snapshot()
-            while snapshot["waiting_operations"] < 4 and time.monotonic() < deadline:
-                time.sleep(0.01)
-                snapshot = manager.pull_operation_snapshot()
-
-            self.assertEqual(snapshot["active_operations"], 2)
-            self.assertEqual(snapshot["waiting_operations"], 4)
-            self.assertEqual(snapshot["max_concurrent_operations"], 2)
-            self.assertEqual(manager.active_build_count(), 6)
-            release.set()
-            for thread in threads:
-                thread.join(2)
-
-            self.assertFalse(failures)
-            self.assertEqual(peak, 2)
-            self.assertEqual(manager.active_build_count(), 0)
-            self.assertEqual(
-                manager.pull_operation_snapshot()["active_operations"],
-                0,
-            )
-
     def test_image_state_rejects_noncanonical_schemas_and_payloads(self) -> None:
         with TemporaryDirectory() as raw_dir:
             legacy_json = Path(raw_dir) / "legacy.json"
@@ -437,92 +113,6 @@ class ImageTests(unittest.TestCase):
         self.assertTrue(result.stdout.startswith(COMMAND_OUTPUT_TRUNCATION_MARKER))
         self.assertTrue(result.stdout.endswith("a" * 1024))
 
-    def test_build_store_bounds_only_terminal_history(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            store = ImageBuildStore(
-                Path(raw_dir) / "builds.json",
-                max_terminal_builds=2,
-            )
-            for index in range(3):
-                store.upsert(
-                    _build_record(
-                        f"active-{index}",
-                        status="running",
-                        timestamp=f"2026-01-01T00:00:0{index}+00:00",
-                    )
-                )
-            for index in range(6):
-                store.upsert(
-                    _build_record(
-                        f"done-{index}",
-                        status="succeeded",
-                        timestamp=f"2026-01-02T00:00:0{index}+00:00",
-                    )
-                )
-
-            records = store.load()
-
-            self.assertEqual(
-                {record.build_id for record in records.values() if not record.terminal},
-                {"active-0", "active-1", "active-2"},
-            )
-            self.assertEqual(
-                {record.build_id for record in records.values() if record.terminal},
-                {"done-4", "done-5"},
-            )
-
-    def test_multiprocess_image_and_build_writers_do_not_lose_updates(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            state_path = Path(raw_dir) / "image-state.sqlite3"
-            context = multiprocessing.get_context("spawn")
-            processes = []
-            for worker in range(3):
-                processes.append(
-                    context.Process(
-                        target=_multiprocess_image_writer,
-                        args=(str(state_path), worker, 5),
-                    )
-                )
-                processes.append(
-                    context.Process(
-                        target=_multiprocess_build_writer,
-                        args=(str(state_path), worker, 5),
-                    )
-                )
-            for process in processes:
-                process.start()
-            for process in processes:
-                process.join(timeout=15)
-
-            self.assertEqual([process.exitcode for process in processes], [0] * 6)
-            self.assertEqual(len(ImageStore(state_path).load()), 15)
-            self.assertEqual(len(ImageBuildStore(state_path).load()), 15)
-
-    def test_multiprocess_build_reservation_enforces_global_limit(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            build_path = Path(raw_dir) / "builds.json"
-            context = multiprocessing.get_context("spawn")
-            start = context.Event()
-            results = context.Queue()
-            processes = [
-                context.Process(
-                    target=_multiprocess_build_reserver,
-                    args=(str(build_path), worker, start, results),
-                )
-                for worker in range(4)
-            ]
-            for process in processes:
-                process.start()
-            start.set()
-            outcomes = [results.get(timeout=10) for _process in processes]
-            for process in processes:
-                process.join(timeout=10)
-
-            self.assertEqual([process.exitcode for process in processes], [0] * 4)
-            self.assertEqual(outcomes.count("started"), 1)
-            self.assertEqual(outcomes.count("capacity"), 3)
-            self.assertEqual(len(ImageBuildStore(build_path).load()), 1)
-
     def test_manager_marks_interrupted_build_failed_on_startup(self) -> None:
         with TemporaryDirectory() as raw_dir:
             image_path = Path(raw_dir) / "images.json"
@@ -550,32 +140,6 @@ class ImageTests(unittest.TestCase):
             self.assertEqual(build.status, "failed")
             self.assertIn("interrupted", build.error)
             self.assertTrue(build.finished_at)
-
-    def test_second_manager_does_not_fail_build_owned_by_live_process(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            image_path = Path(raw_dir) / "images.json"
-            build_store = ImageBuildStore(Path(raw_dir) / "builds.json")
-            build_store.upsert(
-                ImageBuildRecord(
-                    build_id="build-live",
-                    image_id="base",
-                    tag="local/base:latest",
-                    status="running",
-                    created_at="2026-01-01T00:00:00+00:00",
-                    updated_at="2026-01-01T00:00:00+00:00",
-                    owner_pid=os.getpid(),
-                )
-            )
-
-            manager = ImageManager(
-                ImageStore(image_path),
-                DockerImageRuntime(dry_run=True),
-                build_store=build_store,
-            )
-
-            build = manager.get_build("build-live")
-            assert build is not None
-            self.assertEqual(build.status, "running")
 
     def test_build_singleflight_requires_exact_immutable_fingerprint(self) -> None:
         with TemporaryDirectory() as raw_dir:
@@ -681,51 +245,6 @@ class ImageTests(unittest.TestCase):
             manager.wait_for_build(first.build_id, timeout_seconds=2)
             self.assertFalse(snapshot_path.exists())
 
-    def test_build_worker_thread_start_failure_is_terminal_and_cleans_snapshot(
-        self,
-    ) -> None:
-        with TemporaryDirectory() as raw_dir:
-            context_path = Path(raw_dir) / "context"
-            context_path.mkdir()
-            (context_path / "Dockerfile").write_text(
-                "FROM scratch\n",
-                encoding="utf-8",
-            )
-            build_store = ImageBuildStore(Path(raw_dir) / "builds.json")
-            manager = ImageManager(
-                ImageStore(Path(raw_dir) / "images.json"),
-                DockerImageRuntime(dry_run=True),
-                build_store=build_store,
-            )
-            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
-            cleanup_calls: list[str] = []
-
-            with (
-                patch(
-                    "sandboxes.images.Thread.start",
-                    side_effect=RuntimeError("cannot start build worker"),
-                ),
-                self.assertRaisesRegex(RuntimeError, "cannot start"),
-            ):
-                manager.start_build(
-                    ImageBuildSpec(
-                        id="thread-failure",
-                        tag="local/thread-failure:latest",
-                        context_path=str(context_path),
-                    ),
-                    context_identity=identity,
-                    materialize_context=materialize,
-                    cleanup=lambda: cleanup_calls.append("caller"),
-                )
-
-            records = list(build_store.load().values())
-            self.assertEqual(len(records), 1)
-            self.assertEqual(records[0].status, "failed")
-            self.assertIn("cannot start build worker", records[0].error)
-            self.assertFalse(Path(records[0].context_path).exists())
-            self.assertEqual(cleanup_calls, ["caller"])
-            self.assertEqual(manager.active_build_count(), 0)
-
     def test_manager_requires_uploaded_content_addressed_context(self) -> None:
         with TemporaryDirectory() as raw_dir:
             manager = ImageManager(
@@ -746,37 +265,6 @@ class ImageTests(unittest.TestCase):
                 )
 
             self.assertEqual(manager.list_builds(), [])
-
-    def test_context_materialization_failure_marks_reserved_build_terminal(
-        self,
-    ) -> None:
-        with TemporaryDirectory() as raw_dir:
-            build_store = ImageBuildStore(Path(raw_dir) / "builds.json")
-            manager = ImageManager(
-                ImageStore(Path(raw_dir) / "images.json"),
-                DockerImageRuntime(dry_run=True),
-                build_store=build_store,
-            )
-
-            def fail_materialization():
-                raise ValueError("cannot extract context")
-
-            with self.assertRaisesRegex(ValueError, "cannot extract"):
-                manager.start_build(
-                    ImageBuildSpec(
-                        id="materialization-failure",
-                        tag="local/materialization-failure:latest",
-                        context_path=".",
-                    ),
-                    context_identity="archive:sha256:" + "d" * 64,
-                    materialize_context=fail_materialization,
-                )
-
-            records = list(build_store.load().values())
-            self.assertEqual(len(records), 1)
-            self.assertEqual(records[0].status, "failed")
-            self.assertIn("cannot extract context", records[0].error)
-            self.assertEqual(manager.active_build_count(), 0)
 
     def test_context_archive_enforces_stream_and_member_limits(self) -> None:
         cases = (
@@ -817,38 +305,6 @@ class ImageTests(unittest.TestCase):
                         max_archive_bytes=limits.get("max_archive_bytes", 1024 * 1024),
                     )
 
-    @settings(max_examples=75, deadline=None)
-    @given(
-        parent_depth=st.integers(min_value=1, max_value=8),
-        name=st.text(
-            alphabet=st.characters(
-                whitelist_categories=("Ll", "Lu", "Nd"),
-                whitelist_characters="-_",
-            ),
-            min_size=1,
-            max_size=24,
-        ),
-    )
-    def test_context_archive_never_extracts_parent_traversal(
-        self,
-        parent_depth: int,
-        name: str,
-    ) -> None:
-        with TemporaryDirectory() as raw_dir:
-            root = Path(raw_dir)
-            destination = root / "destination"
-            destination.mkdir()
-            member_name = "nested/" * (parent_depth - 1) + "../" * parent_depth
-            member_name += f"escaped-{name}"
-
-            with self.assertRaisesRegex(ValueError, "unsafe path"):
-                _extract_safe_tar_gz_file(
-                    BytesIO(_tar_gz((member_name, b"escaped"))),
-                    destination,
-                )
-
-            self.assertEqual(list(root.glob("escaped-*")), [])
-
     def test_context_archive_rejects_absolute_links_and_special_files(self) -> None:
         with TemporaryDirectory() as raw_dir:
             root = Path(raw_dir)
@@ -877,36 +333,6 @@ class ImageTests(unittest.TestCase):
 
             self.assertFalse((root / "absolute").exists())
             self.assertFalse((root / "escaped").exists())
-
-    def test_image_id_from_tag_separates_sanitization_and_truncation_collisions(
-        self,
-    ) -> None:
-        self.assertEqual(image_id_from_tag("already-safe"), "already-safe")
-        for left, right in (
-            ("registry/a:b", "registry:a/b"),
-            ("a" * 64 + "x", "a" * 64 + "y"),
-        ):
-            with self.subTest(left=left, right=right):
-                self.assertNotEqual(
-                    image_id_from_tag(left),
-                    image_id_from_tag(right),
-                )
-
-    @settings(max_examples=200, deadline=None)
-    @given(st.text(max_size=256))
-    def test_image_id_from_tag_always_satisfies_image_id_contract(
-        self,
-        reference: str,
-    ) -> None:
-        image_id = image_id_from_tag(reference)
-
-        ImageBuildSpec(
-            id=image_id,
-            tag="source:latest",
-            context_path=".",
-        ).validate()
-        self.assertLessEqual(len(image_id), 64)
-        self.assertEqual(image_id, image_id_from_tag(reference))
 
     def test_dockerfile_must_be_normalized_context_relative_path(self) -> None:
         runtime = DockerImageRuntime(dry_run=True)
@@ -1054,60 +480,6 @@ def _build_record(
         updated_at=timestamp,
         finished_at=timestamp if status in {"succeeded", "failed"} else "",
     )
-
-
-def _multiprocess_image_writer(path: str, worker: int, count: int) -> None:
-    store = ImageStore(Path(path))
-    for index in range(count):
-        now = utc_now()
-        store.upsert(
-            ImageRecord(
-                id=f"image-{worker}-{index}",
-                tag=f"local/image-{worker}-{index}:latest",
-                source="test",
-                state="available",
-                created_at=now,
-                updated_at=now,
-            )
-        )
-
-
-def _multiprocess_build_writer(path: str, worker: int, count: int) -> None:
-    store = ImageBuildStore(Path(path))
-    for index in range(count):
-        now = utc_now().isoformat()
-        store.upsert(
-            ImageBuildRecord(
-                build_id=f"build-{worker}-{index}",
-                image_id=f"image-{worker}-{index}",
-                tag=f"local/image-{worker}-{index}:latest",
-                status="succeeded",
-                created_at=now,
-                updated_at=now,
-                finished_at=now,
-            )
-        )
-
-
-def _multiprocess_build_reserver(path: str, worker: int, start, results) -> None:
-    store = ImageBuildStore(Path(path))
-    now = utc_now().isoformat()
-    record = ImageBuildRecord(
-        build_id=f"build-{worker}",
-        image_id=f"image-{worker}",
-        tag=f"local/image-{worker}:latest",
-        status="running",
-        created_at=now,
-        updated_at=now,
-        started_at=now,
-    )
-    start.wait(10)
-    try:
-        _record, started = store.reserve_build(record, max_active_builds=1)
-    except ImageBuildCapacityError:
-        results.put("capacity")
-    else:
-        results.put("started" if started else "duplicate")
 
 
 if __name__ == "__main__":

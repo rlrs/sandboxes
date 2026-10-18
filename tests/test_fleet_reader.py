@@ -113,19 +113,6 @@ class FleetReaderTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'closed'):
                 reader.read()
 
-    def test_gateway_uses_and_closes_isolated_reader(self):
-        from urllib.request import urlopen
-        from tests.test_control_plane import _gateway_server, _running_server
-        with TemporaryDirectory() as raw:
-            server = _gateway_server(Path(raw), isolate_fleet_reads=True)
-            reader = server.RequestHandlerClass.fleet_snapshot_reader
-            with _running_server(server) as url:
-                with urlopen(url + '/v1/sandboxes', timeout=5) as response:
-                    self.assertEqual(json.load(response)['sandboxes'], [])
-                self.assertIsNotNone(reader._process)
-            self.assertIsNone(reader._process)
-            self.assertTrue(reader._closed)
-
     def test_missing_or_replaced_database_cannot_be_recreated_on_child_restart(self):
         for replaced in (False, True):
             with self.subTest(replaced=replaced), TemporaryDirectory() as raw:

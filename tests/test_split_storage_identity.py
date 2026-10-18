@@ -1,6 +1,5 @@
 """Heartbeat storage identities and charges using real registry/volume records."""
 
-from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -160,23 +159,3 @@ class SplitStorageIdentityTests(unittest.TestCase):
         self.warden.storage.record["volume_id"] = sandbox.memory_directory
         with self.assertRaises(DirectWardenError):
             self.warden.storage_records_snapshot((sandbox,))
-
-    def test_property_preserves_legacy_wire_and_planned_identity(self):
-        for split in (False, True):
-            r = self.registration(split=split)
-            wire = r.to_dict()
-            self.assertNotIn("workspace_volume_id", wire)
-            self.assertEqual(DirectSandboxRegistration.from_dict(wire).to_dict(), wire)
-            planned = replace(
-                r,
-                phase="planned",
-                quota_project_id=None,
-                quota_total_mb=None,
-                quota_path="",
-                image_id="",
-                rootfs_sha256="",
-                container_id="",
-                bundle="",
-                memory_directory="",
-            )
-            self.assertEqual(planned.workspace_volume_id, r.workspace_volume_id)

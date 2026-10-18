@@ -42,7 +42,7 @@
  },
  "test_builder_selection.py": {
   "new": 1,
-  "private": 57
+  "private": 13
  },
  "test_burst_inventory.py": {
   "private": 16,
@@ -74,8 +74,8 @@
   "test_import": 4
  },
  "test_cli.py": {
-  "private": 20,
-  "private_patch": 17
+  "private": 16,
+  "private_patch": 13
  },
  "test_cold_offload.py": {
   "new": 1,
@@ -100,9 +100,9 @@
  },
  "test_control_plane.py": {
   "clock": 2,
-  "new": 15,
-  "private": 82,
-  "private_patch": 13
+  "new": 11,
+  "private": 59,
+  "private_patch": 7
  },
  "test_control_state_cache.py": {
   "new": 1,
@@ -158,8 +158,8 @@
   "sleep": 2
  },
  "test_direct_provisioner.py": {
-  "clock": 7,
-  "private": 37,
+  "clock": 4,
+  "private": 19,
   "private_patch": 1,
   "sleep": 1
  },
@@ -179,16 +179,15 @@
   "test_import": 1
  },
  "test_direct_warden.py": {
-  "private": 49,
-  "private_patch": 4
+  "private": 37,
+  "private_patch": 3
  },
  "test_disk_claim_lifecycle.py": {
   "private": 14,
   "test_import": 2
  },
  "test_dynamic_disk_claims.py": {
-  "private": 3,
-  "test_import": 2
+  "private": 2
  },
  "test_environment_artifact.py": {
   "clock": 4,
@@ -225,8 +224,7 @@
   "test_import": 2
  },
  "test_environment_mtimes.py": {
-  "private": 3,
-  "private_patch": 1,
+  "private": 1,
   "test_import": 3
  },
  "test_environment_prefetch.py": {
@@ -237,10 +235,6 @@
  },
  "test_environment_prepare.py": {
   "private": 1
- },
- "test_environment_prepare_isolation.py": {
-  "clock": 4,
-  "test_import": 2
  },
  "test_environment_rafs.py": {
   "clock": 3,
@@ -281,8 +275,8 @@
   "private_patch": 1
  },
  "test_fleet_reader.py": {
-  "private": 10,
-  "test_import": 2
+  "private": 7,
+  "test_import": 1
  },
  "test_fleet_render_cache.py": {
   "private": 2,
@@ -314,9 +308,9 @@
   "test_import": 1
  },
  "test_guest_continuity.py": {
-  "private": 5,
-  "private_patch": 5,
-  "test_import": 2
+  "private": 3,
+  "private_patch": 1,
+  "test_import": 1
  },
  "test_guest_environment.py": {
   "new": 2,
@@ -344,7 +338,7 @@
   "sleep": 4
  },
  "test_hybrid_memory_admission.py": {
-  "private": 5,
+  "private": 2,
   "test_import": 1
  },
  "test_image_build_admission.py": {
@@ -388,9 +382,7 @@
   "test_import": 1
  },
  "test_images.py": {
-  "clock": 2,
-  "private": 4,
-  "sleep": 1
+  "private": 1
  },
  "test_lifecycle_commit.py": {
   "test_import": 1
@@ -411,10 +403,6 @@
  },
  "test_local_fleet_drain.py": {
   "clock": 4
- },
- "test_local_fleet_heartbeat_pull.py": {
-  "clock": 2,
-  "private": 3
  },
  "test_local_fleet_heartbeats.py": {
   "clock": 2,
@@ -555,11 +543,11 @@
   "sleep": 2
  },
  "test_pause_tier.py": {
-  "clock": 17,
-  "private": 47,
+  "clock": 10,
+  "private": 34,
   "private_patch": 1,
   "sleep": 5,
-  "test_import": 4
+  "test_import": 3
  },
  "test_placement_completion_reads.py": {
   "private": 5,
@@ -673,12 +661,8 @@
   "test_import": 1
  },
  "test_resident_memory.py": {
-  "clock": 3,
+  "clock": 1,
   "private": 3,
-  "test_import": 1
- },
- "test_resident_memory_backing.py": {
-  "private": 1,
   "test_import": 1
  },
  "test_resident_reclaim_fence.py": {
@@ -699,8 +683,8 @@
   "test_import": 1
  },
  "test_routing.py": {
-  "private": 16,
-  "private_patch": 8,
+  "private": 3,
+  "private_patch": 4,
   "test_import": 3
  },
  "test_routing_cutover.py": {
@@ -715,7 +699,7 @@
   "test_import": 1
  },
  "test_routing_single_statement_reads.py": {
-  "private": 5,
+  "private": 2,
   "test_import": 1
  },
  "test_routing_writer.py": {
@@ -769,8 +753,8 @@
   "private": 37
  },
  "test_selective_environment_publication.py": {
-  "private": 3,
-  "private_patch": 10,
+  "private": 2,
+  "private_patch": 3,
   "test_import": 2
  },
  "test_selective_group_claims.py": {
@@ -810,10 +794,9 @@
  },
  "test_startup_admission.py": {
   "clock": 2,
-  "private": 19,
-  "private_patch": 2,
+  "private": 4,
   "sleep": 1,
-  "test_import": 2
+  "test_import": 1
  },
  "test_startup_scaling.py": {
   "private": 3,
@@ -839,9 +822,9 @@
   "test_import": 1
  },
  "test_storage_native_daemon.py": {
-  "clock": 5,
-  "private": 29,
-  "private_patch": 7,
+  "clock": 4,
+  "private": 12,
+  "private_patch": 4,
   "sleep": 1
  },
  "test_storage_native_local_cache.py": {

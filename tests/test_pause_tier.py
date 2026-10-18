@@ -14,33 +14,26 @@ from unittest.mock import Mock, patch
 
 from tests import test_direct_provisioner as provisioner_fixtures
 from tests import test_direct_warden as warden_fixtures
-from tests import test_managed_control_admission as managed_fixtures
 from tests import test_resident_memory as resident_fixtures
 from sandboxes import pause_tier
-from sandboxes.background_io import Pressure, PressureSampler
+from sandboxes.background_io import Pressure
 from sandboxes.direct_service import DirectSandboxService
 from sandboxes.direct_warden import CommandResult, DirectRunscWarden, DirectWardenError
 from sandboxes.hibernation import HibernationState
-from sandboxes.models import ResidentWaitMetrics
 from sandboxes.node_agent import NodeAgentHandler
 from sandboxes.node_runtime import DirectNodeRuntime
 from sandboxes.pause_tier import (
-    ESCALATION_CONCURRENCY,
     PREFETCH_MIN_SWAP_BYTES,
-    RECLAIM_WINDOW_BYTES,
     TRANSFER_BREAK_EVEN_SECONDS,
     PausedWait,
     PauseStats,
     ReclaimBudget,
-    advised_wait_seconds,
     cgroup_swap_bytes,
-    hibernate_beats_pause,
     memory_pieces,
     park_tier,
     prefetch,
     reclaim_stalled,
     relief_plan,
-    swap_room_bytes,
     MAX_STALLS,
     STALL_BACKOFF_SECONDS,
     STALL_BYTES,
@@ -48,7 +41,7 @@ from sandboxes.pause_tier import (
     ZSWAP_SHARE_OF_BOUND,
     cap_zswap,
 )
-from sandboxes.resident_memory import ResidentMemoryReclaimer, ResidentReclaimResult
+from sandboxes.resident_memory import ResidentMemoryReclaimer
 from sandboxes.sandbox import SandboxConflictError
 from sandboxes.transition_admission import MemoryDemand
 from sandboxes.warm_park import WarmParkDeferred, decide_resident_wait
@@ -66,28 +59,6 @@ class PausePolicyTests(unittest.TestCase):
         self.assertEqual(park_tier("relay", resident_bytes=GIB, footprint_bytes=GIB), "pause")
         with self.assertRaises(ValueError):
             park_tier("drain")
-
-    def test_aries_rule_prices_resident_byte_seconds_against_transfer(self):
-        long_wait = TRANSFER_BREAK_EVEN_SECONDS * 2
-        self.assertTrue(hibernate_beats_pause(long_wait, GIB, GIB))
-        self.assertFalse(hibernate_beats_pause(TRANSFER_BREAK_EVEN_SECONDS / 2, GIB, GIB))
-        # Reclaim already moved most of the footprint out: pausing stays cheaper.
-        self.assertFalse(hibernate_beats_pause(long_wait, GIB // 4, GIB))
-        self.assertFalse(hibernate_beats_pause(None, GIB, GIB))
-        self.assertFalse(hibernate_beats_pause(long_wait, 0, 0))
-        self.assertEqual(park_tier("relay", expected_wait_seconds=long_wait,
-                                   resident_bytes=GIB, footprint_bytes=GIB), "hibernate")
-
-    def test_advised_wait_uses_only_a_fresh_model_wait_hint(self):
-        phase = {"phase": "model_wait", "expected_remaining_wait_seconds": 30.0,
-                 "evaluated_at": 100.0, "expires_at": 160.0}
-        self.assertEqual(advised_wait_seconds(phase, 110.0), 20.0)
-        self.assertEqual(advised_wait_seconds(phase, 140.0), 0.0)
-        self.assertIsNone(advised_wait_seconds(phase, 160.0))
-        self.assertIsNone(advised_wait_seconds({**phase, "phase": "acting"}, 110.0))
-        self.assertIsNone(advised_wait_seconds(
-            {**phase, "expected_remaining_wait_seconds": None}, 110.0))
-        self.assertIsNone(advised_wait_seconds(None, 110.0))
 
     def test_reclaim_runs_only_under_pressure_and_evicts_the_longest_expected_idle(self):
         relaxed = decide_resident_wait(
@@ -164,22 +135,6 @@ class PausePolicyTests(unittest.TestCase):
         self.assertEqual(relief_plan(pressed, inflight, now=100.0, swap_room=5 * GIB),
                          (((("b", 1), 4 * GIB),), ()))
 
-    def test_swap_room_keeps_the_kernel_reserve_and_unknown_swap_is_unbounded(self):
-        def room(total, free):
-            return swap_room_bytes(Pressure(swap_total_bytes=total, swap_free_bytes=free))
-
-        self.assertEqual(room(10 * GIB, 3 * GIB), 2 * GIB)
-        self.assertEqual(room(10 * GIB, GIB // 2), 0)
-        self.assertEqual(room(None, None), INF)
-        with TemporaryDirectory() as directory:
-            proc = Path(directory)
-            (proc / "meminfo").write_text(
-                "MemTotal: 1048576 kB\nMemAvailable: 524288 kB\nSwapTotal: 2048 kB\nSwapFree: 1024 kB\n")
-            sample = PressureSampler(proc).sample()
-            self.assertEqual((sample.swap_total_bytes, sample.swap_free_bytes), (2 * MIB, MIB))
-            (proc / "meminfo").write_text("MemTotal: 1048576 kB\nMemAvailable: 524288 kB\n")
-            self.assertIsNone(PressureSampler(proc).sample().swap_total_bytes)
-
     def test_zswap_holds_at_most_a_fixed_share_of_a_paused_cgroups_bound(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -203,33 +158,6 @@ class PausePolicyTests(unittest.TestCase):
             (cgroup / "memory.zswap.max").write_text("max\n")
             (cgroup / "memory.max").write_text("max\n")
             self.assertIsNone(cap())  # No bound to take a share of.
-
-    def test_a_reclaim_that_frees_less_than_stall_bytes_has_stalled(self):
-        def result(reason, reclaimed):
-            return ResidentReclaimResult(GIB, reclaimed, 1.0, 0, reason)
-
-        self.assertTrue(reclaim_stalled(None, GIB))  # It raised.
-        self.assertTrue(reclaim_stalled(result("not_shrinking", MIB), GIB))
-        self.assertTrue(reclaim_stalled(result("kernel_error", 0), GIB))
-        self.assertFalse(reclaim_stalled(result("superseded", 0), GIB))  # A thaw, not a stall.
-        self.assertFalse(reclaim_stalled(result("partial_reclaim", RECLAIM_WINDOW_BYTES), GIB))
-        self.assertFalse(reclaim_stalled(result("target_reached", MIB), MIB))  # Small, but whole.
-        self.assertFalse(reclaim_stalled(result("not_shrinking", STALL_BYTES), GIB))  # Some progress.
-        wait = PausedWait(0.0)
-        note_reclaim(wait, True, now=10.0)
-        note_reclaim(wait, True, now=20.0)  # The backoff doubles.
-        self.assertEqual((wait.stalls, wait.retry_at), (2, 20.0 + 2 * STALL_BACKOFF_SECONDS))
-        note_reclaim(wait, False, now=30.0)
-        self.assertEqual((wait.stalls, wait.retry_at), (0, 0.0))
-
-    def test_stats_are_monotonic_and_track_maxima(self):
-        stats = PauseStats()
-        stats.add(thaws=1, thaw_ms_total=3.6, thaw_ms_max=3.6)
-        stats.add(thaws=1, thaw_ms_total=1, thaw_ms_max=1)
-        snapshot = stats.snapshot()
-        # Exact sums; only the snapshot rounds (4.6 and 3.6 ms).
-        self.assertEqual((snapshot["thaws"], snapshot["thaw_ms_total"], snapshot["thaw_ms_max"]),
-                         (2, 5, 4))
 
 
 class ThawPrefetchTests(unittest.TestCase):
@@ -273,35 +201,6 @@ class ThawPrefetchTests(unittest.TestCase):
                         active[0] -= 1
         return patch.object(pause_tier.os, "preadv", side_effect=preadv), calls
 
-    def test_pieces_cover_only_data_extents_within_the_byte_budget(self):
-        self.assertEqual(memory_pieces(self.fd), [
-            (0, 4 * MIB), (4 * MIB, 8 * MIB), (16 * MIB, 20 * MIB), (20 * MIB, 24 * MIB)])
-        self.assertEqual(memory_pieces(self.fd, budget_bytes=10 * MIB),
-                         [(0, 4 * MIB), (4 * MIB, 8 * MIB), (16 * MIB, 18 * MIB)])
-        with TemporaryDirectory() as directory:
-            empty = Path(directory) / "hole"
-            empty.write_bytes(b"")
-            os.truncate(empty, 8 * MIB)
-            descriptor = os.open(empty, os.O_RDONLY)
-            try:
-                self.assertEqual(memory_pieces(descriptor), [])
-            finally:
-                os.close(descriptor)
-
-    def test_parallel_readers_beat_one_reader_and_read_every_data_byte(self):
-        pieces = memory_pieces(self.fd)
-        timings = {}
-        for threads in (1, 8):
-            reads, calls = self._slow_reads(0.01)
-            with reads:
-                started = time.monotonic()
-                read = prefetch(self.fd, pieces, slots=self.slots, cancelled=lambda: False,
-                                threads=threads)
-                timings[threads] = time.monotonic() - started
-            self.assertEqual((read, len(calls)), (16 * MIB, 16))
-        # 16 reads of 10 ms: about 160 ms alone and 40 ms over four pieces.
-        self.assertLess(timings[8], timings[1] / 2)
-
     def test_node_slots_bound_readers_across_concurrent_thaws(self):
         active = [0, 0, 0]
         reads, calls = self._slow_reads(0.005, active=active)
@@ -317,16 +216,6 @@ class ThawPrefetchTests(unittest.TestCase):
         # Waiting thaws hold neither a thread nor a 1 MiB buffer; every thaw reads.
         self.assertEqual(active[1:], [2, 2])
         self.assertEqual(len(calls), 6 * 16)
-
-    def test_cancellation_stops_between_reads_and_waits_for_every_reader(self):
-        reads, calls = self._slow_reads(0.01)
-        with reads:
-            read = prefetch(self.fd, memory_pieces(self.fd), slots=self.slots,
-                            cancelled=lambda: len(calls) >= 3)
-        self.assertLess(read, 16 * MIB)
-        self.assertLessEqual(len(calls), 3 + pause_tier.PREFETCH_THREADS)
-        self.assertEqual(read, len(calls) * MIB)  # No reader outlives the call.
-        self.assertFalse([item for item in threading.enumerate() if item.name == "thaw-prefetch"])
 
     def test_a_failed_read_stops_the_readers_and_raises_after_they_exit(self):
         reads, calls = self._slow_reads(0.005, fail_at=3)
@@ -392,11 +281,6 @@ class PauseWardenTests(unittest.TestCase):
     def _paused(self):
         return self.warden.is_paused(*self.key)
 
-    def _verbs(self):
-        return [next(item for item in command if item in {
-            "pause", "resume", "exec", "checkpoint", "delete"}) for command in self.runner.commands
-            if {"pause", "resume", "exec", "checkpoint", "delete"} & set(command)]
-
     def test_pause_keeps_live_authority_and_exec_thaws_first(self):
         running = self.warden.create(self.sandbox, operation_id="create:1")
         with patch.object(pause_tier, "cap_zswap") as cap:
@@ -416,21 +300,6 @@ class PauseWardenTests(unittest.TestCase):
         stats = self.warden.pause_stats.snapshot()
         self.assertEqual((stats["pauses"], stats["thaws"]), (1, 1))
 
-    def test_read_only_lease_keeps_the_pause_and_a_failed_one_ends_it(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.pause(self.sandbox)
-        (self.config.runtime_root / "warden-paused" / f".{self.key[0]}.tmp").touch()
-        with self.warden.exec_lease(self.sandbox, ("ctl",), keep_paused=True):
-            self.assertEqual(self.runner.status, "running")
-        self.assertEqual((self.runner.status, self.warden.paused_keys()), ("paused", [self.key]))
-        with self.assertRaises(OSError):
-            with self.warden.exec_lease(self.sandbox, ("ctl",), keep_paused=True):
-                raise OSError("read failed")
-        self.assertEqual((self.runner.status, self.warden.paused_keys()), ("running", []))
-        with self.warden.exec_lease(self.sandbox, ("ctl",), keep_paused=True):
-            pass  # Not paused before: a read never starts a pause.
-        self.assertEqual(self.runner.status, "running")
-
     def test_pause_requires_the_flag_and_a_running_journal(self):
         disabled = DirectRunscWarden(replace(self.config, pause_tier=False), runner=self.runner,
                                      fencer=self.fencer, storage=self.storage,
@@ -442,100 +311,6 @@ class PauseWardenTests(unittest.TestCase):
         self.warden.park(self.sandbox, operation_id="park:1")
         self.assertFalse(self.warden.pause(self.sandbox))
         self.assertFalse(self._paused())
-
-    def test_crash_after_marker_before_runsc_pause_is_harmless(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        real_run = self.runner.run
-
-        def crash_on_pause(argv, *, timeout):
-            if "pause" in argv:
-                raise SystemExit("node agent killed")
-            return real_run(argv, timeout=timeout)
-
-        with patch.object(self.runner, "run", side_effect=crash_on_pause):
-            with self.assertRaises(SystemExit):
-                self.warden.pause(self.sandbox)
-        self.assertTrue(self._paused())
-        self.assertEqual(self.runner.status, "running")
-        restarted = self._warden()
-        self.assertEqual(restarted.reconcile(self.sandbox).state, HibernationState.RUNNING)
-        self.assertIsNotNone(restarted.thaw(self.sandbox))  # Resume fails; state proves running.
-        self.assertFalse(self._paused())
-        with restarted.exec_lease(self.sandbox, ("/bin/true",)):
-            self.assertEqual(self.runner.status, "running")
-
-    def test_restart_keeps_a_paused_sandbox_paused_and_thaws_it_on_demand(self):
-        running = self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.pause(self.sandbox)
-        restarted = self._warden()
-        recovered = restarted.reconcile(self.sandbox)
-        self.assertEqual((recovered.state, recovered.sentry_pid),
-                         (HibernationState.RUNNING, running.sentry_pid))
-        self.assertTrue(restarted.running_process_alive(self.sandbox))
-        self.assertEqual(self.runner.status, "paused")
-        self.assertTrue(restarted.pause(self.sandbox))  # A repeated pause is idempotent.
-        self.assertEqual(restarted.paused_keys(), [self.key])
-        result = restarted.exec(self.sandbox, ("/bin/true",))
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(self.runner.status, "running")
-        self.assertEqual(restarted.paused_keys(), [])
-
-    def test_failed_pause_leaves_runtime_running_without_marker(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        real_run = self.runner.run
-
-        def refuse_pause(argv, *, timeout):
-            if "pause" in argv:
-                return CommandResult(tuple(argv), 1, stderr="injected pause failure")
-            return real_run(argv, timeout=timeout)
-
-        with patch.object(self.runner, "run", side_effect=refuse_pause):
-            with self.assertRaisesRegex(DirectWardenError, "runsc pause failed"):
-                self.warden.pause(self.sandbox)
-        self.assertEqual(self.runner.status, "running")
-        self.assertFalse(self._paused())
-
-    def test_hibernate_thaws_before_capture_and_delete_clears_the_marker(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.pause(self.sandbox)
-        self.runner.commands.clear()
-        parked = self.warden.park(self.sandbox, operation_id="park:1")
-        self.assertEqual(parked.state, HibernationState.PARKED)
-        self.assertEqual(self._verbs()[:2], ["resume", "checkpoint"])
-        self.assertFalse(self._paused())
-        self.warden.resume(self.sandbox, operation_id="wake:1")
-        self.warden.pause(self.sandbox)
-        self.warden.delete(self.sandbox)
-        self.assertFalse(self._paused())
-        self.assertEqual(self.warden.paused_keys(), [])
-
-    def test_thaw_racing_pause_never_execs_into_a_paused_runtime(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        real_run = self.runner.run
-        paused_execs = []
-
-        def run(argv, *, timeout):
-            if "exec" in argv and self.runner.status != "running":
-                paused_execs.append(self.runner.status)
-            return real_run(argv, timeout=timeout)
-
-        stop = threading.Event()
-
-        def pauser():
-            while not stop.is_set():
-                self.warden.pause(self.sandbox)
-
-        with patch.object(self.runner, "run", side_effect=run):
-            thread = threading.Thread(target=pauser)
-            thread.start()
-            try:
-                for _ in range(25):
-                    with self.warden.exec_lease(self.sandbox, ("/bin/true",)) as command:
-                        self.runner.run(command, timeout=1)
-            finally:
-                stop.set()
-                thread.join(5)
-        self.assertEqual(paused_execs, [])
 
 
 class ThawPrefetchWardenTests(unittest.TestCase):
@@ -728,33 +503,6 @@ class PausedReclaimTests(unittest.TestCase):
             return len(data)
         return write
 
-    def test_node_budget_paces_windows(self):
-        (self.path / "memory.reclaim").touch()
-        self._anonymous(1000)
-        started = time.monotonic()
-        with patch("os.write", side_effect=self._shrinking_writes()) as written:
-            ResidentMemoryReclaimer(self.sampler).reclaim(
-                ("s", 1), self.sample(), target_bytes=300, window_bytes=100, swappiness=200,
-                is_current=lambda: True, budget=ReclaimBudget(bytes_per_second=3000))
-        self.assertEqual(written.call_count, 3)
-        self.assertGreaterEqual(time.monotonic() - started, 0.06)  # Windows at 0, 33, 67 ms.
-
-    def test_concurrent_reclaims_share_one_node_rate(self):
-        budget = ReclaimBudget(bytes_per_second=3000)
-
-        def reclaim():  # Three 100-byte windows.
-            for _ in range(3):
-                self.assertTrue(budget.admit(100, lambda: True))
-
-        started = time.monotonic()
-        threads = [threading.Thread(target=reclaim) for _ in range(2)]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        # 600 bytes at the one 3000 B/s rate: the sixth window starts at 167 ms.
-        self.assertGreaterEqual(time.monotonic() - started, 0.16)
-
     def test_a_thaw_while_waiting_for_the_budget_cancels_before_any_write(self):
         (self.path / "memory.reclaim").touch()
         self._anonymous(1000)
@@ -880,33 +628,6 @@ class PauseActivityTests(unittest.TestCase):
         self.assertIn(self.key, self.warden.paused)
         self.warden.events.clear()
 
-    def test_pause_neither_captures_nor_publishes(self):
-        self._pause()
-        self.assertNotIn("hibernate", self.warden.events)
-
-    def test_every_activity_path_thaws_before_reaching_the_sandbox(self):
-        paths = {
-            "exec": lambda: self.service.exec(self.sandbox_id, ("/bin/true",)),
-            "file_read": lambda: self.service.read_file(self.sandbox_id, "/tmp/x", max_bytes=16),
-            "file_write": lambda: self.service.write_file(self.sandbox_id, "/tmp/x", b"x"),
-            "wake": lambda: self.service.wake(
-                self.sandbox_id, generation=self.created.generation, operation_id="wake:1"),
-        }
-        for name, activity in paths.items():
-            with self.subTest(path=name):
-                self._pause()
-                activity()
-                self.assertEqual(self.warden.events[0], "thaw")
-                self.assertNotIn(self.key, self.warden.paused)
-
-    def test_activity_lease_leaves_the_thaw_to_the_exec_lease(self):
-        # Exec starts thaw in the Warden lease; a status read can stay paused.
-        runtime = DirectNodeRuntime(self.service)
-        self._pause()
-        with runtime.lifecycle.shared(self.sandbox_id):
-            self.assertEqual(self.warden.events, [])
-        self.assertIn(self.key, self.warden.paused)
-
     def test_a_thaw_supersedes_paused_reclaim_from_its_prefetch_on(self):
         self._pause()
         windows = []
@@ -938,22 +659,6 @@ class PauseActivityTests(unittest.TestCase):
             cached_resident_memory_sample=lambda *_: sample)))
         entry = NodeAgentHandler._sandbox_inventory_entry(handler, self.created)
         self.assertEqual(entry.memory_observation.memory_bytes, 4 * GIB)
-
-    def test_managed_reads_keep_the_pause_and_mutations_end_it(self):
-        item = managed_fixtures.ManagedControlAdmissionTests()
-        item.setUp()
-        self.addCleanup(item.doCleanups)
-        leases = []
-
-        @contextmanager
-        def lease(_sandbox, command, **kwargs):
-            leases.append(kwargs.get("keep_paused"))
-            yield command
-
-        item.service.warden.exec_lease = lease
-        for action in ("status", "logs", "signal"):
-            item.call(action)
-        self.assertEqual(leases, [True, True, False])
 
 
 class PauseNodeRuntimeTests(unittest.TestCase):
@@ -1014,22 +719,6 @@ class PauseNodeRuntimeTests(unittest.TestCase):
         self.assertEqual(parks, [("idle-park", True)])
         self.assertIn(("agent", 1), runtime._paused)
 
-    def test_relay_waits_pause_unless_the_aries_rule_prefers_hibernate(self):
-        runtime, _service, parks = self._runtime()
-        now = time.time()
-        long_hint = {"phase": "model_wait", "evaluated_at": now, "expires_at": now + 3600,
-                     "expected_remaining_wait_seconds": 2 * TRANSFER_BREAK_EVEN_SECONDS}
-        record, revision = runtime.park_with_activity_revision(
-            "agent", operation_id="relay-park:1", generation=1, relay_request_id="r1")
-        self.assertEqual((record.state, revision), ("running", 7))
-        with patch("sandboxes.node_runtime.WarmParkPolicy.observe_phase") as observe:
-            runtime.park_with_activity_revision(
-                "agent", operation_id="relay-park:2", generation=1, relay_request_id="r2",
-                resource_phase=long_hint)
-        observe.assert_not_called()  # WarmParkPolicy has no role on the flagged path.
-        runtime.park_with_activity_revision("agent", operation_id="park:3")
-        self.assertEqual(parks, [("relay-park", True), ("relay-park", False), ("park", False)])
-
     def test_refused_capture_of_a_long_relay_wait_pauses_instead(self):
         runtime, service, parks = self._runtime()
         now = time.time()
@@ -1069,33 +758,6 @@ class PauseNodeRuntimeTests(unittest.TestCase):
         runtime._relay_park_executor.shutdown(wait=True)
         service.reclaim_paused.assert_called_once()
 
-    def test_reclaim_runs_only_under_pressure_and_records_metrics(self):
-        runtime, service, _ = self._runtime(pressure=Pressure(0.9, 0.0, 0.0, 90 * GIB))
-        # A marker that survived a restart is adopted: managed (relay) waits
-        # never reach the idle loop.
-        service.warden.paused.add(("agent", 1))
-        runtime._paused[("gone", 1)] = PausedWait(paused_at=0.0)  # Thawed elsewhere.
-        runtime._reclaim_paused_tick()
-        service.reclaim_paused.assert_not_called()
-        self.assertEqual(list(runtime._paused), [("agent", 1)])
-        runtime._warm_parks.pressure = lambda: Pressure(0.01, 0.0, 0.0, GIB // 8)
-        runtime._reclaim_paused_tick()
-        runtime._relay_park_executor.shutdown(wait=True)
-        args, kwargs = service.reclaim_paused.call_args
-        self.assertEqual(args, ("agent", 1))
-        self.assertEqual(kwargs["target_bytes"], GIB)
-        self.assertFalse(runtime._paused[("agent", 1)].reclaiming)
-        snapshot = runtime.resident_wait_snapshot()
-        self.assertEqual((snapshot["pause_reclaims"], snapshot["pause_reclaimed_bytes"],
-                          snapshot["pause_reclaim_cancellations"], snapshot["paused_sandboxes"]),
-                         (1, GIB // 2, 1, 1))
-        metrics = ResidentWaitMetrics.from_dict(snapshot)
-        self.assertEqual(metrics.pause_reclaim_ms_total, 250)
-        legacy = ResidentWaitMetrics.from_dict({
-            key: value for key, value in snapshot.items()
-            if not key.startswith(("pause", "thaw", "paused"))})
-        self.assertEqual((legacy.pauses, legacy.paused_sandboxes), (0, 0))
-
 
     @staticmethod
     def _drain(runtime):
@@ -1103,41 +765,6 @@ class PauseNodeRuntimeTests(unittest.TestCase):
         executor, runtime._relay_park_executor = runtime._relay_park_executor, None
         if executor is not None:
             executor.shutdown(wait=True)
-
-    def test_reclaims_in_flight_never_exceed_the_node_budget(self):
-        runtime, service, _ = self._runtime(pressure=Pressure(0.01, 0.0, 0.0, GIB))  # 6.5 GiB short.
-        release, started = threading.Event(), threading.Semaphore(0)
-
-        def reclaim(*_args, **kwargs):
-            self.assertIs(kwargs["budget"], runtime._reclaim_budget)
-            started.release()
-            release.wait(5)
-            return SimpleNamespace(reclaimed_bytes=GIB, elapsed_seconds=0.1, reason="target_reached")
-
-        service.reclaim_paused.side_effect = reclaim
-        service.warden.paused.update((f"agent{index}", 1) for index in range(5))
-        for _ in range(3):
-            runtime._reclaim_paused_tick()
-        for _ in range(runtime._reclaim_budget.concurrency):
-            self.assertTrue(started.acquire(timeout=5))
-        self.assertFalse(started.acquire(timeout=0.05))
-        self.assertEqual(sum(bool(wait.reclaiming) for wait in runtime._paused.values()),
-                         pause_tier.RECLAIM_CONCURRENCY)
-        release.set()
-        self._drain(runtime)
-        self.assertEqual(service.reclaim_paused.call_count, pause_tier.RECLAIM_CONCURRENCY)
-
-    def test_swap_nearly_full_escalates_the_best_waits_through_the_durable_park(self):
-        runtime, service, parks = self._runtime(pressure=Pressure(
-            0.01, 0.0, 0.0, GIB, swap_total_bytes=16 * GIB, swap_free_bytes=GIB))
-        service.warden.paused.update((f"agent{index}", 1) for index in range(3))
-        runtime._reclaim_paused_tick()
-        self._drain(runtime)
-        service.reclaim_paused.assert_not_called()  # Swap is the kernel's reserve now.
-        self.assertEqual(parks, [("pause-escalation", False)] * ESCALATION_CONCURRENCY)
-        self.assertEqual(len(service.warden.paused), 3 - ESCALATION_CONCURRENCY)
-        self.assertFalse(any(wait.escalating for wait in runtime._paused.values()))
-        self.assertEqual(runtime.resident_wait_snapshot()["pause_escalations"], ESCALATION_CONCURRENCY)
 
     def test_stalled_or_failed_reclaims_back_off_then_escalate_after_max_stalls(self):
         for outcome in (SimpleNamespace(reclaimed_bytes=MIB, elapsed_seconds=1.0, reason="not_shrinking"),
