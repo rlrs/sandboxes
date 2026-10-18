@@ -114,6 +114,16 @@ class NodeAgentConfig:
     # Node admission in a real noded (LocalFleet(rust_admission=True)): noded
     # owns the registry and this agent is a foreign writer, as in production.
     rust_admission: bool = False
+    # noded as the node's front door (LocalFleet(front_door=True)): the agent
+    # serves on this Unix socket behind it, with a foreign registry, and
+    # noded runs creates, execs and the pause tier (vm_init's flags).
+    unix_socket: str = ""
+    rust_creates: bool = False
+    rust_execs: bool = False
+    rust_pause_tier: bool = False
+    pause_tier: bool = False
+    # 0 parks no idle sandbox.
+    idle_park_seconds: float = 0.0
     # Environment images (LocalFleet(environments=True)): the registry, its
     # environments repository and trusted keys (key id -> raw key, hex), and
     # this node's environment backend socket and fake mount table.
@@ -190,6 +200,7 @@ def assemble_node_agent(config: NodeAgentConfig, *, rootfs_store, fencer, sample
                                  else FINGERPRINT),
             proc_root=Path(config.proc_root),
             network="none",
+            pause_tier=config.pause_tier,
             command_timeout_seconds=30.0,
             stop_timeout_seconds=10.0,
         ),
@@ -197,9 +208,10 @@ def assemble_node_agent(config: NodeAgentConfig, *, rootfs_store, fencer, sample
         rootfs_lifecycle=overlays,
         fencer=fencer,
     )
+    foreign = config.rust_admission or config.rust_creates
     provisioner = DirectSandboxProvisioner(
-        registry=DirectSandboxRegistry(state_root / "direct-registry.sqlite", owner=not config.rust_admission,
-                                       cached_reads=config.rust_admission),
+        registry=DirectSandboxRegistry(state_root / "direct-registry.sqlite", owner=not foreign,
+                                       cached_reads=foreign),
         overlays=overlays,
         # The fake runtime never runs either init; the managed one only has to be
         # a trusted binary for managed_process sandboxes to be created.
@@ -208,7 +220,8 @@ def assemble_node_agent(config: NodeAgentConfig, *, rootfs_store, fencer, sample
         warden=warden,
         disk_claim_policy=DiskClaimPolicy(),
     )
-    service = DirectSandboxService(provisioner, max_concurrent_restores=4, max_concurrent_startups=4)
+    service = DirectSandboxService(provisioner, max_concurrent_restores=4, max_concurrent_startups=4,
+                                   idle_park_seconds=config.idle_park_seconds)
     service.admission_wait_seconds = config.admission_wait_seconds
     server = build_direct_node_agent_server(
         "127.0.0.1",
@@ -230,6 +243,10 @@ def assemble_node_agent(config: NodeAgentConfig, *, rootfs_store, fencer, sample
             bearer_token=config.heartbeat_token,
             interval_seconds=config.heartbeat_interval_seconds,
         ),
+        unix_socket=Path(config.unix_socket) if config.unix_socket else None,
+        rust_creates=config.rust_creates,
+        rust_execs=config.rust_execs,
+        rust_pause_tier=config.rust_pause_tier,
     )
     if config.url is None:
         # The URL is part of route identity; restarts rebind this port.

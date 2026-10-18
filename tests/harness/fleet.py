@@ -24,6 +24,9 @@ these boundaries:
 - With ``rust_admission=True`` each node's admission runs in a real
   ``ucloud-noded --admission-only`` (tests/noded_admission.py) that owns the
   node's registry and outlives agent restarts, as noded does on a worker.
+- With ``front_door=True`` each node's port is a real ``ucloud-noded`` with
+  Rust creates, execs and the pause tier (``noded.py``), in front of the agent
+  on a Unix socket, as on a production worker.
 
 The gateway uses distinct real tokens and, when ``UCLOUD_TEST_POSTGRES_DSN``
 is set and requested, PostgreSQL routing through the production descriptor.
@@ -81,8 +84,10 @@ from .environments import EnvironmentBackendService, EnvironmentPublisher, FakeE
 from .fake_mount import has_dependents
 from .fake_runsc import kill_exec_groups
 from .images import ImageCatalog, LocalRootfsStore
+from .noded import FrontDoor, free_port
 from .pidfd import SyscallPidfdFencer, native_pidfd_available
 from .storage import FakeBlockBackend, FakeStorageHost
+from tests.support import wait_until
 
 HARNESS = Path(__file__).resolve().parent
 PYTHON = Path(os.path.realpath(sys.executable))
@@ -90,6 +95,11 @@ DEFAULT_IMAGE = "harness/base:1"
 POSTGRES_DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN", "")
 # Scenarios send heartbeats explicitly; the periodic one never fires in a test.
 HEARTBEAT_INTERVAL_SECONDS = 3600
+# The host as noded's pressure sampler and exec memory floor read it under
+# the node's proc root: fixed_metrics' memory, no stalls.
+MEMINFO = "MemTotal:       67108864 kB\nMemFree:        61440000 kB\nMemAvailable:   61440000 kB\n" \
+          "SwapTotal:             0 kB\nSwapFree:              0 kB\n"
+CALM_PSI = "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"
 
 
 def root_owned_init_binary() -> Path:
@@ -286,6 +296,9 @@ class FleetNode:
         self._connections: weakref.WeakSet[socket.socket] = weakref.WeakSet()
         # LocalFleet(rust_admission=True): this node's noded, across agent restarts.
         self.noded = None
+        # LocalFleet(front_door=True): noded on this node's port, the agent behind it.
+        self.front_door: FrontDoor | None = None
+        self.agent_socket: Path | None = None
 
     # -- in-process observation and knobs ------------------------------------
     # A node-agent process has none of these; touching one there is an error,
@@ -330,6 +343,10 @@ class FleetNode:
             path.mkdir(mode=0o700, parents=True)
         (self.proc_root / "sys/kernel/random").mkdir(mode=0o700, parents=True)
         self.set_boot_id(self.boot_id)
+        (self.proc_root / "meminfo").write_text(MEMINFO, encoding="ascii")
+        (self.proc_root / "pressure").mkdir(mode=0o700)
+        for kind in ("memory", "io"):
+            (self.proc_root / "pressure" / kind).write_text(CALM_PSI, encoding="ascii")
         runsc_config = self.bin / "fake-runsc.json"
         runsc_config.write_text(json.dumps({
             "proc_root": str(self.proc_root),
@@ -356,6 +373,15 @@ class FleetNode:
                 self.root / "environment-backend", self.fleet.publisher.environments, self.root / "mounts")
             self.environment_socket = self._socket_path(self.root / "environment-backend", "backend.sock")
             self._environment_service = EnvironmentBackendService(self.environment_socket, self.environment_backend)
+        if self.fleet.front_door:
+            self.agent_socket = self._socket_path(self.root, "agent.sock")
+            token_file = self.root / "node-control-token"
+            token_file.write_text(self.fleet.tokens.node_control, encoding="ascii")
+            token_file.chmod(0o600)
+            self.port = free_port()
+            self.url = f"http://127.0.0.1:{self.port}"
+            self.front_door = FrontDoor(port=self.port, agent_socket=self.agent_socket, token_file=token_file,
+                                        state_root=self.state_root, bin_dir=self.bin, log=self.root / "noded.log")
 
     def _socket_path(self, directory: Path, name: str) -> Path:
         path = directory / name
@@ -426,6 +452,10 @@ class FleetNode:
             heartbeat_token=self.fleet.tokens.heartbeat,
             heartbeat_interval_seconds=HEARTBEAT_INTERVAL_SECONDS,
             rust_admission=self.fleet.rust_admission,
+            unix_socket=str(self.agent_socket or ""),
+            rust_creates=self.fleet.front_door, rust_execs=self.fleet.front_door,
+            rust_pause_tier=self.fleet.front_door, pause_tier=self.fleet.front_door,
+            idle_park_seconds=self.fleet.idle_park_seconds,
             **environment,
         )
 
@@ -444,6 +474,7 @@ class FleetNode:
             raise RuntimeError("node agent is already running")
         if self.fleet.node_processes:
             self._spawn()
+            self._open_front_door()
             return
         config = self._agent_config()
         server, self.service = assemble_node_agent(
@@ -458,7 +489,8 @@ class FleetNode:
             if self.noded is None:
                 self.noded = NodedHarness(self.state_root / "direct-registry.sqlite")
             self.noded.attach(self.service)
-        self._bound(server.server_address[1])
+        if isinstance(server.server_address, tuple):
+            self._bound(server.server_address[1])
         node = self
 
         class ObservedHandler(server.RequestHandlerClass):
@@ -481,9 +513,15 @@ class FleetNode:
         server.get_request = tracked_accept
         self.server = server
         self._thread = _serve(server)
+        self._open_front_door()
         # The new agent's sender also sends at once; wait until the gateway
         # accepted one, so no send is in flight when a scenario continues.
         self.post_heartbeat()
+
+    def _open_front_door(self) -> None:
+        """Start noded once its agent serves; it outlives agent restarts."""
+        if self.front_door is not None and self.front_door.process is None:
+            self.front_door.start()
 
     def _bound(self, port: int) -> None:
         if self.url is None:
@@ -499,14 +537,21 @@ class FleetNode:
         })
         ticks = _process_ticks(pid)
         self.process = (pid, ticks)
-        deadline = time.monotonic() + 30
-        while not ready.exists():
-            if ticks is None or _process_ticks(pid) != ticks or time.monotonic() > deadline:
-                self._reap_process(signal.SIGKILL)
-                log = (self.root / "agent.log").read_text(encoding="utf-8", errors="replace")
-                raise AssertionError(f"node agent {self.node_id} did not start:\n{log[-4000:]}")
-            time.sleep(0.005)
-        self._bound(int(ready.read_text(encoding="ascii")))
+
+        def started() -> bool:
+            if ticks is None or _process_ticks(pid) != ticks:
+                raise AssertionError("exited")
+            return ready.exists()
+
+        try:
+            wait_until(started, timeout=30)
+        except AssertionError:
+            self._reap_process(signal.SIGKILL)
+            log = (self.root / "agent.log").read_text(encoding="utf-8", errors="replace")
+            raise AssertionError(f"node agent {self.node_id} did not start:\n{log[-4000:]}") from None
+        port = int(ready.read_text(encoding="ascii"))
+        if port:
+            self._bound(port)
 
     def _reap_process(self, sig: int) -> None:
         process, self.process = self.process, None
@@ -515,13 +560,17 @@ class FleetNode:
         pid, ticks = process
         if ticks is None or _process_ticks(pid) != ticks:
             return  # It already exited; the kernel reaped it.
+
+        def gone() -> bool:
+            return _process_ticks(pid) != ticks
+
         with suppress(ProcessLookupError):
             os.kill(pid, sig)
-            deadline = time.monotonic() + 10
-            while _process_ticks(pid) == ticks:
-                if time.monotonic() > deadline:
-                    os.kill(pid, signal.SIGKILL)
-                time.sleep(0.005)
+            try:
+                wait_until(gone, timeout=10)
+            except AssertionError:
+                os.kill(pid, signal.SIGKILL)
+                wait_until(gone)
 
     def stop(self) -> None:
         """Stop the node agent; sentries and mounts survive, as on a VM.
@@ -559,19 +608,41 @@ class FleetNode:
         self._reap_process(signal.SIGKILL)
 
     def restart(self) -> None:
+        """Restart the node agent; a front door keeps serving, as its own unit does."""
         self.stop()
         self.start()
+
+    def _front(self) -> FrontDoor:
+        if self.front_door is None:
+            raise RuntimeError("the node has no noded front door (LocalFleet(front_door=True))")
+        return self.front_door
+
+    def crash_noded(self) -> None:
+        """SIGKILL the node's noded; the agent and sentries keep running."""
+        self._front().crash()
+
+    def restart_noded(self) -> None:
+        """Start noded again (stopping it first if it runs) on the same port.
+
+        Returns once the new daemon session loaded the agent's configuration.
+        """
+        front = self._front()
+        front.stop()
+        front.start()
 
     def reboot(self) -> None:
         """Power-cycle the VM: guest processes die and the boot ID changes.
 
         Durable node state survives, as on the VM disk. Mount tables and
-        storage devices are not reset (see README).
+        storage devices are not reset (see README). noded restarts with the
+        VM, under a new daemon session.
         """
         if self.process is not None:
             self.crash()
         else:
             self.stop()
+        if self.front_door is not None and self.front_door.process is not None:
+            self.front_door.crash()
         self.kill_hung()
         self.reap_containers()
         self.set_boot_id(uuid.uuid4())
@@ -586,6 +657,8 @@ class FleetNode:
             self.kill_hung()
             if self.storage_host is not None:
                 self.storage_host.release_holds()
+            if self.front_door is not None:
+                self.front_door.stop()
             self.stop()
         finally:
             if self.noded is not None:
@@ -719,11 +792,8 @@ class FleetNode:
     def wait_hung(self, command: str, *, timeout: float = 15.0) -> int:
         """Wait until a hang fault blocks ``command``; return the blocked PID."""
         marker = self.faults / f"{command}.hung"
-        deadline = time.monotonic() + timeout
-        while not marker.exists():
-            if time.monotonic() > deadline:
-                raise AssertionError(f"{command} did not reach its armed hang on {self.node_id}")
-            time.sleep(0.005)
+        wait_until(marker.exists, timeout=timeout,
+                   message=f"{command} did not reach its armed hang on {self.node_id}")
         return int(marker.read_text(encoding="ascii").split()[0])
 
     def release(self, command: str) -> None:
@@ -740,8 +810,7 @@ class FleetNode:
             if _process_ticks(pid) == ticks:
                 with suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGKILL)
-                while _process_ticks(pid) == ticks:
-                    time.sleep(0.005)
+                wait_until(lambda: _process_ticks(pid) != ticks)
             marker.unlink(missing_ok=True)
 
     def container_id(self, sandbox_id: str, generation: int | None = None) -> str:
@@ -774,11 +843,7 @@ class FleetNode:
         """Crash the sandbox runtime out of band (OOM kill, sentry panic)."""
         pid = self.sentry_pid(sandbox_id)
         os.kill(pid, signal.SIGKILL)
-        deadline = time.monotonic() + 5
-        while _process_ticks(pid) is not None:
-            if time.monotonic() > deadline:
-                raise AssertionError(f"sentry {pid} did not exit")
-            time.sleep(0.005)
+        wait_until(lambda: _process_ticks(pid) is None, timeout=5, message=f"sentry {pid} did not exit")
         return pid
 
 
@@ -801,18 +866,28 @@ class LocalFleet:
     signed environment images (the default) over the legacy local image
     store; sandboxes then name images by ``fleet.image`` or
     ``fleet.catalog.ref(name)``, refs on the fleet's registry.
+    ``front_door`` puts a real noded on each node's port, with Rust creates,
+    execs and the pause tier, and the agent behind it on a Unix socket;
+    ``idle_park_seconds`` (0: off) is the node's idle park. ``production()``
+    is the deployment's configuration.
     """
 
     def __init__(self, *, nodes: int = 1, postgres: bool = False, heartbeat_ttl_seconds: int = 120,
                  node_processes: bool = False, admission_wait_seconds: float = 30.0,
                  max_concurrent_sandbox_creates: int | None = None, gateways: int = 1,
                  create_placement: str = "ranked", gateway_options: dict | None = None,
-                 rust_admission: bool = False, environments: bool = True) -> None:
+                 rust_admission: bool = False, environments: bool = True, front_door: bool = False,
+                 idle_park_seconds: float = 0.0) -> None:
         if nodes < 1:
             raise ValueError("a fleet needs at least one node")
         if rust_admission and node_processes:
             raise ValueError("noded's admission harness runs with in-process node agents")
+        if front_door and (rust_admission or not environments):
+            # The admission harness is its own noded; noded refuses the legacy image store.
+            raise ValueError("a noded front door needs environment images and no admission harness")
         self.rust_admission = rust_admission
+        self.front_door = front_door
+        self.idle_park_seconds = idle_park_seconds
         self.environments = environments
         self.registry: FakeOciRegistry | None = None
         self.publisher: EnvironmentPublisher | None = None
@@ -838,6 +913,20 @@ class LocalFleet:
         self.gateway_url = ""
         self._temporary: tempfile.TemporaryDirectory | None = None
         self._postgres_schema = ""
+
+    @classmethod
+    def production(cls, nodes: int = 2, **options) -> "LocalFleet":
+        """The production deployment's node and routing configuration.
+
+        PostgreSQL routing (the test skips without ``UCLOUD_TEST_POSTGRES_DSN``),
+        power-of-k placement, and noded in front of every agent with Rust
+        creates, execs and the pause tier on; Rust admission off. Idle parks
+        stay off unless a test sets ``idle_park_seconds``: production parks
+        after minutes, which no scenario waits for. Production's local model
+        waits and split memory backing are not modeled (README).
+        """
+        return cls(**{"nodes": nodes, "postgres": True, "create_placement": "power_of_k",
+                      "front_door": True, **options})
 
     def __enter__(self) -> "LocalFleet":
         try:

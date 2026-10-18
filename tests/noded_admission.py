@@ -38,34 +38,10 @@ import unittest
 from sandboxes.admission_backend import NodedAdmission
 from sandboxes.create_handoff import admission_config
 from sandboxes.noded_client import NodedClient, NodedLink
+from tests.harness.noded import noded_binary
 
-REPO = Path(__file__).resolve().parents[1]
-NODED = REPO / "runtime" / "noded"
 TOKEN = "noded-test-token"
 _PUMP_SECONDS = 0.02
-_BUILD_GUARD = threading.Lock()
-_BINARY: Path | None = None
-
-
-def noded_binary() -> Path:
-    """``ucloud-noded`` built from this worktree (``UCLOUD_NODED_BINARY`` overrides)."""
-    global _BINARY
-    configured = os.environ.get("UCLOUD_NODED_BINARY")
-    if configured:
-        return Path(configured)
-    with _BUILD_GUARD:
-        if _BINARY is not None:
-            return _BINARY
-        cargo = shutil.which("cargo") or str(Path.home() / ".cargo" / "bin" / "cargo")
-        if not Path(cargo).exists():
-            raise unittest.SkipTest("NodedAdmission tests build runtime/noded and need cargo, which is not installed")
-        built = subprocess.run([cargo, "build", "--offline", "--locked", "--bin", "ucloud-noded"], cwd=NODED,
-                               capture_output=True, text=True, check=False)
-        if built.returncode != 0:
-            raise AssertionError(f"cargo build of ucloud-noded failed:\n{built.stderr[-4000:]}")
-        target = Path(os.environ.get("CARGO_TARGET_DIR") or NODED / "target")
-        _BINARY = target / "debug" / "ucloud-noded"
-        return _BINARY
 
 
 def _write(path: Path, document) -> None:

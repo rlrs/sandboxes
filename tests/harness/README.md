@@ -14,6 +14,32 @@ and `UCLOUD_TEST_POSTGRES_DSN`. It needs no root, runsc, Docker, ublk or
 network. Fleet roots live on `/dev/shm` when it allows exec, because commit
 fsyncs dominate on a shared disk; a scenario then runs in well under 2 s.
 
+## Production configuration and the noded front door
+
+`LocalFleet.production(nodes=2)` is the deployment's configuration:
+PostgreSQL routing (skipped without `UCLOUD_TEST_POSTGRES_DSN`), power-of-k
+placement, and `LocalFleet(front_door=True)`: a real `ucloud-noded`
+(`noded.py`, built from this worktree with cargo) on each node's port,
+started with vm_init's `--rust-create --rust-exec --rust-pause` over the
+agent's Unix socket. The agent runs behind it with a foreign registry and
+the pause tier on, as `cmd_serve_direct_node_agent` does there. noded reads
+the rest from the agent's create configuration, including the node's proc
+root and fake mount commands; its `PATH` starts with the node's `bin`. It is
+ready once `<state_root>/noded/status.json` names its new session. noded
+answers creates, execs on running sandboxes and job routes; `node.requests`
+shows that the agent never parsed them. `node.restart()` restarts only the
+agent, `node.crash_noded()` and `node.restart_noded()` only noded (same port,
+new session), and `node.reboot()` both. noded dies with the test process
+(`PR_SET_PDEATHSIG`).
+
+The preset leaves out what the harness cannot run as production does:
+Rust admission (its harness is a separate `--admission-only` noded), local
+model waits (they need the model relay and network namespaces), split memory
+backing (an XFS project quota and a tmpfs RAM root need root), and idle
+parks after minutes (`idle_park_seconds=` opts in with a short one). Under
+the node's proc root, noded's pressure sampler and exec memory floor read a
+calm host: `meminfo` with `fixed_metrics`' memory and zero PSI.
+
 Node agents run in the test process by default. `LocalFleet(node_processes=True)`
 runs each in its own process, forked from a preloaded zygote
 (`node_process.py`), so `node.crash()` can SIGKILL it mid-operation. That mode
@@ -26,8 +52,9 @@ zygote, which exits with the test process.
 | Real dependency | Replaced by | Injected at |
 | --- | --- | --- |
 | patched `runsc` | `fake_runsc.py` behind `bin/runsc` | `DirectRunscWardenConfig.runsc` |
-| `/proc` provenance | `proc/<pid>/{stat,cmdline,exe}` symlinks to the real `/proc`, plus a fake `cgroup` line and `boot_id` | `DirectRunscWardenConfig.proc_root` |
-| overlayfs `mount`/`umount`/`mountpoint`, `mount --bind` | `fake_mount.py` behind `bin/` wrappers | `OverlayRootfsManager(mount_binary=…)`, `EnvironmentRootfsStore(runner=assembly.FakeMountRunner)` |
+| `/proc` provenance | `proc/<pid>/{stat,cmdline,exe}` symlinks to the real `/proc`, plus a fake `cgroup` line and `boot_id` | `DirectRunscWardenConfig.proc_root`, which noded reads from the agent |
+| host memory and PSI for noded | `proc/meminfo`, `proc/pressure/{memory,io}`: a calm host | the same proc root |
+| overlayfs `mount`/`umount`/`mountpoint`, `mount --bind` | `fake_mount.py` behind `bin/` wrappers | `OverlayRootfsManager(mount_binary=…)` (noded reads these from the agent), `EnvironmentRootfsStore(runner=assembly.FakeMountRunner)` |
 | kernel overlay lower references | `fake_mount.has_dependents` over the fake mount table | `EnvironmentRootfsStore(referenced=)` |
 | ublk/overlaybd devices, mkfs/mount/freeze | `storage.FakeBlockBackend`, `storage.FakeStorageHost` | `StorageNativeNodeService(backend=, host=)` |
 | managed OCI registry | `environments.FakeOciRegistry`, real HTTP | `RegistryClient(url)` |

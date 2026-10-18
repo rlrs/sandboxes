@@ -8,8 +8,9 @@ and the kernel reaps its children.
 
 SIGKILL of a child models a node-agent crash: no cleanup runs, and flocks,
 pooled connections and in-flight runtime invocations are severed as on a
-VM. SIGTERM stops serving. A child writes its bound port to the request's
-``ready`` path once startup reconciliation finished and it accepts requests.
+VM. SIGTERM stops serving. A child writes its bound port (0 on a Unix
+socket, behind noded) to the request's ``ready`` path once startup
+reconciliation finished and it accepts requests.
 
 The zygote exits at end of input, so with its test process, and its
 children die with it: an aborted test run leaves no agent serving.
@@ -49,7 +50,8 @@ def serve(config: dict, ready_path: str, catalog_root: str) -> int:
     )
     signal.signal(signal.SIGTERM, lambda *_: threading.Thread(target=server.shutdown).start())
     staging = Path(ready_path + ".tmp")
-    staging.write_text(f"{server.server_address[1]}\n", encoding="ascii")
+    port = server.server_address[1] if isinstance(server.server_address, tuple) else 0
+    staging.write_text(f"{port}\n", encoding="ascii")
     os.replace(staging, ready_path)
     server.serve_forever(poll_interval=0.01)
     server.server_close()
