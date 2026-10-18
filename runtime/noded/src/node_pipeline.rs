@@ -16,7 +16,7 @@ use crate::agent_rpc::AgentClient;
 use crate::create::{Admitted, CreateError, Pipeline};
 use crate::pause_policy::PressureSampler;
 use crate::guest;
-use crate::image::{EnvironmentBackendClient, ImageError, ImageLease, ImageStore, MountProbe};
+use crate::image::{EnvironmentBackendClient, ImageError, ImageLease, ImageStore};
 use crate::memory_backing::{ActiveMode, MemoryBackingConfig, MemoryBackingError, MemoryBackingRef, MemoryBackingStore, XfsMemoryQuota};
 use crate::network::{self, NetworkError, NetworkManager, TcpEgress};
 use crate::oci::{self, NetworkMode, OciBuilder, OciError};
@@ -198,11 +198,14 @@ impl NodePipeline {
         let images = ImageStore::new(
             &config.image_cache_root,
             EnvironmentBackendClient::new(&environment.backend_socket),
-            MountProbe::Kernel,
+            config.mount_probe(),
         )
         .map_err(|error| format!("image store: {error}"))?;
-        let overlays = OverlayManager::new(config.volume_mount_root.clone(), config.bundle_root.clone(), true)
+        let mut overlays = OverlayManager::new(config.volume_mount_root.clone(), config.bundle_root.clone(), true)
             .map_err(|error| format!("overlays: {error}"))?;
+        overlays.mount_binary = config.mount_binary.clone();
+        overlays.umount_binary = config.umount_binary.clone();
+        overlays.probe = config.mount_probe();
         let oci = OciBuilder::new(Some(config.init_binary.clone()), Some(config.managed_init_binary.clone()), network_mode)
             .map_err(|error| format!("OCI: {error}"))?;
         let warden_config = WardenConfig {
@@ -214,7 +217,7 @@ impl NodePipeline {
             application_memory_root: config.application_memory_root.clone(),
             network: config.network.clone(),
             reflink_memory_restore: config.reflink_memory_restore,
-            proc_root: PathBuf::from("/proc"),
+            proc_root: config.proc_root.clone(),
             command_timeout: Duration::from_secs(60),
             stop_timeout: Duration::from_secs(30),
         };
@@ -239,7 +242,7 @@ impl NodePipeline {
                     let observations = Arc::new(NodeObservations::new(memory.clone(), ram_configured));
                     let clock: Arc<dyn crate::pause_policy::Clock> = Arc::new(crate::pause_policy::SystemClock::new());
                     let pressure =
-                        PressureSampler::new(PathBuf::from("/proc"), config.application_memory_root.clone(), clock.clone());
+                        PressureSampler::new(config.proc_root.clone(), config.application_memory_root.clone(), clock.clone());
                     let drain = registry.load_drain().map_err(|error| format!("registry drain: {error}"))?;
                     let sources = Sources {
                         store: registry.clone(),
@@ -571,7 +574,7 @@ impl NodePipeline {
             None => {
                 let rootfs = sandbox.bundle.join("rootfs");
                 // A replay after a reboot finds the overlay unmounted (spec §7).
-                if !crate::image::mount_present(&rootfs, &MountProbe::Kernel).await? {
+                if !crate::image::mount_present(&rootfs, &self.config.mount_probe()).await? {
                     return Err(unavailable("rootfs_ready overlay is not mounted; the agent must recover it"));
                 }
                 let started = timings.start();

@@ -66,9 +66,9 @@ fn session_route(path: &str) -> Option<(&str, &str)> {
     (!sid.is_empty()).then_some((sid, sub))
 }
 
-/// `MemAvailable` in MiB.
-fn available_mib() -> Option<u64> {
-    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+/// `MemAvailable` in MiB, from the node's proc root (the pressure sampler's).
+fn available_mib(proc_root: &std::path::Path) -> Option<u64> {
+    let text = std::fs::read_to_string(proc_root.join("meminfo")).ok()?;
     let line = text.lines().find(|line| line.starts_with("MemAvailable:"))?;
     let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
     Some(kib / 1024)
@@ -271,7 +271,7 @@ impl ExecFront {
             return Err(Decline::Forward("not running"));
         }
         mark(&mut timings, "running");
-        if config.active_capacity_configured && available_mib().is_none_or(|mib| mib < config.memory_floor_mib) {
+        if config.active_capacity_configured && available_mib(&node.config().proc_root).is_none_or(|mib| mib < config.memory_floor_mib) {
             return Err(Decline::Forward("memory floor"));
         }
         // Python's start fence: the warden flock across the spawn only.
@@ -319,7 +319,7 @@ pub(crate) fn running(node: &NodePipeline, sandbox: &Sandbox) -> bool {
     ) else {
         return false;
     };
-    crate::runsc::start_time_ticks(std::path::Path::new("/proc"), pid as u32).is_ok_and(|now| now == ticks)
+    crate::runsc::start_time_ticks(&node.config().proc_root, pid as u32).is_ok_and(|now| now == ticks)
 }
 
 fn millis(elapsed: Duration) -> f64 {

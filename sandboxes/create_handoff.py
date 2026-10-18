@@ -257,6 +257,19 @@ def admission_config(service: Any, *, rust_admission_enabled: bool) -> dict[str,
     }
 
 
+def host_interfaces(warden_config: Any, overlays: Any) -> dict[str, str]:
+    """Where the node reads the host: the Warden's ``proc_root`` (sentry
+    provenance, boot id, memory pressure) and the overlay manager's mount
+    commands. noded probes with statx only for the default ``mountpoint``,
+    as ``image_rootfs._mount_present`` does."""
+    return {
+        "proc_root": str(getattr(warden_config, "proc_root", "/proc")),
+        "mount_binary": str(getattr(overlays, "mount_binary", "mount")),
+        "umount_binary": str(getattr(overlays, "umount_binary", "umount")),
+        "mountpoint_binary": str(getattr(overlays, "mountpoint_binary", "mountpoint")),
+    }
+
+
 def create_config(service: Any, *, node_epoch: str, rust_creates_enabled: bool,
                   rust_execs_enabled: bool = False, exec_sessions: Any = None,
                   rust_pause_enabled: bool = False, rust_admission_enabled: bool = False) -> dict[str, Any]:
@@ -324,6 +337,7 @@ def create_config(service: Any, *, node_epoch: str, rust_creates_enabled: bool,
         "environment": environment,
         "runtime_compatibility_sha256": provisioner.runtime_compatibility_sha256,
         "node_epoch": node_epoch,
+        **host_interfaces(config, overlays),
         "rust_creates_enabled": bool(rust_creates_enabled),
         "exec": {
             "runsc": str(config.runsc),

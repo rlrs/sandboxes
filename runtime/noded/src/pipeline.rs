@@ -70,6 +70,18 @@ pub struct CreateConfig {
     pub environment: Option<EnvironmentConfig>,
     pub runtime_compatibility_sha256: String,
     pub node_epoch: String,
+    /// The Warden's `proc_root`: sentry provenance, boot id and host
+    /// pressure. Absent from older agents, which always used `/proc`.
+    #[serde(default = "default_proc_root")]
+    pub proc_root: PathBuf,
+    /// `OverlayRootfsManager`'s mount commands; absent from older agents,
+    /// which always used these names.
+    #[serde(default = "default_mount_binary")]
+    pub mount_binary: PathBuf,
+    #[serde(default = "default_umount_binary")]
+    pub umount_binary: PathBuf,
+    #[serde(default = "default_mountpoint_binary")]
+    pub mountpoint_binary: PathBuf,
     /// Phase 2a; absent from agents older than it.
     #[serde(default)]
     pub exec: Option<ExecConfig>,
@@ -149,7 +161,33 @@ pub struct ExecConfig {
     pub sessions: ExecSessionLimits,
 }
 
+fn default_proc_root() -> PathBuf {
+    PathBuf::from("/proc")
+}
+
+fn default_mount_binary() -> PathBuf {
+    PathBuf::from("mount")
+}
+
+fn default_umount_binary() -> PathBuf {
+    PathBuf::from("umount")
+}
+
+fn default_mountpoint_binary() -> PathBuf {
+    PathBuf::from("mountpoint")
+}
+
 impl CreateConfig {
+    /// How the node tells a mount root, as Python's `_mount_present`: statx
+    /// for the default `mountpoint`, else only the agent's own probe command.
+    pub fn mount_probe(&self) -> crate::image::MountProbe {
+        if self.mountpoint_binary == default_mountpoint_binary() {
+            crate::image::MountProbe::Kernel
+        } else {
+            crate::image::MountProbe::Command(self.mountpoint_binary.clone())
+        }
+    }
+
     /// Node-wide reasons the daemon cannot create at all.
     pub fn refusal(&self) -> Option<&'static str> {
         if !self.rust_creates_enabled {
@@ -320,12 +358,48 @@ mod tests {
             "runtime_compatibility_sha256": "a", "node_epoch": "e",
         });
         let older: CreateConfig = serde_json::from_value(config.clone()).unwrap();
+        // Agents older than the proc root and the mount commands used these.
+        assert_eq!(older.proc_root, PathBuf::from("/proc"));
+        assert_eq!((older.mount_binary.as_path(), older.umount_binary.as_path()),
+                   (std::path::Path::new("mount"), std::path::Path::new("umount")));
+        assert_eq!(older.mount_probe(), crate::image::MountProbe::Kernel);
         assert_eq!((older.admission, older.config_sha256.as_str()), (None, ""));
         config["admission"] = block;
         config["config_sha256"] = json!("d".repeat(64));
         let current: CreateConfig = serde_json::from_value(config).unwrap();
         assert_eq!(current.admission, Some(parsed));
         assert_eq!(current.config_sha256, "d".repeat(64));
+    }
+
+    /// The agent's proc root and mount commands, as `create_handoff.create_config` reports them.
+    #[test]
+    fn the_proc_root_and_mount_commands_are_the_agents() {
+        let config = |extra: Value| -> CreateConfig {
+            let mut config = json!({
+                "rust_creates_enabled": true, "state_root": "/s", "image_cache_root": "/c", "volume_mount_root": "/v",
+                "storage_native_socket": "/n", "runsc": "/r", "runtime_root": "/rr", "bundle_root": "/b",
+                "journal_root": "/j", "network": "none", "network_mtu": 1420, "direct_network_allow_tcp": [],
+                "dns_named_egress": false, "relays_configured": false, "split_memory_backing": false,
+                "memory_backing_hard_capacity_bytes": 0, "application_memory_root": null,
+                "reflink_memory_restore": false, "workspace_initial_grant_mb": 0, "demonstrated_memory": false,
+                "init_binary": "/i", "managed_init_binary": "/m", "environment": null,
+                "runtime_compatibility_sha256": "a", "node_epoch": "e",
+            });
+            config.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            serde_json::from_value(config).unwrap()
+        };
+        // Production: the defaults, and statx before `mountpoint`.
+        let production = config(json!({"proc_root": "/proc", "mount_binary": "mount", "umount_binary": "umount",
+                                       "mountpoint_binary": "mountpoint"}));
+        assert_eq!(production.proc_root, PathBuf::from("/proc"));
+        assert_eq!(production.mount_probe(), crate::image::MountProbe::Kernel);
+        // Another probe command is the only probe (Python's injected runner).
+        let injected = config(json!({"proc_root": "/node/proc", "mount_binary": "/node/bin/mount",
+                                     "umount_binary": "/node/bin/umount", "mountpoint_binary": "/node/bin/mountpoint"}));
+        assert_eq!(injected.proc_root, PathBuf::from("/node/proc"));
+        assert_eq!((injected.mount_binary.clone(), injected.umount_binary.clone()),
+                   (PathBuf::from("/node/bin/mount"), PathBuf::from("/node/bin/umount")));
+        assert_eq!(injected.mount_probe(), crate::image::MountProbe::Command(PathBuf::from("/node/bin/mountpoint")));
     }
 
     #[test]
