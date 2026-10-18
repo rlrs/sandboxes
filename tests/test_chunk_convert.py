@@ -8,6 +8,7 @@ import tarfile
 from tempfile import TemporaryDirectory
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -217,15 +218,18 @@ class ConverterTests(unittest.TestCase):
         store = self.store()
         q = pseudo_random("q", 200_000)
         push_image(store.client, "y", [layer([("other", "dir"), ("other/q", q)])])
-        chunk_id, waits, sleep, me = hashlib.sha256(q).digest(), [], time.sleep, threading.get_ident()
+        chunk_id, waits = hashlib.sha256(q).digest(), []
         self.assertEqual(store.index.index.reserve([chunk_id], "ghost"), [chunk_index.RESERVED])
 
         def lapse(seconds):  # The ghost died: its hold runs out while y waits.
-            if threading.get_ident() != me:
-                return sleep(seconds)
             waits.append(seconds)
             store.index.index.reserve([chunk_id], "ghost", now=time.time() - chunk_index.CHUNK_RESERVE_SECONDS)
-        with patch.object(chunk_convert.time, "sleep", lapse):
+        # Only the converter's own sleeps lapse the hold. Patching time.sleep itself
+        # also caught subprocess's wait for nydus-image to exit, which lapsed it
+        # before the converter ever asked.
+        clock = SimpleNamespace(**{name: getattr(time, name) for name in dir(time) if not name.startswith("_")})
+        clock.sleep = lapse
+        with patch.object(chunk_convert, "time", clock):
             root = store.converter.convert(REPOSITORY, "y")["root"]
         self.assertEqual((waits, store.converter.metrics["chunks_waited"]), ([1.0], 1))
         self.assertEqual(store.converter.metrics["chunks_new"], 1)

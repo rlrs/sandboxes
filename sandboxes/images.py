@@ -1424,7 +1424,7 @@ class ImageManager:
             parent_context=self.telemetry.extracted_context(trace_context),
         ) as span:
             with build_execution_deadline(self.build_execution_timeout_seconds):
-                self._run_tracked_build_unobserved(
+                record = self._run_tracked_build_unobserved(
                     build_id,
                     spec,
                     push,
@@ -1434,7 +1434,8 @@ class ImageManager:
                     queued_at,
                     cache_affinity,
                 )
-            record = self.build_store.get(build_id)
+            # The worker's own last write, not a fresh read: waiters return once
+            # the build's condition is released, and the store may be gone by now.
             if record is not None:
                 span.set_attribute("image.build.status", record.status)
                 span.add_event("image.build.timings", record.timings)
@@ -1451,7 +1452,7 @@ class ImageManager:
         admitted_at: float,
         queued_at: float,
         cache_affinity: str = "",
-    ) -> None:
+    ) -> ImageBuildRecord | None:
         build_result: CommandResult | None = None
         push_result: CommandResult | None = None
         started = time.monotonic()
@@ -1464,8 +1465,11 @@ class ImageManager:
             return _build_timings(phases, started, environment_metrics,
                 queue_wait_ms=queue_wait_ms, preparation_ms=preparation_ms)
 
+        final: ImageBuildRecord | None = None
+
         def update_timings():
-            self._update_build(build_id, timings=timings())
+            nonlocal final
+            final = self._update_build(build_id, timings=timings()) or final
 
         def append_output(stream: str, chunk: str) -> None:
             self._append_build_log(build_id, stream, chunk)
@@ -1541,7 +1545,7 @@ class ImageManager:
                 manifest_digest=manifest_digest,
             )
             self.store.upsert(image_record)
-            self._update_build(
+            final = self._update_build(
                 build_id,
                 status="succeeded",
                 command=build_result.argv,
@@ -1554,7 +1558,7 @@ class ImageManager:
                 timings=timings(),
             )
         except Exception as exc:
-            self._update_build(
+            final = self._update_build(
                 build_id,
                 status="failed",
                 **({"command": build_result.argv} if build_result is not None else {}),
@@ -1588,6 +1592,7 @@ class ImageManager:
                         if condition is not None:
                             condition.notify_all()
                         self._start_queued_builds_locked()
+        return final
 
     def _append_build_log(self, build_id: str, stream: str, chunk: str) -> None:
         if not chunk:

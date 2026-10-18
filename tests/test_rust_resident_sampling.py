@@ -215,10 +215,11 @@ class PublishedGrowthTests(unittest.TestCase):
             self.service.refresh_resident_memory()
             self.assertEqual(self.demand(), 4 << 30)
             # A noded that stops publishing: its last pass ages out by itself.
-            publish(self.path, 3, {self.key: sample(current=3 << 30, age=29.9)})
+            # Two seconds of slack: a loaded runner can stall past a tighter one.
+            publish(self.path, 3, {self.key: sample(current=3 << 30, age=28)})
             self.service.refresh_resident_memory()
             self.assertEqual(self.demand(), 1 << 30)
-            time.sleep(0.2)
+            time.sleep(2.1)
             self.assertEqual(self.demand(), 4 << 30)
         # Every reader sees noded's observation.
         observed = sample(current=2 << 30)
