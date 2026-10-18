@@ -12,6 +12,8 @@ sdk_project_venv="$check_root/sdk-project-venv"
 UV_PROJECT_ENVIRONMENT="$root_project_venv" uv sync --locked --extra postgres
 UV_PROJECT_ENVIRONMENT="$root_project_venv" \
   uv run --extra postgres ruff check sandboxes tests scripts
+# AGENTS.md test rules: no test module may gain violations (tests/test_rules_baseline.json).
+UV_PROJECT_ENVIRONMENT="$root_project_venv" uv run --extra postgres python scripts/check_test_rules.py
 
 for script in scripts/*.sh scripts/*/*.sh; do
   bash -n "$script"

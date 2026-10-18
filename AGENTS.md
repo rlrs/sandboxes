@@ -70,7 +70,9 @@ Rules:
 - Don't add tests for code that is about to be deleted, or for `scripts/bench/`.
 
 Much of the existing suite predates these rules. Bring a test in line when you
-change it; don't add more of the old kind.
+change it; don't add more of the old kind. `scripts/check_test_rules.py` (run by
+`check.sh`) fails when a test module gains violations; after removing some, run it
+with `--update` to lower `tests/test_rules_baseline.json`.
 
 ## Changes
 
