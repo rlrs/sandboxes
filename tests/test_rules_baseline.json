@@ -13,14 +13,6 @@
   "private": 4,
   "test_import": 3
  },
- "test_bench_rl_scale.py": {
-  "clock": 2,
-  "private": 3
- },
- "test_benchmark_report_persistence.py": {
-  "private": 2,
-  "private_patch": 1
- },
  "test_bootstrap.py": {
   "clock": 2,
   "private": 7
@@ -48,10 +40,6 @@
   "sleep": 2,
   "test_import": 1
  },
- "test_builder_packing.py": {
-  "private": 4,
-  "test_import": 1
- },
  "test_builder_selection.py": {
   "new": 1,
   "private": 57
@@ -63,7 +51,7 @@
  "test_checkpoint_registry.py": {
   "new": 1,
   "private": 6,
-  "test_import": 4
+  "test_import": 3
  },
  "test_chunk_convert.py": {
   "clock": 1,
@@ -85,9 +73,6 @@
   "sleep": 4,
   "test_import": 4
  },
- "test_chunk_store_nydus.py": {
-  "test_import": 1
- },
  "test_cli.py": {
   "private": 20,
   "private_patch": 17
@@ -105,7 +90,7 @@
  "test_completed_layer_uploads.py": {
   "private": 2,
   "private_patch": 1,
-  "test_import": 2
+  "test_import": 1
  },
  "test_consolidation.py": {
   "clock": 2,
@@ -182,10 +167,6 @@
   "private": 1,
   "private_patch": 1
  },
- "test_direct_registry_pool.py": {
-  "private": 10,
-  "private_patch": 2
- },
  "test_direct_runtime_assembly.py": {
   "private": 2,
   "private_patch": 1,
@@ -232,9 +213,6 @@
   "new": 1,
   "private": 4,
   "private_patch": 1
- },
- "test_environment_dependencies.py": {
-  "test_import": 1
  },
  "test_environment_layers.py": {
   "private": 13,
@@ -288,11 +266,6 @@
   "sleep": 2,
   "test_import": 2
  },
- "test_fair_capacity.py": {
-  "private": 3,
-  "private_patch": 2,
-  "test_import": 1
- },
  "test_fair_reservation_lock.py": {
   "clock": 2,
   "private": 3,
@@ -335,10 +308,6 @@
   "private_patch": 1,
   "sleep": 1
  },
- "test_gateway_startup_state.py": {
-  "private": 1,
-  "test_import": 1
- },
  "test_group_create.py": {
   "private": 1,
   "private_patch": 3,
@@ -355,10 +324,6 @@
  },
  "test_gvisor_distribution.py": {
   "private_patch": 1
- },
- "test_heartbeat_identity_projection.py": {
-  "private_patch": 1,
-  "test_import": 1
  },
  "test_heartbeat_sender.py": {
   "clock": 10,
@@ -406,9 +371,6 @@
   "new": 1,
   "private": 78
  },
- "test_image_pool.py": {
-  "private": 1
- },
  "test_image_recipes.py": {
   "private": 1
  },
@@ -430,9 +392,6 @@
   "private": 4,
   "sleep": 1
  },
- "test_io_pressure_placement.py": {
-  "test_import": 1
- },
  "test_lifecycle_commit.py": {
   "test_import": 1
  },
@@ -442,15 +401,6 @@
   "private_patch": 1,
   "sleep": 2,
   "test_import": 1
- },
- "test_live_inventory_load.py": {
-  "clock": 3,
-  "private": 2,
-  "sleep": 1
- },
- "test_live_relay_load_benchmark.py": {
-  "clock": 14,
-  "sleep": 10
  },
  "test_local_fleet_commit.py": {
   "clock": 2,
@@ -497,9 +447,6 @@
  "test_managed_process.py": {
   "clock": 2,
   "sleep": 1
- },
- "test_managed_read_http.py": {
-  "test_import": 1
  },
  "test_managed_registry.py": {
   "private_patch": 1
@@ -614,13 +561,6 @@
   "sleep": 5,
   "test_import": 4
  },
- "test_phase_timings.py": {
-  "new": 1
- },
- "test_placement_capacity_concurrency.py": {
-  "private": 2,
-  "test_import": 1
- },
  "test_placement_completion_reads.py": {
   "private": 5,
   "sleep": 2
@@ -639,17 +579,6 @@
   "private_patch": 1,
   "test_import": 1
  },
- "test_placement_snapshot_reads.py": {
-  "private": 2,
-  "test_import": 1
- },
- "test_placement_worker_turns.py": {
-  "clock": 2,
-  "private": 2,
-  "private_patch": 1,
-  "sleep": 1,
-  "test_import": 1
- },
  "test_postgres_gateway.py": {
   "private": 2,
   "test_import": 3
@@ -665,18 +594,10 @@
  },
  "test_postgres_routing_snapshot.py": {
   "private": 1,
-  "test_import": 2
+  "test_import": 1
  },
  "test_prepared_images.py": {
   "private": 1,
-  "test_import": 1
- },
- "test_program_capacity_fences.py": {
-  "private": 4,
-  "test_import": 1
- },
- "test_provisioning_admission.py": {
-  "private": 6,
   "test_import": 1
  },
  "test_published_workspace_capacity.py": {
@@ -786,11 +707,6 @@
   "private": 1,
   "test_import": 1
  },
- "test_routing_migration_scope.py": {
-  "private": 2,
-  "private_patch": 2,
-  "test_import": 1
- },
  "test_routing_pool.py": {
   "new": 2,
   "private": 33,
@@ -892,9 +808,6 @@
   "private": 2,
   "sleep": 1
  },
- "test_stage_source_image.py": {
-  "private": 9
- },
  "test_startup_admission.py": {
   "clock": 2,
   "private": 19,
@@ -913,11 +826,6 @@
   "test_import": 1
  },
  "test_storage_compaction_policy.py": {
-  "test_import": 2
- },
- "test_storage_journal_hotpaths.py": {
-  "private": 12,
-  "private_patch": 4,
   "test_import": 1
  },
  "test_storage_journal_pool.py": {
@@ -939,7 +847,7 @@
  "test_storage_native_local_cache.py": {
   "private": 4,
   "private_patch": 2,
-  "test_import": 3
+  "test_import": 2
  },
  "test_storage_native_migration.py": {
   "clock": 6
@@ -947,7 +855,7 @@
  "test_storage_native_publication.py": {
   "private": 2,
   "private_patch": 1,
-  "test_import": 2
+  "test_import": 1
  },
  "test_storage_native_s3.py": {
   "private": 4

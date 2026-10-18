@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from tests.test_storage_native_registry import FakeRegistry
+from tests.storage_native_publisher_support import FakeRegistry
 from tests import test_storage_native_migration as migration_fixtures
 from tests import test_direct_provisioner as provisioner_fixtures
 from tests.support import make_dirs

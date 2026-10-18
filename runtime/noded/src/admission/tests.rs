@@ -1,5 +1,5 @@
 //! Node admission: every Python golden (testdata/goldens.py) replayed; the
-//! ports of tests/test_fair_capacity.py, `TransitionLedgerTests` in
+//! fair-capacity cases ported from the Python suite, `TransitionLedgerTests` in
 //! tests/test_transition_admission.py and the growth forecast cases of
 //! tests/test_managed_growth.py:319-427; and random traces checking the
 //! invariants of tests/test_admission_properties.py on the Rust types.
@@ -597,7 +597,7 @@ fn admission_decisions_replay_python_decide() {
 }
 
 // ---------------------------------------------------------------------------
-// tests/test_fair_capacity.py
+// Fair capacity (ported from the Python suite)
 
 async fn wait_queued(capacity: &FairCapacity<String>, count: usize) {
     let deadline = Instant::now() + Duration::from_secs(3);
