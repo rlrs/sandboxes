@@ -7,7 +7,9 @@ from io import BytesIO
 from tempfile import TemporaryDirectory
 from http.client import HTTPConnection
 from threading import Event, Thread
+import time
 from time import monotonic
+from types import SimpleNamespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import hashlib
@@ -5333,7 +5335,12 @@ class ControlPlaneTests(unittest.TestCase):
             node_url="http://node-1:8090",
         )
 
-        with patch.object(control_plane.time, "sleep") as sleeper:
+        # control_plane's own clock: patching time.sleep itself would also
+        # record other threads' sleeps.
+        sleeper = Mock()
+        clock = SimpleNamespace(**{name: getattr(time, name) for name in dir(time) if not name.startswith("_")})
+        clock.sleep = sleeper
+        with patch.object(control_plane, "time", clock):
             response = handler._pull_image_on_node(heartbeat, "image")
 
         self.assertEqual(response.status, 200)
