@@ -17,6 +17,10 @@
   import that was never activated.
 - **`ucloud-sandboxes-registry-migrate` is deleted.** The filesystem-to-S3 registry
   migration was never used; the registry stays on the filesystem.
+- **Removed unused code.** The in-guest exec agent (`ucloud-sandbox-init agent`,
+  `sandboxes/guest_agent.py`), which was never wired into the exec path, and the
+  flat-image qualification modules (`flat_image_qualification.py`,
+  `oci_flat_delta.py`), which only their own test imported.
 
 ## 0.9.75 - 2026-10-12 (gateway)
 

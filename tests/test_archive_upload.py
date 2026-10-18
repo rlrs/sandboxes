@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import tests.test_direct_provisioner as fixtures
 from tests.test_control_plane import _gateway_server, _running_server, _seed_gateway_node
-from tests.test_guest_agent import build_agent
+from tests.support import build_init_binary
 from sandboxes.capabilities import ARCHIVE_UPLOAD_CAPABILITY
 from sandboxes.direct_service import DirectExecResult, DirectSandboxService
 from sandboxes.http_server import TRANSFER_CHUNK_BYTES
@@ -85,7 +85,7 @@ class ArchivePlanTests(unittest.TestCase):
         plan, payload = _normalized(_tar(("run.sh", b"#!/bin/sh\n", REG, 0o4755), ("lib/a.py", b"a"),
                                          ("old", b"new", REG, 0o600), ("empty/leaf", b"", DIR)))
         with TemporaryDirectory() as raw:
-            binary = str(build_agent(Path(raw)))
+            binary = str(build_init_binary(Path(raw)))
             for helper in ("shell", "static"):
                 with self.subTest(helper), TemporaryDirectory() as tmp:
                     root = Path(tmp)

@@ -194,10 +194,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "file operation failed: %v\n", err)
 			os.Exit(fileExitCode(err))
 		}
-	case "agent":
-		if err := runAgent(os.Args[2:]); err != nil {
-			fatalf("guest agent failed: %v", err)
-		}
 	case "supervise":
 		if err := runSupervisor(os.Args[2:]); err != nil {
 			fatalf("supervisor failed: %v", err)

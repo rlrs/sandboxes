@@ -29,9 +29,8 @@ var (
 	errFileNotRegular = errors.New("not a regular file")
 )
 
-// Exit statuses of `files`, which the guest agent maps to protocol error codes
-// (agent_linux.go). Every failure is non-zero, as callers checking only that
-// still expect. 2 is skipped: a Go panic or fatal runtime error exits with it,
+// Exit statuses of `files`. Every failure is non-zero, as callers checking
+// only that still expect. 2 is skipped: a Go panic or fatal runtime error exits with it,
 // and must read as "failed", not as the caller's mistake.
 const (
 	fileExitFailed     = 1
@@ -58,7 +57,7 @@ func fileExitCode(err error) int {
 	return fileExitFailed
 }
 
-// fileStat is the `files stat` output and the guest agent's stat result.
+// fileStat is the `files stat` output.
 type fileStat struct {
 	Type    string `json:"type"`
 	Size    int64  `json:"size"`
