@@ -3,7 +3,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.storage_native_publisher_support import FakeExporter
-from tests.test_storage_native_registry import FakeRegistry
+from tests.storage_native_publisher_support import FakeRegistry
 from tests.test_storage_native_s3 import FakeS3
 from sandboxes.storage_native_publication import snapshot_compaction_start
 from sandboxes.storage_native_registry import RegistrySnapshotPublisher

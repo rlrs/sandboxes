@@ -59,3 +59,74 @@ class FakeExporter:
         if self.wrong_digest:
             observed = "sha256:" + "0" * 64
         return StorageNativeLayer(digest=observed, size=len(payload))
+
+
+class FakeRegistry:
+    base_url = "http://registry:5000"
+
+    def __init__(self) -> None:
+        self.uploads: dict[str, bytearray] = {}
+        self.blobs: dict[str, bytes] = {}
+        self.manifests: dict[str, bytes] = {}
+        self.next_upload = 0
+
+    def start_blob_upload(self, _repository: str) -> str:
+        self.next_upload += 1
+        location = f"/v2/snapshots/blobs/uploads/{self.next_upload}"
+        self.uploads[location] = bytearray()
+        return location
+
+    def upload_blob_chunk(self, location: str, chunk: bytes) -> str:
+        self.uploads[location].extend(chunk)
+        return location
+
+    def abort_blob_upload(self, location: str) -> None:
+        self.uploads.pop(location, None)
+
+    def finish_blob_upload(self, location: str, digest: str) -> str:
+        payload = bytes(self.uploads.pop(location))
+        observed = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+        if observed != digest:
+            raise ValueError("digest mismatch")
+        self.blobs[digest] = payload
+        return digest
+
+    def blob_exists(self, _repository: str, digest: str) -> bool:
+        return digest in self.blobs
+
+    def put_manifest(
+        self,
+        _repository: str,
+        reference: str,
+        payload: bytes,
+        *,
+        media_type: str,
+    ) -> str:
+        digest = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+        self.manifests[reference] = payload
+        self.manifests[digest] = payload
+        return digest
+
+    def manifest_document(
+        self,
+        _repository: str,
+        reference: str,
+    ) -> tuple[dict, dict[str, str]]:
+        payload = self.manifests[reference]
+        digest = f"sha256:{hashlib.sha256(payload).hexdigest()}"
+        return (
+            json.loads(payload.decode("ascii")),
+            {"Docker-Content-Digest": digest},
+        )
+
+    def blob_bytes(
+        self,
+        _repository: str,
+        digest: str,
+        *,
+        max_bytes: int,
+    ) -> bytes:
+        payload = self.blobs[digest]
+        if len(payload) > max_bytes:
+            raise ValueError("too large")
+        return payload

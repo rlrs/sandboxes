@@ -37,7 +37,7 @@ FILES = [("etc", "dir"), ("etc/hosts", b"127.0.0.1 localhost\n"), ("opt", "dir")
 
 class RegenerationTests(unittest.TestCase):
     """The receipt and the regenerated image, with ``nydus-image unpack``
-    replaced by the tree it must produce (test_chunk_store_nydus runs it)."""
+    replaced by the tree it must produce."""
 
     def setUp(self):
         directory = TemporaryDirectory()

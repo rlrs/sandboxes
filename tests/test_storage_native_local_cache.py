@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from tests import test_storage_native_daemon as fixtures
 from tests.storage_native_publisher_support import FakeExporter
-from tests.test_storage_native_registry import FakeRegistry
+from tests.storage_native_publisher_support import FakeRegistry
 from tests.test_storage_native_s3 import FakeS3
 from sandboxes.storage_native_daemon import StorageVolumeOwner, StorageVolumeState
 from sandboxes.storage_native_local_cache import PublishedLocalCache

@@ -91,11 +91,6 @@ class PostgresRoutingSnapshotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot GC"):
             self.store.storage_snapshot_dependencies_readonly(require_complete=True)
 
-    def test_admission_scope_preserves_incoming_capacity(self):
-        from tests.test_routing_migration_scope import assert_scoped_migrations
-
-        assert_scoped_migrations(self, self.store)
-
     def test_plain_reader_is_read_only_and_returns_connection_cleanly(self):
         with self.store._connect() as conn:
             self.assertEqual(

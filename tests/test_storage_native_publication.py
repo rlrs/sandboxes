@@ -5,7 +5,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from tests.test_storage_native_registry import FakeRegistry
+from tests.storage_native_publisher_support import FakeRegistry
 from tests.test_storage_native_s3 import FakeS3
 from sandboxes.storage_native_publication import PublicationGate
 from sandboxes.storage_native_registry import RegistrySnapshotPublisher
