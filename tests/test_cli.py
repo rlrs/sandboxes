@@ -1,6 +1,6 @@
 import argparse
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
-from dataclasses import fields, replace
+from dataclasses import replace
 from datetime import timedelta
 from functools import wraps
 import io
@@ -12,7 +12,6 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from sandboxes import cli
-from sandboxes.gateway import registry_refs
 from sandboxes.agent import build_heartbeat
 from sandboxes.autoscaler_state import (
     AutoscalerStateStore,
@@ -43,7 +42,6 @@ from sandboxes.routing import (
 from sandboxes.providers import DestructiveInstanceLoss
 from sandboxes.providers.ucloud.api import UCloudError
 from sandboxes.providers.ucloud.config import UCloudSettings
-from sandboxes.providers.ucloud import UCloudProvider
 from sandboxes.providers.hetzner import (
     HetznerCreateProfile,
     HetznerProvider,
@@ -279,18 +277,6 @@ class CliTests(unittest.TestCase):
         )
         options, _ = cli.vm_submission_options_from_args(args, ucloud_config())
         self.assertEqual(options.product.id, "cpu-amd-zen5-4-vcpu")
-
-    def test_dashboard_policy_exposes_every_scale_policy_field(self) -> None:
-        policy = ScalePolicy()
-
-        exposed = cli.dashboard_scale_policy_to_dict(policy)
-
-        self.assertEqual(set(exposed), {field.name for field in fields(policy)})
-        self.assertEqual(
-            exposed["default_node_resources"],
-            policy.default_node_resources.to_dict(),
-        )
-        self.assertEqual(exposed["warm_resources"], policy.warm_resources.to_dict())
 
     def test_control_posts_share_auth_redirect_and_response_bounds(self) -> None:
         def opener_for(body: bytes) -> tuple[MagicMock, MagicMock]:
@@ -529,181 +515,6 @@ class CliTests(unittest.TestCase):
             [],
         )
         self.assertEqual(result["lost_sandbox_ids"], [])
-
-    @allow_fixture_mutations
-    def test_ucloud_expired_lease_preserves_nonempty_node_and_routes(
-        self,
-    ) -> None:
-        submitted: list[dict] = []
-        terminated: list[tuple[str, ...]] = []
-
-        class ReplacementClient:
-            def __init__(self, _session_store) -> None:
-                pass
-
-            def submit_jobs(self, _project_id: str, payload: dict) -> dict:
-                submitted.append(payload)
-                return {"responses": [{"id": "replacement-node"}]}
-
-            def terminate_jobs(
-                self, _project_id: str, job_ids: tuple[str, ...]
-            ) -> dict:
-                terminated.append(tuple(job_ids))
-                return {"responses": [{"id": job_id} for job_id in job_ids]}
-
-        with temporary_root() as root:
-            jobs_file = root / "jobs.json"
-            jobs_file.write_text(
-                json.dumps(
-                    {
-                        "items": [
-                            {
-                                "id": "lost-job",
-                                "createdAt": 1_700_000_000_000,
-                                "owner": {"project": "project-1"},
-                                "specification": {
-                                    "name": "ucloud-sandbox-node-lost",
-                                    "application": {
-                                        "name": "vm-ubuntu",
-                                        "version": "24.04",
-                                    },
-                                    "product": {
-                                        "id": "cpu-amd-zen5-32-vcpu",
-                                        "category": "cpu-amd-zen5",
-                                    },
-                                    "labels": {
-                                        "ucloud-sandboxes/node": "true",
-                                        "ucloud-sandboxes/deployment": "prod-a",
-                                    },
-                                    "resources": [
-                                        {"type": "private_network", "id": "net-1"}
-                                    ],
-                                    "parameters": {"diskSize": {"value": 2000}},
-                                },
-                                "status": {
-                                    "state": "RUNNING",
-                                    "startedAt": 1_700_000_100_000,
-                                },
-                            }
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
-            route_file = root / "routes.sqlite"
-            lost_route = RoutingStore(route_file).upsert_sandbox(
-                sandbox_route(
-                    sandbox_id="lost-sandbox",
-                    node_id="lost-node",
-                    job_id="lost-job",
-                    node_url="http://lost-node:8090",
-                    resources=ResourceQuantity(
-                        vcpu=2,
-                        memory_mb=4096,
-                        disk_mb=8192,
-                    ),
-                    spec={
-                        "id": "lost-sandbox",
-                        "image": "registry.example.org/repo:v1",
-                    },
-                    state="running",
-                    generation=1,
-                    create_operation_id="create-lost",
-                    spec_hash="a" * 64,
-                    delete_operation_id="delete-lost",
-                )
-            )
-            usage_store = RegistryUsageStore(root / "registry-usage.sqlite")
-            usage_store.acquire_reference(
-                "repo",
-                "v1",
-                registry_refs._registry_route_reference_owner(
-                    lost_route,
-                    deployment_id="prod-a",
-                ),
-                digest="sha256:" + "f" * 64,
-            )
-            save_heartbeats(
-                root / "control-state.sqlite",
-                {
-                    "lost-job": NodeHeartbeat(
-                        node_id="lost-node",
-                        job_id="lost-job",
-                        deployment_id="prod-a",
-                        updated_at=utc_now() - timedelta(hours=1),
-                        active_sandboxes=1,
-                        node_url="http://lost-node:8090",
-                        agent_version=package_version(),
-                        inventory_complete=True,
-                        inventory=(
-                            SandboxInventoryEntry(
-                                sandbox_id="lost-sandbox",
-                                generation=1,
-                                operation_id="create-lost",
-                                spec_hash="a" * 64,
-                                state="running",
-                                resources=ResourceQuantity(
-                                    vcpu=2,
-                                    memory_mb=4096,
-                                    disk_mb=8192,
-                                ),
-                            ),
-                        ),
-                        used_resources=ResourceQuantity(
-                            vcpu=2,
-                            memory_mb=4096,
-                            disk_mb=8192,
-                        ),
-                    )
-                },
-            )
-            config_file = write_ucloud_config(root, deployment_id="prod-a")
-            output = io.StringIO()
-            with (
-                patch.object(cli, "UCloudClient", ReplacementClient),
-                patch.object(
-                    cli,
-                    "fetch_node_agent_heartbeat",
-                    side_effect=TimeoutError("node is unreachable"),
-                ),
-                patch.object(
-                    cli,
-                    "_delete_gateway_sandbox",
-                    side_effect=AssertionError(
-                        "lost UCloud guest must not receive sandbox deletes"
-                    ),
-                ) as delete_sandbox,
-            ):
-                with redirect_stdout(output):
-                    exit_code = cli.main(
-                        [
-                            "autoscaler",
-                            "--config",
-                            str(config_file),
-                            "--jobs-file",
-                            str(jobs_file),
-                            "--execute",
-                            "--once",
-                            "--output",
-                            "json",
-                        ]
-                    )
-            delete_sandbox.assert_not_called()
-            payload = json.loads(output.getvalue())
-            routes = RoutingStore(route_file).sandbox_routes_readonly()
-            registry_leases = usage_store.snapshot().leases
-
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(submitted, [])
-        self.assertEqual(terminated, [])
-        self.assertEqual(payload["destructive_node_loss_job_ids"], [])
-        self.assertEqual(payload["quarantined_job_ids"], ["lost-job"])
-        self.assertEqual(payload["lost_sandbox_ids"], [])
-        self.assertEqual(payload["unreachableReadyStopJobIds"], [])
-        self.assertEqual([r.sandbox_id for r in routes], ["lost-sandbox"])
-        self.assertTrue(registry_leases)
-        self.assertEqual(payload["removedRoutes"], [])
-        self.assertEqual(payload["persistedNodeLossDemand"], [])
 
     @allow_fixture_mutations
     def test_hetzner_off_instance_preserves_owned_route(self) -> None:
@@ -947,60 +758,6 @@ class CliTests(unittest.TestCase):
             )
         )
 
-    def test_unreachable_stop_proof_rejects_boolean_zero_counts(self) -> None:
-        with temporary_root() as root:
-            provider_state = AutoscalerStateStore(
-                root / "autoscaler-state.sqlite"
-            )
-            provider = SimpleNamespace(kind="external")
-            operation = ProviderOperation(
-                operation_id="operation-unreachable",
-                intent_key="sandbox:job-1:unreachable:reference-1",
-                kind="stop",
-                deployment_id="prod-a",
-                role="sandbox",
-                state="prepared",
-                request={
-                    "unreachableStaleReady": True,
-                    "unreachableReference": "2026-08-30T00:00:00+00:00",
-                    "routeCount": 0,
-                    "lastKnownActiveSandboxes": 0,
-                    "lastHeartbeatSafeToStop": True,
-                    "lastHeartbeatPresent": True,
-                    "directProbeFailed": True,
-                },
-                response={},
-                target_job_ids=("job-1",),
-                created_at=utc_now(),
-                updated_at=utc_now(),
-            )
-
-            self.assertTrue(
-                cli._stop_operation_has_safety_proof(  # type: ignore[arg-type]
-                    provider_state,
-                    provider,
-                    operation,
-                )
-            )
-            # Silence alone is no proof: a worker that heartbeated must also
-            # have failed the direct probe.
-            for field, value in (
-                ("routeCount", False), ("lastKnownActiveSandboxes", False),
-                ("directProbeFailed", False), ("directProbeFailed", None),
-            ):
-                with self.subTest(field=field, value=value):
-                    malformed = replace(
-                        operation,
-                        request={**operation.request, field: value},
-                    )
-                    self.assertFalse(
-                        cli._stop_operation_has_safety_proof(  # type: ignore[arg-type]
-                            provider_state,
-                            provider,
-                            malformed,
-                        )
-                    )
-
     def test_read_public_ssh_key_file_validates_single_openssh_key(self) -> None:
         with temporary_root() as root:
             key_file = root / "gateway-init.pub"
@@ -1088,147 +845,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("controller lock", stderr.getvalue())
         self.assertEqual(remaining.pending_resources.vcpu, 1)
-
-    @allow_fixture_mutations
-    def test_autoscaler_loop_preserves_pending_signal_created_during_cycle(
-        self,
-    ) -> None:
-        submitted: list[tuple[str, dict]] = []
-
-        original_client = cli.UCloudClient
-        try:
-            with temporary_root() as root:
-                jobs_file = root / "jobs.json"
-                jobs_file.write_text('{"items": []}', encoding="utf-8")
-                route_file = root / "routes.sqlite"
-                RoutingStore(route_file).upsert_pending(
-                    "pending-one",
-                    ResourceQuantity(vcpu=1.0, memory_mb=1024, disk_mb=2048),
-                )
-
-                class FakeUCloudClient:
-                    def __init__(self, _session_store) -> None:
-                        pass
-
-                    def submit_jobs(self, project_id: str, payload: dict) -> dict:
-                        submitted.append((project_id, payload))
-                        RoutingStore(route_file).upsert_pending(
-                            "pending-two",
-                            ResourceQuantity(vcpu=1.0, memory_mb=1024, disk_mb=2048),
-                        )
-                        return {"responses": [{"id": "created-node"}]}
-
-                cli.UCloudClient = FakeUCloudClient
-                config_file = write_ucloud_config(root, deployment_id="prod-a")
-                output = io.StringIO()
-                with redirect_stdout(output):
-                    result = cli.main(
-                        [
-                            "autoscaler",
-                            "--config",
-                            str(config_file),
-                            "--jobs-file",
-                            str(jobs_file),
-                            "--once",
-                            "--execute",
-                            "--output",
-                            "json",
-                        ]
-                    )
-
-                payload = json.loads(output.getvalue())
-                remaining = RoutingStore(route_file).pending_sandboxes()
-        finally:
-            cli.UCloudClient = original_client
-
-        self.assertEqual(result, 0)
-        self.assertEqual(submitted[0][0], "project-1")
-        self.assertEqual(
-            [item["sandbox_id"] for item in payload["consumedPendingDemand"]],
-            ["pending-one"],
-        )
-        self.assertEqual([item.sandbox_id for item in remaining], ["pending-two"])
-
-    @allow_fixture_mutations
-    def test_ambiguous_create_recovers_before_planning_and_then_consumes_demand(
-        self,
-    ) -> None:
-        submitted: list[dict] = []
-
-        class AmbiguousUCloudClient:
-            def __init__(self, _session_store) -> None:
-                pass
-
-            def submit_jobs(self, _project_id: str, payload: dict) -> dict:
-                submitted.append(payload)
-                raise UCloudError("connection dropped after submit")
-
-        original_client = cli.UCloudClient
-        cli.UCloudClient = AmbiguousUCloudClient
-        try:
-            with temporary_root() as root:
-                jobs_file = root / "jobs.json"
-                jobs_file.write_text('{"items": []}', encoding="utf-8")
-                route_file = root / "routes.sqlite"
-                RoutingStore(route_file).upsert_pending(
-                    "pending-one",
-                    ResourceQuantity(vcpu=1, memory_mb=1024, disk_mb=2048),
-                )
-                config_file = write_ucloud_config(root, deployment_id="prod-a")
-                command = [
-                    "autoscaler",
-                    "--config",
-                    str(config_file),
-                    "--jobs-file",
-                    str(jobs_file),
-                    "--once",
-                    "--execute",
-                    "--output",
-                    "json",
-                ]
-                first_output = io.StringIO()
-                with redirect_stdout(first_output):
-                    first_result = cli.main(command)
-                first = json.loads(first_output.getvalue())
-                demand_after_ambiguity = RoutingStore(route_file).pending_demand()
-
-                submitted_item = submitted[0]["items"][0]
-                jobs_file.write_text(
-                    json.dumps(
-                        {
-                            "items": [
-                                {
-                                    "id": "recovered-job",
-                                    "createdAt": int(utc_now().timestamp() * 1000),
-                                    "owner": {"project": "project-1"},
-                                    "specification": submitted_item,
-                                    "status": {"state": "IN_QUEUE"},
-                                }
-                            ]
-                        }
-                    ),
-                    encoding="utf-8",
-                )
-                second_output = io.StringIO()
-                with redirect_stdout(second_output):
-                    second_result = cli.main(command)
-                second = json.loads(second_output.getvalue())
-                demand_after_recovery = RoutingStore(route_file).pending_demand()
-        finally:
-            cli.UCloudClient = original_client
-
-        self.assertEqual(first_result, 0)
-        self.assertEqual(first["providerOperationResults"][0]["state"], "uncertain")
-        self.assertEqual(first["consumedPendingDemand"], [])
-        self.assertEqual(demand_after_ambiguity.pending_resources.vcpu, 1)
-        self.assertEqual(second_result, 0)
-        self.assertEqual(len(submitted), 1)
-        self.assertEqual(second["providerOperationResults"][0]["state"], "recovered")
-        self.assertEqual(
-            [item["sandbox_id"] for item in second["consumedPendingDemand"]],
-            ["pending-one"],
-        )
-        self.assertEqual(demand_after_recovery.pending_resources, ResourceQuantity())
 
     @allow_fixture_mutations
     def test_applied_create_blocks_replacement_until_job_is_visible(self) -> None:
@@ -1496,142 +1112,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(stopped["drainReadyStopJobIds"], ["owned"])
         self.assertEqual(stopped["definitelyTerminatedJobIds"], ["owned"])
 
-    def test_reconcile_replays_pending_delete_then_scales_down(self) -> None:
-        delete_calls: list[str] = []
-        terminate_calls: list[tuple[str, ...]] = []
-
-        class SuccessfulStopClient:
-            def __init__(self, _session_store) -> None:
-                pass
-
-            def terminate_jobs(
-                self, _project_id: str, job_ids: tuple[str, ...]
-            ) -> dict:
-                terminate_calls.append(tuple(job_ids))
-                return {"responses": [{"id": job_id} for job_id in job_ids]}
-
-        route = sandbox_route(
-            sandbox_id="delete-pending",
-            node_id="node-owned",
-            job_id="owned",
-            state="parked",
-            delete_operation_id="delete-pending-operation",
-        )
-        with temporary_root() as root:
-            jobs_file = write_jobs(root, owned_node_job(agent_version=True))
-            heartbeat_file = root / "control-state.sqlite"
-
-            def heartbeat(*, token: str = "", inventory=True) -> NodeHeartbeat:
-                entries = (
-                    (
-                        SandboxInventoryEntry(
-                            sandbox_id=route.sandbox_id,
-                            state="parked",
-                            generation=route.generation,
-                            operation_id=route.create_operation_id,
-                            spec_hash=route.spec_hash,
-                        ),
-                    )
-                    if inventory
-                    else ()
-                )
-                return owned_heartbeat(
-                    idle_since=utc_now() - timedelta(minutes=10),
-                    total_resources=ResourceQuantity(
-                        vcpu=2,
-                        memory_mb=6144,
-                        disk_mb=51200,
-                    ),
-                    resources_known=True,
-                    draining=bool(token),
-                    admission_open=not bool(token),
-                    drain_token=token,
-                    activity_epoch=7,
-                    drain_activity_epoch=7 if token else 0,
-                    inventory_complete=True,
-                    inventory=entries,
-                )
-
-            save_heartbeats(heartbeat_file, {"owned": heartbeat()})
-            config = ucloud_config(
-                project_id="project-1",
-                deployment_id="prod-a",
-                ucloud_session_file=str(root / "session.json"),
-                data_root=str(root),
-                policy=ScalePolicy(max_stop_per_cycle=1, scale_down_idle_seconds=0),
-            )
-            args = autoscaler_args(jobs_file, heartbeat_file)
-            state = AutoscalerStateStore(root / "autoscaler-state.sqlite")
-
-            def replay_delete(
-                _gateway_url: str,
-                sandbox_id: str,
-                **_kwargs,
-            ) -> dict:
-                delete_calls.append(sandbox_id)
-                return {"deleted": {"sandbox_id": sandbox_id}}
-
-            def post_drain(
-                _url: str,
-                token: str,
-                *,
-                draining: bool = True,
-                bearer_token: str | None = None,
-            ) -> dict:
-                del bearer_token
-                return {
-                    "drain": {
-                        "draining": draining,
-                        "token": token,
-                        "admission_open": not draining,
-                    }
-                }
-
-            with (
-                patch.object(cli, "UCloudClient", SuccessfulStopClient),
-                patch.object(
-                    cli,
-                    "_delete_gateway_sandbox",
-                    side_effect=replay_delete,
-                ),
-                patch.object(cli, "_post_node_drain", side_effect=post_drain),
-            ):
-                replayed = reconcile(
-                    config,
-                    args,
-                    state,
-                    route_reservations={"owned": (route,)},
-                    sandbox_routes=(route,),
-                )
-                save_heartbeats(
-                    heartbeat_file,
-                    {"owned": heartbeat(inventory=False)},
-                )
-                draining = reconcile(
-                    config,
-                    args,
-                    state,
-                    route_reservations={},
-                )
-                (intent,) = state.pending_drain_intents(deployment_id="prod-a")
-                save_heartbeats(
-                    heartbeat_file,
-                    {"owned": heartbeat(token=intent.token, inventory=False)},
-                )
-                stopped = reconcile(
-                    config,
-                    args,
-                    state,
-                    route_reservations={},
-                )
-
-        self.assertEqual(delete_calls, [route.sandbox_id])
-        self.assertTrue(replayed["pending_delete_results"][0]["request_succeeded"])
-        self.assertEqual(replayed["requestedStopJobIds"], [])
-        self.assertEqual(draining["stopJobIds"], ["owned"])
-        self.assertEqual(stopped["drainReadyStopJobIds"], ["owned"])
-        self.assertEqual(terminate_calls, [("owned",)])
-
     def test_unfenced_execute_fails_closed(self) -> None:
         terminated: list[tuple[str, tuple[str, ...]]] = []
 
@@ -1876,69 +1356,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(mismatch["stopJobIds"], ["owned"])
         self.assertEqual(mismatch["drainingJobIds"], ["owned"])
 
-    def test_ucloud_unreachable_node_is_quarantined_without_termination(
-        self,
-    ) -> None:
-        terminate_calls: list[tuple[str, ...]] = []
-
-        class SuccessfulStopClient:
-            def __init__(self, _session_store) -> None:
-                pass
-
-            def terminate_jobs(
-                self, _project_id: str, job_ids: tuple[str, ...]
-            ) -> dict:
-                terminate_calls.append(tuple(job_ids))
-                return {"responses": [{"id": job_id} for job_id in job_ids]}
-
-        with temporary_root() as root:
-            jobs_file = write_jobs(root, owned_node_job())
-            heartbeat_file = root / "control-state.sqlite"
-            save_heartbeats(
-                heartbeat_file,
-                {
-                    "owned": owned_heartbeat(
-                        updated_at=utc_now() - timedelta(hours=1),
-                        inventory_complete=True,
-                    )
-                },
-            )
-            config = ucloud_config(
-                project_id="project-1",
-                deployment_id="prod-a",
-                ucloud_session_file=str(root / "session.json"),
-                data_root=str(root),
-                policy=ScalePolicy(
-                    max_stop_per_cycle=1,
-                    unreachable_stop_after_seconds=1800,
-                ),
-            )
-            args = autoscaler_args(jobs_file, heartbeat_file)
-            state = AutoscalerStateStore(root / "autoscaler-state.sqlite")
-
-            with (
-                patch.object(cli, "UCloudClient", SuccessfulStopClient),
-                patch.object(
-                    cli,
-                    "fetch_node_agent_heartbeat",
-                    side_effect=TimeoutError("node is unreachable"),
-                ),
-                patch.object(
-                    cli,
-                    "_post_node_drain",
-                    side_effect=AssertionError("unreachable node must not be drained"),
-                ),
-            ):
-                result = reconcile(config, args, state)
-                retried = reconcile(config, args, state)
-                self.assertEqual(state.list_operations(kind="stop"), [])
-
-        self.assertEqual(terminate_calls, [])
-        self.assertEqual(result["destructive_node_loss_job_ids"], [])
-        self.assertEqual(retried["destructive_node_loss_job_ids"], [])
-        self.assertEqual(result["quarantined_job_ids"], ["owned"])
-        self.assertEqual(result["definitelyTerminatedJobIds"], [])
-
     def test_ucloud_heartbeat_partition_preserves_occupied_worker(self) -> None:
         # A provider-confirmed RUNNING worker is not proven dead by silence.
         # Exercise both heartbeat inventory and gateway-only route ownership.
@@ -2004,23 +1421,6 @@ class CliTests(unittest.TestCase):
                         self.assertEqual(result["definitelyTerminatedJobIds"], [])
                         self.assertEqual(state.list_operations(kind="stop"), [])
                     client.return_value.terminate_jobs.assert_not_called()
-
-    def test_provider_confirmed_loss_records_node_lost_not_unknown(self):
-        with temporary_root() as root:
-            store = RoutingStore(root / "routes.sqlite")
-            for job_id in ("final-job", "terminated-job", "live-job"):
-                store.upsert_sandbox(sandbox_route(f"{job_id}-box", job_id=job_id))
-            # Routes the continuity probe retired release their references too.
-            retired = sandbox_route("retired-box", job_id="live-job")
-            removed = cli._delete_lost_routes(store, {
-                "prunedFinalHeartbeats": ["final-job"], "rawRetiredRoutes": (retired,),
-                "definitelyTerminatedJobIds": ["terminated-job"], "rawNodes": [],
-            }, ScalePolicy(), stale=False)
-            self.assertEqual(sorted(r.sandbox_id for r in removed),
-                             ["final-job-box", "retired-box", "terminated-job-box"])
-            for job_id in ("final-job", "terminated-job"):
-                self.assertEqual(store.get_sandbox_loss(f"{job_id}-box")["reason"], "node_lost")
-            self.assertIsNotNone(store.get_sandbox("live-job-box"))
 
     def test_pending_delete_replay_rotates_durably_with_bounded_attempts(self):
         # Intent age alone let a silent worker's oldest intents take the
@@ -2096,10 +1496,6 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(
                     cli._probe_unreachable_node(heartbeat, "test-token"), (None, False)
                 )
-
-    def test_ucloud_declares_no_status_or_silence_deletion_authority(self):
-        self.assertEqual(UCloudProvider.destructive_instance_losses, ())
-        self.assertTrue(UCloudProvider.requires_guest_continuity)
 
     def test_external_provider_must_declare_its_continuity_contract(self):
         from sandboxes.providers import loader

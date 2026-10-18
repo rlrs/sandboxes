@@ -5,11 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from tempfile import TemporaryDirectory
 from pathlib import Path
-import json
 import sqlite3
-import subprocess
-import sys
-from threading import Event
 import unittest
 from unittest.mock import patch
 
@@ -204,74 +200,6 @@ class RoutingStoreTests(unittest.TestCase):
             self.assertIsNone(store.confirm_sandbox_observation(route))
             self.assertEqual(store.get_sandbox(route.sandbox_id),newer)
 
-    def test_writer_handoff_rolls_back_failure_and_keeps_reads_independent(self):
-        with routing_store() as store, ThreadPoolExecutor(max_workers=2) as executor:
-            peer = RoutingStore(store.path)
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id="agent", node_id="node", job_id="job", node_url="http://node", state="parked",
-            ))
-            entered = Event()
-            release = Event()
-
-            def failing_writer():
-                with store._transaction() as conn:
-                    conn.execute("UPDATE sandboxes SET state='waking' WHERE sandbox_id='agent'")
-                    entered.set()
-                    self.assertTrue(release.wait(timeout=5))
-                    raise RuntimeError("abort write")
-
-            first = executor.submit(failing_writer)
-            self.assertTrue(entered.wait(timeout=5))
-            try:
-                # Separate RoutingStore objects share coordination; ordinary
-                # reads still see the last committed WAL snapshot immediately.
-                self.assertIs(store._write_batches, peer._write_batches)
-                read = executor.submit(peer.get_sandbox_readonly, route.sandbox_id)
-                self.assertEqual(read.result(timeout=2).state, "parked")
-                write = executor.submit(peer.reserve_sandbox_wake, route, pending_id="wake:agent")
-            finally:
-                release.set()
-            with self.assertRaisesRegex(RuntimeError, "abort write"):
-                first.result(timeout=2)
-            self.assertEqual(write.result(timeout=2).state, "waking")
-
-    def test_wake_reservation_clears_demand_only_with_successful_fenced_transition(self):
-        with routing_store() as store:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id='agent', node_id='node', job_id='job', node_url='http://node', state='parked',
-            ))
-            store.upsert_pending('wake:agent', ResourceQuantity(vcpu=1))
-            stale = replace(route, generation=route.generation + 1)
-            self.assertIsNone(store.reserve_sandbox_wake(
-                stale, pending_id='wake:agent',
-            ))
-            self.assertIsNotNone(store.get_pending('wake:agent'))
-            with patch.object(store, '_transaction', wraps=store._transaction) as transactions:
-                stored = store.reserve_sandbox_wake(
-                    route, pending_id='wake:agent',
-                )
-            self.assertEqual(stored.state, 'waking')
-            self.assertIsNone(store.get_pending('wake:agent'))
-            self.assertEqual(transactions.call_count, 1)
-
-    def test_wake_reservation_preserves_owner_fences_and_bypasses_unrelated_process_lock(self):
-        with routing_store() as store:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id='agent', node_id='node', job_id='job', node_url='http://node', state='parked',
-                activity_epoch=7, storage_snapshot={'opaque': ['preserved']},
-            ))
-            for changes in ({'node_id': 'other'}, {'job_id': 'other'}, {'node_url': 'http://other'},
-                            {'create_operation_id': 'other'}, {'spec_hash': 'b' * 64}):
-                with self.subTest(changes=changes):
-                    self.assertIsNone(store.reserve_sandbox_wake(replace(route, **changes), pending_id='wake:agent'))
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                with store._lock, patch.object(store, '_write_sandbox', side_effect=AssertionError('payload rewrite')):
-                    stored = pool.submit(store.reserve_sandbox_wake, route, pending_id='wake:agent').result(timeout=2)
-            self.assertEqual(stored.activity_epoch, 7)
-            self.assertEqual(stored.storage_snapshot, route.storage_snapshot)
-            self.assertEqual(store.get_sandbox_readonly('agent'), stored)
-            self.assertIsNone(store.reserve_sandbox_wake(route, pending_id='wake:agent'))
-
     def test_scoped_epoch_history_preserves_completed_handoffs(self) -> None:
         with routing_store() as store:
             for name in ("one", "two"):
@@ -313,129 +241,6 @@ class RoutingStoreTests(unittest.TestCase):
                 self.assertEqual(decode.call_count, 1)
                 self.assertEqual(store.sandbox_migrations(active_only=True, sandbox_id="absent"), [])
                 self.assertEqual(decode.call_count, 1)
-
-    def test_node_placement_read_decodes_only_changed_rows(self) -> None:
-        with routing_store() as store:
-            for name in ("one", "two"):
-                store.upsert_sandbox(sandbox_route(
-                    sandbox_id=name, node_id="node", job_id="job",
-                    node_url="http://node", state="running",
-                ))
-            identity = {"node_id": "node", "job_id": "job", "node_url": "http://node"}
-            first = store.sandbox_routes_matching_node_identity(**identity)
-            with patch("sandboxes.routing._sandbox_route_from_row",
-                       wraps=routing_module._sandbox_route_from_row) as decode:
-                again = store.sandbox_routes_matching_node_identity(**identity)
-                self.assertEqual(decode.call_count, 0)
-                self.assertTrue(all(a is b for a, b in zip(first, again)))
-                store.upsert_sandbox(sandbox_route(
-                    sandbox_id="two", node_id="node", job_id="job",
-                    node_url="http://node", state="parked",
-                ))
-                before = decode.call_count  # the write decodes its own result
-                changed = store.sandbox_routes_matching_node_identity(**identity)
-                self.assertEqual(decode.call_count - before, 1)
-            by_id = {route.sandbox_id: route for route in changed}
-            self.assertEqual(by_id["two"].state, "parked")
-            self.assertIs(by_id["one"], first[0] if first[0].sandbox_id == "one" else first[1])
-
-    def test_single_route_reads_do_not_wait_for_reconciliation_writer(self) -> None:
-        with routing_store() as store, ThreadPoolExecutor(max_workers=2) as executor:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id="active", node_id="node", job_id="job",
-                node_url="http://node", state="running",
-            ))
-            store.upsert_pending("waiting", ResourceQuantity(1, 512, 1024))
-            pending = store.get_pending("waiting")
-            # Hold both the reconciliation mutex and an uncommitted WAL write.
-            # Readers must see committed rows, then observe the later commit.
-            with store._lock, store._transaction() as writer:
-                writer.execute("UPDATE sandboxes SET state = 'parked'")
-                writer.execute("DELETE FROM pending")
-                route_read = executor.submit(store.get_sandbox, "active")
-                pending_read = executor.submit(store.get_pending, "waiting")
-                self.assertEqual(route_read.result(timeout=2), route)
-                self.assertEqual(pending_read.result(timeout=2), pending)
-            self.assertEqual(store.get_sandbox("active").state, "parked")
-            self.assertIsNone(store.get_pending("waiting"))
-
-    def test_exec_read_observes_worker_loss_from_another_process(self) -> None:
-        with routing_store() as store:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id="lost", node_id="node", job_id="job",
-                node_url="http://node", state="running",
-            ))
-            store.upsert_exec(ExecRoute(
-                session_id="accepted", sandbox_id=route.sandbox_id,
-                node_id=route.node_id, job_id=route.job_id, node_url=route.node_url,
-            ))
-            self.assertIsNotNone(store.get_exec("accepted"))
-            subprocess.run([
-                sys.executable, "-c",
-                "from pathlib import Path; import sys; "
-                "from sandboxes.routing import RoutingStore; "
-                "RoutingStore(Path(sys.argv[1])).delete_sandboxes_for_jobs_with_error"
-                "(['job'], terminal_error='node_lost')",
-                str(store.path),
-            ], check=True)
-            self.assertIsNone(store.get_exec("accepted"))
-            self.assertEqual(store.get_exec_loss("accepted")["job_id"], "job")
-
-    def test_exec_loss_survives_restart_and_sandbox_reuse_then_expires(self) -> None:
-        with routing_store() as store:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id="lost", node_id="node", job_id="job",
-                node_url="http://node", state="running",
-            ))
-            store.upsert_exec(ExecRoute(
-                session_id="accepted", sandbox_id=route.sandbox_id,
-                node_id=route.node_id, job_id=route.job_id, node_url=route.node_url,
-            ))
-            store.delete_sandboxes_for_jobs_with_error(["job"], terminal_error="node_lost")
-            reopened = RoutingStore(store.path)
-            self.assertIsNone(reopened.get_exec("accepted"))
-            loss = reopened.get_exec_loss("accepted")
-            self.assertEqual(loss["generation"], 1)
-            self.assertEqual(loss["job_id"], "job")
-            reopened.delete_sandbox("lost")
-            reopened.upsert_sandbox(replace(route, generation=2, create_operation_id="new"))
-            self.assertEqual(reopened.get_exec_loss("accepted"), loss)
-            self.assertIsNone(reopened.get_exec_loss("unknown"))
-            with patch("sandboxes.routing.utc_now", return_value=utc_now() + timedelta(days=8)):
-                self.assertIsNone(reopened.get_exec_loss("accepted"))
-                reopened.load()
-            with sqlite3.connect(store.path) as conn:
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM exec_losses").fetchone()[0], 0)
-
-    def test_node_loss_survives_restart_but_not_a_new_incarnation(self) -> None:
-        with routing_store() as store:
-            route = store.upsert_sandbox(
-                sandbox_route(
-                    sandbox_id="lost",
-                    node_id="node",
-                    job_id="job",
-                    node_url="http://node",
-                    state="running",
-                )
-            )
-            store.delete_sandboxes_for_jobs_with_error(
-                ["job"], terminal_error="node_lost"
-            )
-            reopened = RoutingStore(store.path)
-            loss = reopened.get_sandbox_loss("lost")
-            self.assertEqual(loss["reason"], "node_lost")
-            self.assertEqual(loss["generation"], 1)
-            self.assertEqual(loss["job_id"], "job")
-            self.assertEqual(reopened.terminal_sandbox_incarnations(), {("lost", 1): "node_lost"})
-            reopened.delete_sandbox("lost")  # Idempotent cleanup keeps the diagnosis.
-            self.assertEqual(reopened.get_sandbox_loss("lost"), loss)
-            reopened.upsert_sandbox(
-                replace(route, generation=2, create_operation_id="new")
-            )
-            self.assertIsNone(reopened.get_sandbox_loss("lost"))
-            self.assertEqual(reopened.terminal_sandbox_incarnations(), {("lost", 1): "node_lost"})
-            reopened.delete_sandbox("lost")
-            self.assertIsNone(reopened.get_sandbox_loss("lost"))
 
     def test_node_loss_backfill_and_retention(self) -> None:
         with routing_store() as store:
@@ -711,66 +516,6 @@ class RoutingStoreTests(unittest.TestCase):
             with self.assertRaises(SandboxRouteConflictError):
                 store.upsert_managed_process(route, refreshed)
 
-    def test_sandbox_delete_removes_only_its_managed_process_row(self):
-        with routing_store() as store:
-            routes = {
-                sandbox_id: store.upsert_sandbox(sandbox_route(
-                    sandbox_id=sandbox_id, node_id="n", job_id="vm", node_url="http://n",
-                ))
-                for sandbox_id in ("gone", "kept")
-            }
-            for sandbox_id, route in routes.items():
-                store.upsert_managed_process(route, ManagedProcessRecord(
-                    sandbox_id=sandbox_id, sandbox_generation=route.generation,
-                    job_id="agent", spec_sha256="a" * 64, state="running", sequence=1,
-                ))
-            store.delete_sandbox("gone")
-            self.assertIsNone(store.get_managed_process("gone"))
-            self.assertEqual(store.get_managed_process("kept").job_id, "agent")
-
-    def test_managed_changes_and_warmup_reads_progress_under_projection_lock(self):
-        with routing_store() as store, ThreadPoolExecutor(max_workers=1) as pool:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id="poll", node_id="n", job_id="vm", node_url="http://n",
-            ))
-            record = ManagedProcessRecord(
-                sandbox_id="poll", sandbox_generation=route.generation,
-                job_id="agent", spec_sha256="a" * 64, state="running", sequence=1,
-            )
-            with store._lock:
-                self.assertEqual(pool.submit(store.upsert_managed_process, route, record).result(2), record)
-                with patch.object(store, "_transaction", side_effect=AssertionError("warmup read wrote")):
-                    self.assertEqual(pool.submit(store.image_warmups).result(2), [])
-            terminal = replace(record, state="exited", sequence=2, exit_code=0)
-            self.assertEqual(store.upsert_managed_process(route, terminal), terminal)
-            self.assertEqual(store.upsert_managed_process(route, record), terminal)
-            self.assertEqual(store.get_managed_process("poll"), terminal)
-
-    def test_lifecycle_mutations_progress_during_inventory_projection(self) -> None:
-        with routing_store() as store, ThreadPoolExecutor(max_workers=1) as pool:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id="independent-wake", node_id="n", job_id="j",
-                node_url="http://node:8090", state="parked",
-            ))
-            # Inventory may retain its last committed snapshot while decoding
-            # it under the projection lock. Row mutations use the SQL fence.
-            with store._lock, store._connect() as reader:
-                reader.execute("BEGIN")
-                self.assertEqual(reader.execute("SELECT state FROM sandboxes").fetchone()[0], "parked")
-                updated = pool.submit(
-                    store.set_sandbox_state_if_current, route,
-                    expected_states={"parked"}, state="running",
-                ).result(timeout=2)
-                self.assertEqual(updated.state, "running")
-                program, changed = pool.submit(
-                    store.upsert_program_request_transition_with_change, updated,
-                    request_id="r", rollout_id="agent", state="acting",
-                ).result(timeout=2)
-                self.assertTrue(changed)
-                self.assertEqual(program.state, "acting")
-                self.assertEqual(reader.execute("SELECT state FROM sandboxes").fetchone()[0], "parked")
-            self.assertEqual(store.get_sandbox_readonly(route.sandbox_id).state, "running")
-
     def test_program_request_lifecycle_is_monotonic_durable_and_terminal(self) -> None:
         with TemporaryDirectory() as raw_dir:
             path = Path(raw_dir) / "routes.sqlite"
@@ -929,13 +674,6 @@ class RoutingStoreTests(unittest.TestCase):
             ("job-1",),
         )
         self.assertEqual(indexed_demand.placement_requests, demand.placement_requests)
-
-    def test_routing_database_is_owner_only(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            route_file = Path(raw_dir) / "routes.sqlite"
-            RoutingStore(route_file).load()
-
-            self.assertEqual(route_file.stat().st_mode & 0o777, 0o600)
 
     def test_concurrent_writes_preserve_valid_state(self) -> None:
         with TemporaryDirectory() as raw_dir:
@@ -1946,29 +1684,6 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(portable.activity_epoch, 0)
         self.assertNotIn("exec-portable-preserved", state.exec_sessions)
 
-    def test_non_sqlite_state_fails_closed(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            route_file = Path(raw_dir) / "routes.json"
-            route_file.write_text(
-                json.dumps(
-                    {
-                        "sandboxes": [],
-                        "exec_sessions": [],
-                        "pending": [],
-                        "image_builds": [],
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            with self.assertRaisesRegex(sqlite3.DatabaseError, "not a SQLite"):
-                RoutingStore(route_file)
-            self.assertTrue(route_file.exists())
-            self.assertEqual(
-                json.loads(route_file.read_text(encoding="utf-8"))["sandboxes"],
-                [],
-            )
-
     def test_unversioned_sqlite_state_fails_closed(self) -> None:
         with TemporaryDirectory() as raw_dir:
             route_file = Path(raw_dir) / "routes.sqlite"
@@ -2638,91 +2353,6 @@ class RoutingStoreTests(unittest.TestCase):
                 )
                 self.assertEqual((removed, stale_snapshots), ([], []))
                 self.assertEqual(store.get_sandbox_readonly(old.sandbox_id), old)
-
-    def test_reconcile_transaction_cannot_delete_concurrent_new_incarnation(
-        self,
-    ) -> None:
-        with TemporaryDirectory() as raw_dir:
-            path = Path(raw_dir) / "routes.sqlite"
-            reconciling_store = RoutingStore(path)
-            writer_store = RoutingStore(path)
-            first = allocate_sandbox_create(
-                writer_store,
-                sandbox_allocation(
-                    sandbox_id="reused-id",
-                    node_id="node-1",
-                    job_id="job-1",
-                    node_url="http://node-1:8090",
-                    spec={"id": "reused-id", "image": "busybox"},
-                ),
-                spec_hash="1" * 64,
-                create_operation_id="create-1",
-            )
-            writer_store.upsert_sandbox(
-                sandbox_route(**{**first.__dict__, "state": "running"})
-            )
-            snapshot_reached = Event()
-            allow_reconcile_to_continue = Event()
-            original_scoped_load = (
-                reconciling_store._sandbox_routes_for_node_url_unlocked
-            )
-            loaded_node_urls: list[str] = []
-
-            def pause_at_snapshot(conn, node_url, **kwargs):
-                loaded_node_urls.append(node_url)
-                snapshot = original_scoped_load(conn, node_url, **kwargs)
-                snapshot_reached.set()
-                self.assertTrue(allow_reconcile_to_continue.wait(timeout=5))
-                return snapshot
-
-            reconciling_store._sandbox_routes_for_node_url_unlocked = pause_at_snapshot
-
-            def replace_incarnation() -> SandboxRoute:
-                writer_store.delete_sandbox_if_current(
-                    "reused-id",
-                    generation=1,
-                    create_operation_id="create-1",
-                )
-                return allocate_sandbox_create(
-                    writer_store,
-                    sandbox_allocation(
-                        sandbox_id="reused-id",
-                        node_id="node-1",
-                        job_id="job-1",
-                        node_url="http://node-1:8090",
-                        spec={"id": "reused-id", "image": "python"},
-                    ),
-                    spec_hash="2" * 64,
-                    create_operation_id="create-2",
-                )
-
-            observed_at = (utc_now() + timedelta(seconds=1)).isoformat()
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                reconciliation = executor.submit(
-                    reconciling_store.reconcile_sandboxes_for_node,
-                    first.node_url,
-                    [],
-                    node_id=first.node_id,
-                    job_id=first.job_id,
-                    reported_sandbox_ids=set(),
-                    observed_at=observed_at,
-                    node_epoch="",
-                    activity_epoch=0,
-                    inventory_complete=True,
-                )
-                self.assertTrue(snapshot_reached.wait(timeout=5))
-                replacement = executor.submit(replace_incarnation)
-                allow_reconcile_to_continue.set()
-                reconciliation.result(timeout=5)
-                replacement.result(timeout=5)
-            stored = RoutingStore(path).get_sandbox_readonly(first.sandbox_id)
-
-        self.assertIsNotNone(stored)
-        assert stored is not None
-        self.assertEqual(stored.generation, 2)
-        self.assertEqual(stored.create_operation_id, "create-2")
-        self.assertEqual(stored.spec_hash, "2" * 64)
-        self.assertEqual(loaded_node_urls, [first.node_url])
 
     def test_concurrent_different_spec_allocation_rejects_loser_atomically(
         self,

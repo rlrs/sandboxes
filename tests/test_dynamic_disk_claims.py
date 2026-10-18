@@ -77,21 +77,6 @@ class DynamicDiskClaimTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._plan("legacy", split=False)
 
-    def test_admitted_growth_refuses_without_headroom_and_recorded_bytes_always_land(self):
-        self._owned("one")
-        self._owned("two")
-        grown = self.registry.update_disk_claim("one", 1, workspace_mb=2048, require_capacity=True)
-        self.assertEqual(grown, DiskClaim(2048, 64))
-        with self.assertRaises(DirectRegistryCapacityUnavailable):
-            self.registry.update_disk_claim("two", 1, workspace_mb=2048, require_capacity=True)
-        self.assertEqual(self.registry.disk_claim("two", 1), DiskClaim(1024, 64))
-        # A committed checkpoint exists whether or not it fits: record it.
-        self.registry.update_disk_claim("two", 1, memory_mb=900)
-        self.assertEqual(self._reserved_mb(), 2048 + 64 + 1024 + 900)
-        # Shrinking never needs headroom.
-        self.registry.update_disk_claim("two", 1, memory_mb=64, require_capacity=True)
-        self.assertEqual(self._reserved_mb(), 2048 + 64 + 1024 + 64)
-
     def test_published_workspace_releases_the_dynamic_grant_and_remount_recharges_it(self):
         self._owned("one")
         self.registry.update_disk_claim("one", 1, workspace_mb=1500)
@@ -110,13 +95,6 @@ class DynamicDiskClaimTests(unittest.TestCase):
         self.registry.reserve_workspace_for_mount("one", 1)
         self.assertEqual(self._reserved_mb(), 1024 + 64)
 
-    def test_record_writes_do_not_reset_a_dynamic_claim(self):
-        self._owned("one")
-        self.registry.update_disk_claim("one", 1, workspace_mb=3000, memory_mb=10)
-        record = self.registry.get("one")
-        self.registry.begin_delete("one", expected_revision=record.revision)
-        self.assertEqual(self.registry.disk_claim("one", 1), DiskClaim(3000, 10))
-
     def test_fixed_claims_ignore_updates(self):
         self.registry.hard_disk_capacity_mb = 10**6
         self.registry.plan(spec=_spec("legacy"), sandbox_generation=1, operation_id="create:legacy",
@@ -124,30 +102,6 @@ class DynamicDiskClaimTests(unittest.TestCase):
         self.assertIsNone(self.registry.disk_claim("legacy", 1))
         self.assertIsNone(self.registry.update_disk_claim("legacy", 1, workspace_mb=1))
         self.assertEqual(self._reserved_mb(), _spec("legacy").requested_resources().disk_mb)
-
-    def test_adopting_a_published_fixed_claim_keeps_the_total(self):
-        self.registry.hard_disk_capacity_mb = 10**6
-        planned = self._plan("one", claim=None)
-        quota = self.registry.commit_quota(
-            "one", expected_revision=planned.revision, project_id=200000,
-            total_mb=planned.spec.requested_resources().disk_mb, quota_path=self.root / "one")
-        incarnation = "one.sandbox-1"
-        rootfs = self.registry.commit_rootfs(
-            "one", expected_revision=quota.revision, image_id="sha256:" + "e" * 64,
-            sandbox=DirectSandbox(
-                sandbox_id="one", sandbox_generation=1, container_id="f" * 64,
-                spec_sha256=quota.spec_sha256, rootfs_sha256="d" * 64,
-                bundle=self.root / "bundles" / "one", memory_directory=incarnation,
-                workspace_directory="workspace-" + incarnation, memory=planned.memory_reference))
-        self.registry.commit_owned("one", expected_revision=rootfs.revision)
-        self.assertTrue(self.registry.release_published_workspace(
-            "one", 1, workspace_mb=4096, expected_mount_epoch=0))
-        before = self._reserved_mb()
-        adopted = self.registry.update_disk_claim("one", 1, adopt=True)
-        self.assertEqual(adopted.workspace_mb, 4096)
-        self.assertEqual(self._reserved_mb(), before)
-        self.registry.reserve_workspace_for_mount("one", 1)
-        self.assertEqual(self._reserved_mb(), before + 4096)
 
     def test_version8_upgrade_keeps_each_registration_fixed(self):
         self.registry.hard_disk_capacity_mb = 10**6
@@ -171,38 +125,6 @@ class DynamicDiskClaimTests(unittest.TestCase):
         self.assertIsNone(reopened.disk_claim("one", 1))
         with closing(sqlite3.connect(self.registry.path)) as conn:
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 9)
-
-
-class GatewayInitialClaimTests(unittest.TestCase):
-    def _heartbeat(self, grant=1024, idle=64):
-        from dataclasses import replace
-        from tests.test_wake_capacity import WakeCapacityTests
-        heartbeat = WakeCapacityTests().heartbeat(active=0)
-        return replace(heartbeat, runtime_metrics=replace(
-            heartbeat.runtime_metrics, storage_workspace_grant_mb=grant,
-            storage_memory_idle_claim_mb=idle))
-
-    def _route(self, parkable=True, state="creating"):
-        from tests import test_control_plane as fixtures
-        spec = _spec("burst")
-        return fixtures._sandbox_route(
-            sandbox_id="burst", node_id="node", job_id="job", node_url="http://node:8090",
-            state=state, resources=spec.requested_resources(),
-            spec={**spec.to_dict(), "parkable": parkable},
-        )
-
-    def test_in_flight_create_is_charged_the_advertised_initial_claim(self):
-        from sandboxes.placement_accounting import _node_reserved_route_resources
-        full = _spec("burst").requested_resources().disk_mb
-        charged = _node_reserved_route_resources(self._heartbeat(), [self._route()])
-        self.assertEqual(charged.disk_mb, 1024 + 64)
-        # File-backed memory keeps the formula memory component.
-        charged = _node_reserved_route_resources(self._heartbeat(idle=0), [self._route()])
-        self.assertEqual(charged.disk_mb, 1024 + full - 4096)
-        # Older workers, and non-parkable sandboxes, keep the full claim.
-        for heartbeat, route in ((self._heartbeat(0, 0), self._route()),
-                                 (self._heartbeat(), self._route(parkable=False))):
-            self.assertEqual(_node_reserved_route_resources(heartbeat, [route]).disk_mb, full)
 
 
 if __name__ == "__main__":

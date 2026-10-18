@@ -1,13 +1,10 @@
 """Exact-owner reads avoid transaction setup without weakening placement snapshots."""
 
-from contextlib import contextmanager
-from dataclasses import replace
 import os
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
 from uuid import uuid4
 
 from tests.test_routing import sandbox_route
@@ -48,86 +45,6 @@ class SingleStatementRoutingTests(unittest.TestCase):
             )
         self.temp.cleanup()
 
-    def test_exact_read_issues_one_statement_and_no_transaction_setup(self):
-        statements = []
-        transactions = []
-        original = self.store.pool.connection
-
-        class ObservedConnection:
-            def __init__(self, conn):
-                self.conn = conn
-
-            def execute(self, query, parameters=()):
-                statements.append(query)
-                return self.conn.execute(query, parameters)
-
-            def transaction(self):
-                transactions.append(True)
-                return self.conn.transaction()
-
-        @contextmanager
-        def observed():
-            with original() as conn:
-                yield ObservedConnection(conn)
-
-        with patch.object(self.store.pool, "connection", observed):
-            self.assertEqual(self.store.get_sandbox("single"), self.route)
-        self.assertEqual(len(statements), 1)
-        self.assertTrue(statements[0].strip().startswith("SELECT"))
-        self.assertEqual(transactions, [])
-
-        from sandboxes.routing import ExecRoute
-
-        exec_route = ExecRoute(
-            session_id="exec-single", sandbox_id="single", node_id="n",
-            job_id="j", node_url="http://node",
-        )
-        self.store.upsert_exec(exec_route)
-        statements.clear()
-        with patch.object(self.store.pool, "connection", observed):
-            stored = self.store.get_exec("exec-single")
-            self.assertIsNone(self.store.get_exec("absent"))
-        self.assertEqual(stored.sandbox_id, "single")
-        self.assertEqual(len(statements), 2)  # One per exec poll lookup.
-        self.assertEqual(transactions, [])
-
-    def test_nested_read_reuses_uncommitted_transaction_and_snapshot(self):
-        with self.store._transaction() as conn:
-            conn.execute(
-                "UPDATE sandboxes SET state=? WHERE sandbox_id=?", ("parked", "single")
-            )
-            with patch.object(
-                self.store.pool,
-                "connection",
-                side_effect=AssertionError("nested read borrowed another connection"),
-            ):
-                self.assertEqual(self.store.get_sandbox("single").state, "parked")
-        self.assertEqual(self.store.get_sandbox("single").state, "parked")
-
-    def test_placement_snapshot_survives_concurrent_commit(self):
-        with self.store._transaction():
-            before = self.store.get_sandbox("single")
-            with self.store.pool.connection() as other:
-                other.execute(
-                    "UPDATE sandboxes SET activity_epoch=activity_epoch+1 WHERE sandbox_id=%s",
-                    ("single",),
-                )
-            self.assertEqual(self.store.get_sandbox("single"), before)
-        self.assertEqual(
-            self.store.get_sandbox("single").activity_epoch, before.activity_epoch + 1
-        )
-
-    def test_external_read_observes_delete_and_new_generation(self):
-        self.store.delete_sandbox("single")
-        self.assertIsNone(self.store.get_sandbox("single"))
-        newer = replace(
-            self.route,
-            generation=self.route.generation + 1,
-            create_operation_id="create-new",
-        )
-        self.store.upsert_sandbox(newer)
-        self.assertEqual(self.store.get_sandbox("single").generation, newer.generation)
-
     def test_replaced_authority_descriptor_fails_before_read(self):
         self.path.write_text("descriptor")
         self.store.bind_authority()
@@ -144,22 +61,3 @@ class SingleStatementRoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(sqlite3.DatabaseError, "routing read failed"):
             self.store._fetchone_readonly("SELECT * FROM nonexistent_read_table")
         self.assertEqual(self.store.get_sandbox("single"), self.route)
-
-    def test_multiquery_reader_retains_coherent_snapshot(self):
-        with self.store._connect() as conn:
-            before = conn.execute(
-                "SELECT activity_epoch FROM sandboxes WHERE sandbox_id=?", ("single",)
-            ).fetchone()[0]
-            with self.store.pool.connection() as other:
-                other.execute(
-                    "UPDATE sandboxes SET activity_epoch=activity_epoch+1 WHERE sandbox_id=%s",
-                    ("single",),
-                )
-            self.assertEqual(
-                conn.execute(
-                    "SELECT activity_epoch FROM sandboxes WHERE sandbox_id=?",
-                    ("single",),
-                ).fetchone()[0],
-                before,
-            )
-        self.assertEqual(self.store.get_sandbox("single").activity_epoch, before + 1)

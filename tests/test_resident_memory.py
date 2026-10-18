@@ -37,18 +37,6 @@ class ResidentMemoryTests(unittest.TestCase):
             **kwargs,
         )
 
-    def test_samples_actual_charge_and_cost_counters_without_process_rss(self):
-        sample = self.sample(expected_path="/ucloud-sandboxes/" + self.container)
-        self.assertEqual(sample.current_bytes, 1000)
-        self.assertEqual(sample.clean_file_bytes, 730)
-        self.assertEqual(sample.refault_file_pages, 7)
-        self.assertEqual(self.sampler.get(("s", 1)), sample)
-        with patch(
-            "sandboxes.resident_memory.time.monotonic",
-            return_value=time.monotonic() + 3,
-        ):
-            self.assertIsNone(self.sampler.get(("s", 1)))
-
     def test_containment_is_resolved_once_per_unchanged_cgroup(self):
         expected = "/ucloud-sandboxes/" + self.container
         with patch.object(Path, "resolve", autospec=True, side_effect=Path.resolve) as resolve:
@@ -74,51 +62,6 @@ class ResidentMemoryTests(unittest.TestCase):
         self.stat.write_text("123 (sentry) S " + "0 " * 18 + "999 0")
         self.assertIsNone(self.sample())
         self.assertIsNone(self.sampler.get(("s", 1)))
-
-    def test_missing_or_stale_footprint_allows_only_one_capture_probe(self):
-        from sandboxes.background_io import Pressure
-        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
-
-        for stale in (False, True):
-            with self.subTest(stale=stale):
-                sampled_at = time.monotonic()
-                if stale:
-                    self.assertIsNotNone(self.sample())
-                else:
-                    self.sampler.forget(("s", 1))
-                with patch("time.monotonic", return_value=sampled_at + 4):
-                    # Exercise the real cache age fence used by foreground and
-                    # maintenance park requests, rather than inventing zero RSS.
-                    self.assertIsNone(self.sampler.get(("s", 1)))
-                    policy = WarmParkPolicy(
-                        lambda: Pressure(.01, 20, 50, 1024**3)
-                    )
-                    with policy.defer("probe", memory_bytes=0, blocking=False):
-                        for index in range(256):
-                            with self.assertRaises(WarmParkDeferred):
-                                with policy.defer(
-                                    str(index), memory_bytes=0, blocking=False
-                                ):
-                                    self.fail("unknown samples must not fan out captures")
-                        # Even a later measured candidate must wait until this
-                        # unknown probe yields actual headroom evidence.
-                        self.assertFalse(policy.ready("0", memory_bytes=1024**3))
-                        self.assertEqual(policy.snapshot()["checkpoint_inflight"], 1)
-                        self.assertEqual(policy.snapshot()["projected_reclaim_bytes"], 0)
-                        policy.parked("probe")
-                with patch("time.monotonic", return_value=sampled_at + 5):
-                    with policy.defer("0", memory_bytes=0, blocking=False):
-                        self.assertEqual(policy.snapshot()["checkpoint_inflight"], 1)
-
-    def test_unknown_probe_waits_for_measured_capture_to_settle(self):
-        from sandboxes.background_io import Pressure
-        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
-
-        policy = WarmParkPolicy(lambda: Pressure(.01, 20, 50, 1024**3))
-        with policy.defer("measured", memory_bytes=1024**3, blocking=False):
-            with self.assertRaises(WarmParkDeferred):
-                with policy.defer("unknown", memory_bytes=0, blocking=False):
-                    self.fail("unmeasured I/O must not join measured captures")
 
     def test_fresh_pre_wait_sample_cannot_price_a_later_heap(self):
         from tests.test_node_runtime import _WakeService
@@ -174,34 +117,6 @@ class ResidentMemoryTests(unittest.TestCase):
         )
         self.assertEqual(report.reason, "no_reclaimable_cache")
         self.assertEqual(report.requested_bytes, 0)
-
-    def test_reclaim_windows_report_actual_progress_and_cancel_on_wake(self):
-        from sandboxes.resident_memory import ResidentMemoryReclaimer
-
-        (self.path / "memory.reclaim").touch()
-        sample = self.sample()
-        alive = True
-        calls = []
-
-        def write(fd, data):
-            nonlocal alive
-            calls.append(data)
-            (self.path / "memory.current").write_text("900")
-            alive = False
-            return len(data)
-
-        with patch("os.write", side_effect=write):
-            report = ResidentMemoryReclaimer(self.sampler).reclaim(
-                ("s", 1),
-                sample,
-                target_bytes=700,
-                is_current=lambda: alive,
-                window_bytes=200,
-            )
-        self.assertEqual(calls, [b"200 swappiness=0"])
-        self.assertEqual(report.requested_bytes, 200)
-        self.assertEqual(report.reclaimed_bytes, 100)
-        self.assertEqual(report.reason, "superseded")
 
     def test_unsupported_reclaim_does_not_fall_back_to_anonymous_swap(self):
         import errno

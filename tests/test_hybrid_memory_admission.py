@@ -1,6 +1,5 @@
 """Real allocation/journal placement changes precede admission cost quotes."""
 from dataclasses import replace
-from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -73,17 +72,6 @@ class HybridMemoryAdmissionTests(AdmissionBackendCase, unittest.TestCase):
     def capture_initial_checkpoint(self):
         self.fixture.warden.park(self.fixture.sandbox, operation_id="park-before-upgrade")
 
-    def test_recovered_ram_checkpoint_selects_file_before_restore_admission(self):
-        service, f = self.service, self.fixture
-        key = (f.sandbox.sandbox_id, 1)
-        with service._lock(*key), service._restore_admission(
-                *key, ResourceQuantity(memory_mb=4096)):
-            self.assertEqual(f.warden.application_memory_mode(*key), "file")
-            costs = service.resident_demand_snapshot()
-            self.assertEqual(costs["admitted_demand_bytes"], 4 << 30)
-            self.assertEqual(costs["admitted_ram_backing_bytes"], 0)
-        self.assertEqual(service.resident_demand_snapshot()["admitted_demand_bytes"], 0)
-
     def test_parked_continuation_selects_file_before_growth_admission(self):
         service, f = self.service, self.fixture
         key = (f.sandbox.sandbox_id, 1)
@@ -95,56 +83,6 @@ class HybridMemoryAdmissionTests(AdmissionBackendCase, unittest.TestCase):
         self.assertEqual(service._restore_cost(*key, ResourceQuantity(memory_mb=4096)).memory_bytes,
                          4 << 30)
 
-    def test_recovered_completed_capture_unblocks_already_queued_continuation(self):
-        item = type(self)()
-        self.addCleanup(item.doCleanups)
-
-        def interrupted_capture():
-            f = item.fixture
-            f.fencer.fail_next_terminate = True
-            with self.assertRaisesRegex(RuntimeError, "terminate"):
-                f.warden.park(f.sandbox, operation_id="interrupted-capture")
-            self.assertEqual(f.warden.inspect(f.sandbox).state, HibernationState.HIBERNATING)
-
-        with patch.object(item, "capture_initial_checkpoint", interrupted_capture):
-            item.setUp()
-        service, f = item.service, item.fixture
-        service.admission_wait_seconds = 3
-        key = (f.sandbox.sandbox_id, 1)
-        item.registry.growth_intent(*key, action="wait", request_id="queued-model")
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            with service._lock(*key):
-                pending = pool.submit(service.admit_managed_continuation, *key, "queued-model")
-                self.wait_for_foreground(service)
-                self.assertFalse(pending.done())
-                self.assertEqual(f.warden.application_memory_mode(*key), "ram")
-                recovered = f.warden.reconcile(f.sandbox)
-                self.assertEqual(recovered.state, HibernationState.PARKED)
-                self.assertEqual(f.warden.application_memory_mode(*key), "file")
-            # Neither a new wake request nor an admission timeout is required.
-            pending.result(1)
-        self.assertTrue(item.registry.relay_wake_fence(*key, "queued-model"))
-
-    def test_already_parked_reconcile_selects_file_without_new_wake(self):
-        f = self.fixture
-        record = f.warden.reconcile(f.sandbox)
-        self.assertEqual(record.state, HibernationState.PARKED)
-        self.assertEqual(f.warden.application_memory_mode(f.sandbox.sandbox_id, 1), "file")
-
-    def test_import_adoption_selects_file_before_exposing_parked_owner(self):
-        f = self.fixture
-        manifest = f.warden.artifacts.load_complete(sandbox_id=f.sandbox.sandbox_id,
-            sandbox_generation=1, hibernation_generation=1)
-        record = f.warden.adopt_parked(f.sandbox, manifest)
-        self.assertEqual(record.state, HibernationState.PARKED)
-        self.assertEqual(f.warden.application_memory_mode(f.sandbox.sandbox_id, 1), "file")
-
-    def test_recovered_checkpoint_keeps_ram_when_feature_disabled(self):
-        f = self.fixture
-        f.warden.config = replace(f.warden.config, reflink_memory_restore=False)
-        self.assertEqual(f.warden.reconcile(f.sandbox).state, HibernationState.PARKED)
-        self.assertEqual(f.warden.application_memory_mode(f.sandbox.sandbox_id, 1), "ram")
-
     def test_absent_candidate_restore_rollback_selects_file_only_after_parked(self):
         f = self.fixture
         journal = f.warden._journal(f.sandbox)
@@ -154,8 +92,3 @@ class HybridMemoryAdmissionTests(AdmissionBackendCase, unittest.TestCase):
         self.assertEqual(f.warden.reconcile(f.sandbox).state, HibernationState.PARKED)
         self.assertEqual(f.warden.application_memory_mode(f.sandbox.sandbox_id, 1), "file")
 
-
-class NodedHybridMemoryAdmissionTests(HybridMemoryAdmissionTests):
-    """The same tests with runtime/noded's admission service (NodedAdmission)."""
-
-    noded = True

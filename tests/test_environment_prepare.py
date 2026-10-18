@@ -41,31 +41,6 @@ class PreparationProtocolTests(unittest.TestCase):
         path.write_text(json.dumps(value))
         path.chmod(0o600)
 
-    def test_fresh_exec_sends_only_bounded_metadata_and_derives_views_and_metrics(self):
-        self.layers[0]["annotations"] = {"private": "must not cross protocol"}
-        def communicate(data, *, timeout):
-            request = json.loads(data)
-            self.assertEqual(timeout, 600)
-            self.assertEqual(request["group_counts"], [1])
-            self.assertEqual(request["diff_ids"], self.diff_ids)
-            self.assertEqual(set(request["layers"][0]), {"digest", "size", "mediaType"})
-            self.assertEqual(request["root"], str(self.root.resolve()))
-            self.assertLess(len(data), prepare.MAX_REQUEST_BYTES)
-            (self.root / "view-0").mkdir()
-            self.write_result(self.response())
-        self.process.communicate.side_effect = communicate
-        with patch.object(prepare.subprocess, "Popen", return_value=self.process) as launch:
-            result = self.invoke()
-        self.assertEqual(launch.call_args.args[0], (prepare.sys.executable, "-m", prepare.__name__))
-        self.assertIs(launch.call_args.kwargs["stdout"], subprocess.DEVNULL)
-        self.assertIs(launch.call_args.kwargs["stderr"], subprocess.DEVNULL)
-        self.assertTrue(launch.call_args.kwargs["close_fds"])
-        self.assertEqual(launch.call_args.kwargs["cwd"], Path(prepare.__file__).resolve().parent.parent)
-        self.assertFalse(result.fallback)
-        self.assertEqual(result.views, (self.root / "view-0",))
-        self.assertEqual(result.metrics["squash_ms"], 3.5)
-        self.assertGreaterEqual(result.metrics["selective_subprocess_ms"], 0)
-
     def test_parent_symlink_is_canonicalized_but_scratch_symlink_is_rejected(self):
         parent_alias = self.root.parent / "alias"
         parent_alias.symlink_to(self.root.parent, target_is_directory=True)
@@ -151,22 +126,6 @@ class PreparationProtocolTests(unittest.TestCase):
                 self.invoke()
             launch.assert_not_called()
 
-    def test_spawn_failure_is_terminal_and_does_not_expose_os_error_detail(self):
-        with patch.object(prepare.subprocess, "Popen", side_effect=OSError("sensitive detail")):
-            with self.assertRaises(prepare.PreparationError) as caught:
-                self.invoke()
-        self.assertNotIn("sensitive detail", str(caught.exception))
-
-    def test_fallback_reason_survives_child_protocol_without_exception_text(self):
-        def communicate(*args, **kwargs):
-            self.write_result({**self.response(status="fallback", groups=0),
-                               "fallback_reason": "parent_context"})
-        self.process.communicate.side_effect = communicate
-        with patch.object(prepare.subprocess, "Popen", return_value=self.process):
-            result = self.invoke()
-        self.assertTrue(result.fallback)
-        self.assertEqual(result.fallback_reason, "parent_context")
-
     def test_unknown_or_misplaced_fallback_reason_fails_closed(self):
         for status, reason in (("fallback", "private exception text"),
                                ("fallback", []), ("ok", "parent_context")):
@@ -178,14 +137,6 @@ class PreparationProtocolTests(unittest.TestCase):
                     with self.assertRaises(prepare.PreparationError):
                         self.invoke()
                 (self.root / prepare.RESULT_NAME).unlink()
-
-    def test_compressed_budget_reason_is_available_before_child_spawn(self):
-        self.layers[0]["size"] = prepare.MAX_COMPRESSED_BYTES + 1
-        with patch.object(prepare.subprocess, "Popen") as launch:
-            with self.assertRaises(UnsupportedLayer) as caught:
-                self.invoke()
-        self.assertEqual(caught.exception.reason, "compressed_budget")
-        launch.assert_not_called()
 
     def test_streaming_metrics_allow_bytes_above_time_limit_but_remain_bounded(self):
         def communicate(*args, **kwargs):

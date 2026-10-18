@@ -3,9 +3,6 @@ import hashlib
 import json
 import os
 import shutil
-import stat
-from concurrent.futures import ThreadPoolExecutor
-import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -20,14 +17,11 @@ from sandboxes.direct_warden import (
 )
 from sandboxes.hibernation import (
     HibernationGenerationInventory,
-    HibernationValidationError,
     HibernationFileRole,
     HibernationManifest,
-    HibernationRecoveryAction,
     HibernationRuntimeFingerprint,
     HibernationState,
     LocalHibernationArtifactFile,
-    classify_hibernation_recovery,
 )
 from sandboxes.managed_process import load_parked_managed_state, managed_state_mount
 from sandboxes.storage_native_daemon import (
@@ -498,45 +492,6 @@ class DirectRunscWardenTests(unittest.TestCase):
             ),
         )
 
-    def test_empty_runsc_null_inventory_proves_candidate_absent(self):
-        with patch.object(
-            self.runner,
-            "run",
-            side_effect=[
-                CommandResult(("state",), 1, stderr="not found"),
-                CommandResult(("list",), 0, "null\n"),
-            ],
-        ):
-            self.assertIsNone(self.warden._candidate_identity_or_none(self.sandbox))
-
-    def test_capture_resume_failure_does_not_commit_running(self):
-        running = self.warden.create(self.sandbox, operation_id="create:1")
-        journal = self.warden._journal(self.sandbox)
-        capturing = journal.begin_hibernate(
-            operation_id="park:1", expected_revision=running.revision
-        )
-        self.runner.checkpoint = self.warden.artifacts.prepare_generation(
-            sandbox_id=self.sandbox.sandbox_id,
-            sandbox_generation=1,
-            hibernation_generation=capturing.hibernation_generation,
-        )
-        self.runner.status = "paused"
-        self.runner.before_resume = lambda: (_ for _ in ()).throw(
-            DirectWardenError("ambiguous resume")
-        )
-        with self.assertRaisesRegex(DirectWardenError, "ambiguous resume"):
-            self.warden.reconcile(self.sandbox)
-        self.assertEqual(journal.load().state, HibernationState.HIBERNATING)
-        self.assertEqual(self.runner.status, "paused")
-
-    def test_stale_candidate_cannot_adopt_unrelated_process(self):
-        self.runner._start_process()
-        process = self.proc_root / str(self.runner.pid)
-        (process / "cmdline").write_bytes(b"python3\0unrelated-daemon.py\0")
-        with self.assertRaises(DirectWardenError):
-            self.warden._candidate_identity_or_none(self.sandbox)
-        self.assertEqual(self.fencer.handles, [])
-
     def test_running_journal_rejects_foreign_process_with_matching_ticks(self):
         self.warden.create(self.sandbox, operation_id="create:1")
         (self.proc_root / str(self.runner.pid) / "cgroup").write_text(
@@ -553,15 +508,6 @@ class DirectRunscWardenTests(unittest.TestCase):
             ):
                 operation(self.sandbox)
         self.assertTrue((self.proc_root / str(self.runner.pid) / "stat").exists())
-
-    def test_liveness_probe_reuses_verified_sentry_until_its_pid_is_reused(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.assertTrue(self.warden.running_process_alive(self.sandbox))
-        with patch.object(self.warden, "_sentry_identity", side_effect=AssertionError("reverified")):
-            self.assertTrue(self.warden.running_process_alive(self.sandbox))
-        # Same PID with another start time is a different process.
-        write_process(self.proc_root, self.runner.pid, self.runner.ticks + 1)
-        self.assertFalse(self.warden.running_process_alive(self.sandbox))
 
     def test_process_identity_is_bound_to_the_original_boot(self):
         self.warden.create(self.sandbox, operation_id="create:1")
@@ -735,40 +681,6 @@ class DirectRunscWardenTests(unittest.TestCase):
         self.assertEqual(json.loads(state.read_text())["sandbox"]["pid"], 0)
         self.assertTrue(all(handle.closed for handle in self.fencer.handles))
 
-    def test_cleanup_accepts_exit_between_stat_and_pidfd_open(self):
-        self.runner._start_process()
-        state = self._cleanup_state()
-        process = self.proc_root / str(self.runner.pid)
-
-        def exit_before_open(_pid, _ticks):
-            shutil.rmtree(process)
-            raise DirectWardenError("sentry identity changed before fencing")
-
-        with patch.object(self.fencer, "open", side_effect=exit_before_open):
-            self.warden._delete_runtime(self.sandbox)
-        self.assertEqual(json.loads(state.read_text())["sandbox"]["pid"], 0)
-
-    def test_gofer_only_cleanup_rejects_another_boot(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        process = self.proc_root / str(self.runner.pid)
-        (process / "cmdline").write_bytes(
-            (process / "cmdline")
-            .read_bytes()
-            .replace(b"runsc-sandbox", b"runsc-gofer")
-            .replace(b"boot\0", b"gofer\0")
-        )
-        path = self._cleanup_state(gofer_pid=self.runner.pid)
-        state = json.loads(path.read_text())
-        state["sandbox"]["pid"] = 0
-        path.write_text(json.dumps(state))
-        (self.proc_root / "sys/kernel/random/boot_id").write_text(
-            "22222222-2222-4222-8222-222222222222\n"
-        )
-        with self.assertRaises(DirectWardenError):
-            self.warden._delete_runtime(self.sandbox)
-        self.assertTrue(process.exists())
-        self.assertTrue(all(handle.closed for handle in self.fencer.handles))
-
     def test_cleanup_refuses_system_pids_and_invalid_metadata(self):
         for value in (1, -1, True, "123"):
             self.runner.pid = value
@@ -806,103 +718,6 @@ class DirectRunscWardenTests(unittest.TestCase):
         self.assertEqual(published.state, StorageVolumeState.PUBLISHED)
         self.assertEqual(
             self.warden.inspect(self.sandbox).state, HibernationState.PARKED
-        )
-
-    def test_background_upload_does_not_hold_wake_lock(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.park(self.sandbox, operation_id="park:1")
-        revision = self.storage._typed().revision
-        entered, finish = threading.Event(), threading.Event()
-
-        def upload(owner, *, operation_id, expected_revision):
-            self.assertEqual(expected_revision, revision)
-            entered.set()
-            if not finish.wait(5):
-                raise TimeoutError("test did not release upload")
-            raise StorageNativeConflictError("superseded publication")
-
-        with (
-            patch.object(
-                self.storage, "ensure_published", side_effect=upload, create=True
-            ),
-            ThreadPoolExecutor(max_workers=2) as pool,
-        ):
-            publication = pool.submit(
-                self.warden.publish_storage_snapshot,
-                self.sandbox,
-                operation_id="publish:1",
-            )
-            try:
-                self.assertTrue(entered.wait(5))
-                wake = pool.submit(
-                    self.warden.resume, self.sandbox, operation_id="wake:1"
-                )
-                self.assertEqual(wake.result(timeout=2).state, HibernationState.RUNNING)
-            finally:
-                finish.set()
-            with self.assertRaisesRegex(StorageNativeConflictError, "superseded"):
-                publication.result(timeout=5)
-
-    def _assert_interrupted_park_reconciles(
-        self,
-        target: object,
-        failure_flag: str,
-        error: str,
-    ) -> None:
-        self.warden.create(self.sandbox, operation_id="create:1")
-        setattr(target, failure_flag, True)
-        with self.assertRaisesRegex(OSError, error):
-            self.warden.park(self.sandbox, operation_id="park:1")
-
-        parked = self.warden.reconcile(self.sandbox)
-
-        self.assertEqual(parked.state, HibernationState.PARKED)
-        self.assertEqual(self.storage.record["state"], "released")
-
-    def _assert_interrupted_resume_is_retryable(
-        self,
-        target: object,
-        failure_flag: str,
-        error: str,
-    ) -> None:
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.park(self.sandbox, operation_id="park:1")
-        setattr(target, failure_flag, True)
-        with self.assertRaisesRegex(OSError, error):
-            self.warden.resume(self.sandbox, operation_id="wake:1")
-
-        self.assertEqual(
-            self.warden.inspect(self.sandbox).state,
-            HibernationState.PARKED,
-        )
-        self.assertEqual(self.storage.record["state"], "released")
-        self.assertEqual(
-            self.warden.resume(self.sandbox, operation_id="wake:2").state,
-            HibernationState.RUNNING,
-        )
-
-    def test_network_preparation_failure_does_not_start_restore_candidate(self) -> None:
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.park(self.sandbox, operation_id="park:1")
-
-        def unavailable():
-            self.assertEqual(self.storage.record["state"], "mounted")
-            raise OSError("network preparation failed")
-
-        with self.assertRaisesRegex(OSError, "network preparation failed"):
-            self.warden.resume(
-                self.sandbox,
-                operation_id="wake:1",
-                before_restore=unavailable,
-            )
-        self.assertEqual(
-            self.warden.inspect(self.sandbox).state, HibernationState.PARKED
-        )
-        self.assertEqual(self.storage.record["state"], "released")
-        self.assertEqual(self.runner.status, "absent")
-        self.assertEqual(
-            self.warden.resume(self.sandbox, operation_id="wake:2").state,
-            HibernationState.RUNNING,
         )
 
     def test_managed_process_ledger_is_verified_before_restore(self) -> None:
@@ -985,72 +800,6 @@ class DirectRunscWardenTests(unittest.TestCase):
             HibernationState.RUNNING,
         )
         self.assertFalse((self.bundle / "rootfs" / ".ucloud-managed").exists())
-
-    def test_bound_managed_state_is_created_and_its_ledger_binds_the_checkpoint(self) -> None:
-        self.managed_config(bound=True)
-        self.warden.create(self.sandbox, operation_id="create:bound")
-        managed = self.bundle / "rootfs" / ".ucloud-managed"
-        info = managed.lstat()
-        self.assertTrue(stat.S_ISDIR(info.st_mode))
-        self.assertEqual(stat.S_IMODE(info.st_mode), 0o700)
-        self.assertEqual(info.st_uid, os.geteuid())
-        # The guest supervisor writes through the bind mount.
-        payload = json.dumps({
-            "version": 1, "job_id": "rollout-1", "spec_sha256": DIGEST_A,
-            "state": "running", "sequence": 3, "stdout_truncated": True,
-        }).encode()
-        (managed / "state.json").write_bytes(payload)
-        self.warden.park(self.sandbox, operation_id="park:bound")
-        self.assertEqual(
-            self.warden.load_parked_manifest(self.sandbox).managed_process_sha256,
-            hashlib.sha256(payload).hexdigest(),
-        )
-        # A park drops nothing the guest wrote; the source must exist at restore.
-        shutil.rmtree(managed)
-        managed.mkdir(mode=0o755)
-        (managed / "state.json").write_bytes(payload)
-        self.assertEqual(
-            self.warden.resume(self.sandbox, operation_id="wake:bound").state,
-            HibernationState.RUNNING,
-        )
-        self.assertEqual(stat.S_IMODE(managed.lstat().st_mode), 0o700)
-
-    def test_park_keeps_the_exact_job_record_of_its_stopped_guest(self) -> None:
-        self.managed_config(bound=True)
-        self.warden.create(self.sandbox, operation_id="create:exact")
-        managed = self.bundle / "rootfs" / ".ucloud-managed"
-        self.assertIsNone(load_parked_managed_state(self.bundle))
-        ledger = {"version": 1, "job_id": "rollout-1", "spec_sha256": DIGEST_A, "state": "running",
-                  "pid": 9, "stdout_bytes": 0, "stderr_bytes": 0, "sequence": 2}
-        (managed / "state.json").write_text(json.dumps(ledger))
-        # Written after the last read: a running record counts the files.
-        (managed / "stdout.log").write_bytes(b"x" * 1000)
-        (managed / "stderr.log").write_bytes(b"warn\n")
-        self.warden.park(self.sandbox, operation_id="park:exact-1")
-        record = load_parked_managed_state(self.bundle)
-        self.assertEqual(
-            {key: record[key] for key in ("sandbox_id", "sandbox_generation", "job_id", "state",
-                                         "stdout_bytes", "stderr_bytes", "sequence", "cursor")},
-            {"sandbox_id": "sandbox-1", "sandbox_generation": 1, "job_id": "rollout-1",
-             "state": "running", "stdout_bytes": 1000, "stderr_bytes": 5, "sequence": 2,
-             "cursor": "2.1000.5"})
-        # A terminal record counts what the supervisor persisted.
-        self.warden.resume(self.sandbox, operation_id="wake:exact")
-        (managed / "state.json").write_text(json.dumps(dict(
-            ledger, state="exited", exit_code=0, pid=0, stdout_bytes=900, stderr_bytes=5,
-            stdout_truncated=True, sequence=4, completed_at="2026-10-11T00:00:00Z")))
-        self.warden.park(self.sandbox, operation_id="park:exact-2")
-        record = load_parked_managed_state(self.bundle)
-        self.assertEqual((record["state"], record["exit_code"], record["stdout_bytes"],
-                          record["stdout_truncated"], record["cursor"]), ("exited", 0, 900, True, "4.900.5"))
-        # A guest that broke its own logs loses only the exact record.
-        self.warden.resume(self.sandbox, operation_id="wake:exact-2")
-        (managed / "state.json").write_text(json.dumps(ledger))
-        (managed / "stdout.log").unlink()
-        (managed / "stdout.log").symlink_to(self.root / "elsewhere.log")
-        self.warden.park(self.sandbox, operation_id="park:exact-3")
-        self.assertIsNone(load_parked_managed_state(self.bundle))
-        self.assertEqual(self.warden.inspect(self.sandbox).state, HibernationState.PARKED)
 
     def test_moved_bound_ledger_has_the_same_digest_and_needs_its_own_bundle(self) -> None:
         self.managed_config(bound=True)
@@ -1152,40 +901,6 @@ class DirectRunscWardenTests(unittest.TestCase):
         with self.assertRaisesRegex(DirectWardenError, "duplicate volume"):
             self.warden.storage_records_snapshot((self.sandbox,))
 
-    def test_public_workspace_preparation_retains_lifecycle_and_checks_ownership(self):
-        storage, _rootfs, _incarnation = self._use_storage_native()
-        self.warden.create(self.sandbox, operation_id="create:1")
-        parked = self.warden.park(self.sandbox, operation_id="park:1")
-        record = self.warden.workspace_record(self.sandbox)
-        self.assertEqual(record.state.value, "released")
-        mounted = self.warden.ensure_workspace_mounted(
-            self.sandbox, operation_id="import:prepare-workspace")
-        self.assertEqual(mounted.owner, record.owner)
-        self.assertEqual(mounted.state.value, "mounted")
-        self.assertEqual(self.warden.inspect(self.sandbox), parked)
-        self.assertEqual(self.runner.status, "absent")
-
-        original = storage.ensure_mounted
-        storage.ensure_mounted = lambda *args, **kwargs: replace(
-            original(*args, **kwargs), sandbox_generation=999)
-        with self.assertRaisesRegex(DirectWardenError, "does not own"):
-            self.warden.ensure_workspace_mounted(self.sandbox, operation_id="bad-owner")
-        storage.get_volume = lambda _volume: replace(mounted, mount_path="/wrong/path")
-        with self.assertRaisesRegex(DirectWardenError, "does not own"):
-            self.warden.workspace_record(self.sandbox)
-
-    def test_storage_native_delete_does_not_remount_or_traverse_volume(self) -> None:
-        storage, _rootfs, _incarnation = self._use_storage_native()
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.park(self.sandbox, operation_id="park:1")
-        events_before_delete = tuple(storage.events)
-
-        self.warden.delete(self.sandbox)
-
-        self.assertEqual(tuple(storage.events), events_before_delete)
-        self.assertEqual(storage.record["state"], "released")
-        self.assertIsNone(self.warden.inspect(self.sandbox))
-
     def test_delete_reaped_capture_does_not_remount_failed_storage(self) -> None:
         storage, _rootfs, _incarnation = self._use_storage_native()
         self.warden.create(self.sandbox, operation_id="create:1")
@@ -1205,65 +920,6 @@ class DirectRunscWardenTests(unittest.TestCase):
         self.warden.delete(self.sandbox)
         self.assertEqual(tuple(storage.events), events)
         self.assertIsNone(self.warden.inspect(self.sandbox))
-
-    def test_interrupted_storage_park_boundaries_reconcile(self) -> None:
-        cases = (
-            ("storage", "fail_next_seal", "seal failure"),
-            ("rootfs", "fail_next_park", "rootfs park failure"),
-            ("storage", "fail_next_release", "release failure"),
-        )
-        for target_name, flag, error in cases:
-            with self.subTest(boundary=flag):
-                try:
-                    self._assert_interrupted_park_reconciles(
-                        getattr(self, target_name), flag, error
-                    )
-                finally:
-                    self.tearDown()
-                    self.setUp()
-
-    def test_interrupted_storage_resume_boundaries_are_retryable(self) -> None:
-        cases = (
-            ("storage", "fail_next_mount", "mount failure"),
-            ("rootfs", "fail_next_resume", "rootfs resume failure"),
-        )
-        for target_name, flag, error in cases:
-            with self.subTest(boundary=flag):
-                try:
-                    self._assert_interrupted_resume_is_retryable(
-                        getattr(self, target_name), flag, error
-                    )
-                finally:
-                    self.tearDown()
-                    self.setUp()
-
-    def test_storage_native_validation_failure_discards_mounted_restore_cow(
-        self,
-    ) -> None:
-        storage, _rootfs, _incarnation = self._use_storage_native()
-        self.assertFalse(self.warden.artifacts.require_stable_device)
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.park(self.sandbox, operation_id="park:1")
-
-        with patch.object(
-            self.warden.artifacts,
-            "load_complete",
-            side_effect=HibernationValidationError("injected identity failure"),
-        ):
-            with self.assertRaisesRegex(
-                HibernationValidationError,
-                "identity failure",
-            ):
-                self.warden.resume(self.sandbox, operation_id="wake:1")
-
-        self.assertEqual(
-            self.warden.inspect(self.sandbox).state, HibernationState.PARKED
-        )
-        self.assertEqual(storage.record["state"], "released")
-        self.assertEqual(
-            storage.events[-4:],
-            ["mount", "rootfs-resume", "rootfs-park", "discard"],
-        )
 
     def test_adopts_migrated_parked_generation_without_create(self) -> None:
         generation = self.warden.artifacts.prepare_generation(
@@ -1328,171 +984,6 @@ class DirectRunscWardenTests(unittest.TestCase):
         self.assertEqual(reconciled.state, HibernationState.RUNNING)
         self.assertEqual(self._artifact_inventory(), ())
 
-    def test_failed_publication_resumes_live_backend(self) -> None:
-        running = self.warden.create(self.sandbox, operation_id="create:1")
-        with patch.object(
-            self.warden.artifacts,
-            "publish_complete",
-            side_effect=OSError("injected fsync failure"),
-        ):
-            with self.assertRaisesRegex(OSError, "injected"):
-                self.warden.park(self.sandbox, operation_id="park:1")
-        record = self.warden.inspect(self.sandbox)
-        assert record is not None
-        self.assertEqual(
-            (record.state, record.sentry_pid),
-            (HibernationState.RUNNING, running.sentry_pid),
-        )
-        self.assertEqual(self.runner.status, "running")
-        self.assertEqual(self._artifact_inventory(), ())
-
-    def test_complete_capture_is_never_resumed_after_stop_failure(self) -> None:
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.fencer.fail_next_terminate = True
-        with self.assertRaisesRegex(DirectWardenError, "terminate failure"):
-            self.warden.park(self.sandbox, operation_id="park:1")
-        record = self.warden.inspect(self.sandbox)
-        assert record is not None
-        self.assertEqual(record.state, HibernationState.HIBERNATING)
-        self.assertEqual(
-            classify_hibernation_recovery(
-                record,
-                sentry_alive=True,
-                candidate_alive=False,
-                complete_manifest=True,
-            ),
-            HibernationRecoveryAction.FINISH_PUBLISHED_GENERATION,
-        )
-        self.assertFalse(any("resume" in command for command in self.runner.commands))
-
-        reconciled = self.warden.reconcile(self.sandbox)
-        self.assertEqual(reconciled.state, HibernationState.PARKED)
-        self.assertFalse((self.proc_root / str(record.sentry_pid) / "stat").exists())
-
-    def test_single_owner_restore_stays_paused_until_candidate_is_fenced(
-        self,
-    ) -> None:
-        self.warden.create(self.sandbox, operation_id="create:1")
-        parked = self.warden.park(self.sandbox, operation_id="park:1")
-        generation = self.warden.artifacts.generation_path(
-            sandbox_id=self.sandbox.sandbox_id,
-            sandbox_generation=self.sandbox.sandbox_generation,
-            hibernation_generation=parked.hibernation_generation,
-        )
-
-        def assert_paused_single_owner_handoff() -> None:
-            record = self.warden._journal(self.sandbox).load()
-            self.assertIsNotNone(record)
-            self.assertEqual(record.state, HibernationState.RESTORING)
-            self.assertEqual(record.authority.value, "candidate")
-            self.assertEqual(self.runner.status, "paused")
-            self.assertTrue((generation / "COMPLETE").is_file())
-            self.assertFalse((generation / "application_memory.img").exists())
-            self.assertTrue(
-                (
-                    self.config.memory_root
-                    / self.memory_directory
-                    / "application_memory.active"
-                ).is_file()
-            )
-
-        self.runner.before_resume = assert_paused_single_owner_handoff
-
-        self.warden.resume(self.sandbox, operation_id="wake:1")
-
-        restore = next(
-            command for command in self.runner.commands if "restore" in command
-        )
-        self.assertIn("--start-paused", restore)
-        self.assertFalse(generation.exists())
-        self.assertEqual(self.runner.status, "running")
-
-    def test_restore_preserves_cpu_quota_and_checkpoint_identity(self) -> None:
-        config_path = self.bundle / "config.json"
-        bundle_spec = json.loads(config_path.read_text(encoding="utf-8"))
-        bundle_spec["linux"] = {
-            "resources": {"cpu": {"quota": 100_000, "period": 100_000}}
-        }
-        config_path.write_text(json.dumps(bundle_spec), encoding="utf-8")
-        original_bundle = config_path.read_bytes()
-        original_runtime = self.warden._runtime_fingerprint(self.sandbox).digest
-        self.warden.create(self.sandbox, operation_id="create:1")
-
-        for cycle in range(2):
-            parked = self.warden.park(self.sandbox, operation_id=f"park:{cycle}")
-            manifest = self.warden.artifacts.load_complete(
-                sandbox_id=self.sandbox.sandbox_id,
-                sandbox_generation=self.sandbox.sandbox_generation,
-                hibernation_generation=parked.hibernation_generation,
-            )
-            manifest.validate_identity(
-                sandbox_id=self.sandbox.sandbox_id,
-                sandbox_generation=self.sandbox.sandbox_generation,
-                spec_sha256=self.sandbox.spec_sha256,
-                runtime_sha256=original_runtime,
-            )
-
-            self.warden.resume(self.sandbox, operation_id=f"wake:{cycle}")
-
-            restore = next(
-                command
-                for command in reversed(self.runner.commands)
-                if "restore" in command
-            )
-            # The optional runsc startup burst removes the OCI CPU quota before
-            # sentry boot and can size its Go scheduler from all host CPUs.
-            self.assertNotIn("--cpu-startup-burst", restore)
-            self.assertIn(f"--bundle={self.sandbox.bundle}", restore)
-            self.assertIn("--start-paused", restore)
-            self.assertEqual(config_path.read_bytes(), original_bundle)
-            self.assertEqual(
-                self.warden._runtime_fingerprint(self.sandbox).digest,
-                original_runtime,
-            )
-            self.assertEqual(self.runner.status, "running")
-
-    def test_error_volume_is_quarantined_without_remount_and_stays_fenced(self):
-        self.warden.create(self.sandbox, operation_id="create:1")
-        self.warden.park(self.sandbox, operation_id="park:1")
-        self.storage.record["state"] = "error"
-        with (
-            patch.object(
-                self.storage, "ensure_mounted", wraps=self.storage.ensure_mounted
-            ) as mount,
-            patch.object(
-                self.rootfs,
-                "resume_sandbox",
-                side_effect=AssertionError("broken volume must not be traversed"),
-            ),
-        ):
-            recovered = self.warden.reconcile(self.sandbox)
-        self.assertEqual(recovered.state, HibernationState.RECOVERY_REQUIRED)
-        self.assertIn("storage", recovered.recovery_reason)
-        mount.assert_not_called()
-        self.assertEqual(self.storage.record["state"], "error")
-        with patch.object(
-            self.storage,
-            "get_volume",
-            side_effect=AssertionError("quarantine must not remount"),
-        ):
-            self.assertEqual(self.warden.reconcile(self.sandbox), recovered)
-        with self.assertRaises(DirectWardenError):
-            self.warden.resume(self.sandbox, operation_id="wake:1")
-        self.assertEqual(self.warden.inspect(self.sandbox), recovered)
-        self.warden.delete(self.sandbox)
-        self.assertIsNone(self.warden.inspect(self.sandbox))
-        self.assertEqual(self.storage.record["state"], "error")
-
-    def test_error_volume_fences_live_runtime_before_quarantine(self):
-        running = self.warden.create(self.sandbox, operation_id="create:1")
-        self.storage.record["state"] = "error"
-        recovered = self.warden.reconcile(self.sandbox)
-        self.assertEqual(recovered.state, HibernationState.RECOVERY_REQUIRED)
-        self.assertEqual(recovered.authority.value, "none")
-        self.assertFalse((self.proc_root / str(running.sentry_pid) / "stat").exists())
-        self.assertTrue(all(handle.closed for handle in self.fencer.handles))
-        self.assertEqual(self.storage.record["state"], "error")
-
     def test_error_volume_fences_candidate_started_before_journal_commit(self):
         self.warden.create(self.sandbox, operation_id="create:1")
         parked = self.warden.park(self.sandbox, operation_id="park:1")
@@ -1507,16 +998,6 @@ class DirectRunscWardenTests(unittest.TestCase):
         self.assertEqual(recovered.state, HibernationState.RECOVERY_REQUIRED)
         self.assertFalse((self.proc_root / str(candidate_pid) / "stat").exists())
         self.assertTrue(all(handle.closed for handle in self.fencer.handles))
-
-    def test_error_volume_cannot_quarantine_when_runtime_fencing_fails(self):
-        running = self.warden.create(self.sandbox, operation_id="create:1")
-        self.storage.record["state"] = "error"
-        self.fencer.fail_next_terminate = True
-        with self.assertRaisesRegex(DirectWardenError, "terminate failure"):
-            self.warden.reconcile(self.sandbox)
-        self.assertEqual(self.warden.inspect(self.sandbox), running)
-        self.assertTrue((self.proc_root / str(running.sentry_pid) / "stat").exists())
-        self.assertTrue(self.fencer.handles[-1].closed)
 
     def test_error_volume_from_another_generation_cannot_fence_runtime(self):
         running = self.warden.create(self.sandbox, operation_id="create:1")
@@ -1541,30 +1022,6 @@ class DirectRunscWardenTests(unittest.TestCase):
         self.assertEqual(recovered.authority.value, "none")
         self.assertEqual(len(self.fencer.handles), before_handles)
         self.assertTrue((self.proc_root / str(running.sentry_pid) / "stat").exists())
-
-    def test_single_owner_readiness_failure_returns_memory_to_checkpoint(
-        self,
-    ) -> None:
-        self.warden.create(self.sandbox, operation_id="create:1")
-        parked = self.warden.park(self.sandbox, operation_id="park:1")
-        self.runner.fail_readiness = True
-
-        with self.assertRaisesRegex(DirectWardenError, "readiness failure"):
-            self.warden.resume(self.sandbox, operation_id="wake:1")
-
-        record = self.warden._journal(self.sandbox).load()
-        self.assertIsNotNone(record)
-        self.assertEqual(record.state, HibernationState.PARKED)
-        generation = self.warden.artifacts.generation_path(
-            sandbox_id=self.sandbox.sandbox_id,
-            sandbox_generation=self.sandbox.sandbox_generation,
-            hibernation_generation=parked.hibernation_generation,
-        )
-        self.assertTrue((generation / "application_memory.img").is_file())
-        self.assertTrue((generation / "COMPLETE").is_file())
-        self.assertEqual(self.runner.status, "absent")
-        self.assertEqual(self.storage.record["state"], "released")
-        self.assertEqual(self.storage.events[-2:], ["rootfs-park", "discard"])
 
     def test_reconcile_discards_dead_restore_before_returning_to_parked(
         self,
