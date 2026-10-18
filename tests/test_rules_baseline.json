@@ -720,7 +720,7 @@
  },
  "test_rust_create_handoff.py": {
   "clock": 2,
-  "private": 6,
+  "private": 4,
   "private_patch": 1,
   "sleep": 1,
   "test_import": 2
