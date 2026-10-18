@@ -932,6 +932,7 @@ class ChunkStoreServer:
         self._reads = ThreadPoolExecutor(max_workers=read_threads, thread_name_prefix="chunk-store-read")
         self._loop = self._stop = None
         self._ready, self._stopped = threading.Event(), threading.Event()
+        self._writers = set()
 
     def __enter__(self):
         return self
@@ -951,6 +952,12 @@ class ChunkStoreServer:
         self._ready.set()
         async with server:
             await self._stop.wait()
+            # Since Python 3.12.1 leaving ``async with`` waits for every client
+            # to hang up, and idle keep-alive clients would hold the stop for
+            # up to their two minutes. Close them here.
+            server.close()
+            for writer in list(self._writers):
+                writer.close()
 
     def shutdown(self):
         """Stop a serve_forever running in another thread."""
@@ -964,6 +971,7 @@ class ChunkStoreServer:
 
     async def _connection(self, reader, writer):
         writer.get_extra_info("socket").setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self._writers.add(writer)
         try:
             while True:
                 try:  # Idle keep-alive connections close after two minutes.
@@ -985,6 +993,7 @@ class ChunkStoreServer:
         except Exception:  # noqa: BLE001 - one connection's failure is not the server's
             _LOG.warning("chunk store connection failed", exc_info=True)
         finally:
+            self._writers.discard(writer)
             writer.close()
 
     def _authorized(self, headers, write):
