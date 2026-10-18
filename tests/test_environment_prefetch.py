@@ -213,6 +213,9 @@ class CachePrefetchTests(PrefetchFixture):
         first = cache.prefetch(self.component, range(3), kind="trace", max_bytes=1 << 30)
         self.assertTrue(self.client.held.wait(5))
         second = cache.prefetch(self.component, range(10, 13), kind="trace", max_bytes=1 << 30)
+        # Scheduled in the background: release the first only once the second
+        # has met the share the first still holds.
+        wait_until(lambda: second.outcome == "budget")
         self.client.hold.set()
         self.assertTrue(first.wait(5) and second.wait(5))
         self.assertEqual((first.fetched_chunks, second.fetched_chunks, second.outcome), (3, 1, "budget"))

@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
-from threading import Event
+from threading import Event, current_thread
 import time
 import unittest
 from unittest.mock import patch
@@ -273,12 +273,21 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
     def test_existing_wake_fence_does_not_take_registry_writer(self):
         self.service.start_managed_process('one', self.spec)
         self.registry.relay_wake_fence('one', 7, 'request-one', record=True)
-        with patch.object(self.registry, '_transaction', wraps=self.registry._transaction) as tx:
-            self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-one', record=True))
-        self.assertEqual([call.kwargs['write'] for call in tx.call_args_list], [False])
-        with patch.object(self.registry, '_transaction', wraps=self.registry._transaction) as tx:
-            self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-two', record=True))
-        self.assertEqual([call.kwargs['write'] for call in tx.call_args_list], [False, True])
+
+        def transactions(request):
+            # This thread's only: the noded harness's pump lists the registry
+            # from its own thread and may finish a pass inside this window.
+            writes, original, caller = [], self.registry._transaction, current_thread()
+
+            def recorded(*args, **kwargs):
+                if current_thread() is caller:
+                    writes.append(kwargs['write'])
+                return original(*args, **kwargs)
+            with patch.object(self.registry, '_transaction', side_effect=recorded):
+                self.assertTrue(self.registry.relay_wake_fence('one', 7, request, record=True))
+            return writes
+        self.assertEqual(transactions('request-one'), [False])
+        self.assertEqual(transactions('request-two'), [False, True])
 
     def test_managed_burst_waits_after_runtime_create_until_first_safe_wait(self):
         self.service.start_managed_process('one', self.spec)
