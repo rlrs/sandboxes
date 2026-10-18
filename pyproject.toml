@@ -46,4 +46,6 @@ exclude = ["/ucloud-sandboxes-sdk"]
 select = ["C901", "E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 70
+# Functions above this carry `# noqa: C901`. Lower it, and drop their
+# noqa, as functions are split.
+max-complexity = 40

@@ -4198,7 +4198,7 @@ def _observe_provider_nodes(
     )
 
 
-def run_reconcile_cycle(
+def run_reconcile_cycle(  # noqa: C901
     config: DeploymentConfig,
     args: argparse.Namespace,
     *,

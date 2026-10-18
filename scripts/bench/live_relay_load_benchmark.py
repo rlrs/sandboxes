@@ -756,7 +756,7 @@ class ContinuationObserver:
         return future.result()
 
 
-async def run(args):
+async def run(args):  # noqa: C901
     if args.start_signal_file and Path(args.start_signal_file).exists():
         raise ValueError("start signal file already exists; use a fresh path")
     prefix = "relay-load-" + uuid4().hex[:12]
