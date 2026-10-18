@@ -97,7 +97,7 @@ class ForeignRegistryIndexTests(unittest.TestCase):
         owner.close()
         DirectSandboxRegistry(self.path, owner=True).close()
 
-    def test_another_process_commit_reaches_the_cache_after_the_interval(self) -> None:
+    def test_another_process_commit_reaches_a_fresh_cached_read(self) -> None:
         foreign = DirectSandboxRegistry(self.path, cached_reads=True)
         self.addCleanup(foreign.close)
         self.assertIsNone(foreign.get("child"))
@@ -111,10 +111,9 @@ class ForeignRegistryIndexTests(unittest.TestCase):
             "owner.plan(spec=replace(DirectProvisionerTests.spec(), id='child'), sandbox_generation=1,\n"
             "           operation_id='create:child', runtime_compatibility_sha256='b' * 64)\n"
         ), str(self.path)], cwd=REPO, check=True)
-        self.assertIsNone(foreign.get("child"))
-        index, sequence, _ = foreign._foreign
-        foreign._foreign = (index, sequence, float("-inf"))  # The interval passed.
-        self.assertEqual(foreign.get("child").phase, "planned")
+        # Whether a plain read already sees it depends on the 1 s recheck
+        # interval; a fresh read revalidates against the file regardless.
+        self.assertEqual(foreign.get("child", fresh=True).phase, "planned")
         self.assertEqual(foreign.snapshot().activity_revision, 1)
 
 
