@@ -1,0 +1,1025 @@
+{
+ "test_admission_properties.py": {
+  "clock": 2,
+  "private": 25,
+  "private_patch": 1
+ },
+ "test_archive_upload.py": {
+  "private": 2,
+  "private_patch": 2,
+  "test_import": 3
+ },
+ "test_base_regeneration.py": {
+  "private": 4,
+  "test_import": 3
+ },
+ "test_bench_rl_scale.py": {
+  "clock": 2,
+  "private": 3
+ },
+ "test_benchmark_report_persistence.py": {
+  "private": 2,
+  "private_patch": 1
+ },
+ "test_bootstrap.py": {
+  "clock": 2,
+  "private": 7
+ },
+ "test_buffered_metrics.py": {
+  "private": 8,
+  "private_patch": 3
+ },
+ "test_build_cache.py": {
+  "private_patch": 1
+ },
+ "test_build_cache_affinity_runtime.py": {
+  "private": 2,
+  "test_import": 1
+ },
+ "test_build_cache_maintenance.py": {
+  "clock": 1,
+  "test_import": 1
+ },
+ "test_build_cache_runtime.py": {
+  "test_import": 1
+ },
+ "test_build_publication_deadline.py": {
+  "private": 15,
+  "sleep": 2,
+  "test_import": 1
+ },
+ "test_builder_packing.py": {
+  "private": 4,
+  "test_import": 1
+ },
+ "test_builder_selection.py": {
+  "new": 1,
+  "private": 57
+ },
+ "test_burst_inventory.py": {
+  "private": 16,
+  "test_import": 2
+ },
+ "test_checkpoint_registry.py": {
+  "new": 1,
+  "private": 6,
+  "test_import": 4
+ },
+ "test_chunk_convert.py": {
+  "clock": 1,
+  "private": 1,
+  "sleep": 2
+ },
+ "test_chunk_index.py": {
+  "clock": 3,
+  "private": 2,
+  "test_import": 1
+ },
+ "test_chunk_serve.py": {
+  "sleep": 2
+ },
+ "test_chunk_store_node.py": {
+  "clock": 10,
+  "private": 15,
+  "private_patch": 1,
+  "sleep": 5,
+  "test_import": 4
+ },
+ "test_chunk_store_nydus.py": {
+  "test_import": 1
+ },
+ "test_cli.py": {
+  "private": 20,
+  "private_patch": 17
+ },
+ "test_cold_offload.py": {
+  "new": 1,
+  "private": 5,
+  "test_import": 1
+ },
+ "test_commit_build.py": {
+  "private": 4,
+  "private_patch": 2,
+  "test_import": 3
+ },
+ "test_completed_layer_uploads.py": {
+  "private": 2,
+  "private_patch": 1,
+  "test_import": 2
+ },
+ "test_consolidation.py": {
+  "clock": 2,
+  "new": 1,
+  "private": 3,
+  "test_import": 1
+ },
+ "test_control_plane.py": {
+  "clock": 4,
+  "new": 15,
+  "private": 82,
+  "private_patch": 13
+ },
+ "test_control_state_cache.py": {
+  "new": 1,
+  "private": 34,
+  "private_patch": 6,
+  "test_import": 1
+ },
+ "test_control_state_pool.py": {
+  "private": 5,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_control_transport.py": {
+  "private": 4,
+  "private_patch": 2
+ },
+ "test_correctness_regressions.py": {
+  "clock": 6,
+  "private": 21,
+  "private_patch": 2,
+  "sleep": 2,
+  "test_import": 5
+ },
+ "test_create_image_wait.py": {
+  "clock": 2,
+  "new": 1,
+  "private": 10,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_create_pipeline.py": {
+  "private": 14,
+  "test_import": 2
+ },
+ "test_create_placement.py": {
+  "clock": 6,
+  "private": 3,
+  "private_patch": 1,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_deploy.py": {
+  "private": 1
+ },
+ "test_direct_network.py": {
+  "private": 23,
+  "private_patch": 29
+ },
+ "test_direct_network_pool.py": {
+  "clock": 2,
+  "private": 56,
+  "private_patch": 3,
+  "sleep": 2
+ },
+ "test_direct_provisioner.py": {
+  "clock": 7,
+  "private": 37,
+  "private_patch": 1,
+  "sleep": 1
+ },
+ "test_direct_registry.py": {
+  "private": 1,
+  "private_patch": 1
+ },
+ "test_direct_registry_pool.py": {
+  "private": 10,
+  "private_patch": 2
+ },
+ "test_direct_runtime_assembly.py": {
+  "private": 2,
+  "private_patch": 1,
+  "test_import": 2
+ },
+ "test_direct_service.py": {
+  "private": 2,
+  "private_patch": 1,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_direct_warden.py": {
+  "private": 49,
+  "private_patch": 4
+ },
+ "test_disk_claim_lifecycle.py": {
+  "private": 14,
+  "test_import": 2
+ },
+ "test_dynamic_disk_claims.py": {
+  "private": 3,
+  "test_import": 2
+ },
+ "test_environment_artifact.py": {
+  "clock": 4,
+  "private": 4,
+  "sleep": 1
+ },
+ "test_environment_backend.py": {
+  "private": 7,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_environment_bootstrap.py": {
+  "private": 23,
+  "test_import": 4
+ },
+ "test_environment_builder.py": {
+  "private": 3,
+  "private_patch": 2,
+  "test_import": 1
+ },
+ "test_environment_contract.py": {
+  "new": 1,
+  "private": 4,
+  "private_patch": 1
+ },
+ "test_environment_dependencies.py": {
+  "test_import": 1
+ },
+ "test_environment_layers.py": {
+  "private": 13,
+  "private_patch": 14,
+  "test_import": 1
+ },
+ "test_environment_metadata.py": {
+  "private": 5,
+  "private_patch": 1,
+  "test_import": 2
+ },
+ "test_environment_mtimes.py": {
+  "private": 3,
+  "private_patch": 1,
+  "test_import": 3
+ },
+ "test_environment_prefetch.py": {
+  "clock": 12,
+  "private": 14,
+  "sleep": 4,
+  "test_import": 2
+ },
+ "test_environment_prepare.py": {
+  "private": 1
+ },
+ "test_environment_prepare_isolation.py": {
+  "clock": 4,
+  "test_import": 2
+ },
+ "test_environment_rafs.py": {
+  "clock": 3,
+  "private": 6,
+  "sleep": 5,
+  "test_import": 1
+ },
+ "test_environment_rootfs.py": {
+  "private": 9,
+  "test_import": 1
+ },
+ "test_erofs_metadata.py": {
+  "private": 1
+ },
+ "test_exec_admission_contract.py": {
+  "private": 2,
+  "private_patch": 1,
+  "test_import": 1
+ },
+ "test_exec_backpressure.py": {
+  "clock": 4,
+  "private": 8,
+  "sleep": 2,
+  "test_import": 2
+ },
+ "test_fair_capacity.py": {
+  "private": 3,
+  "private_patch": 2,
+  "test_import": 1
+ },
+ "test_fair_reservation_lock.py": {
+  "clock": 2,
+  "private": 3,
+  "sleep": 1
+ },
+ "test_fleet_json_decoder.py": {
+  "private": 2,
+  "test_import": 1
+ },
+ "test_fleet_read_coalescing.py": {
+  "new": 1,
+  "private": 1,
+  "private_patch": 1
+ },
+ "test_fleet_reader.py": {
+  "private": 10,
+  "test_import": 2
+ },
+ "test_fleet_render_cache.py": {
+  "private": 2,
+  "private_patch": 1,
+  "test_import": 1
+ },
+ "test_fleet_status.py": {
+  "new": 1,
+  "private": 5,
+  "test_import": 2
+ },
+ "test_gateway_event_proxy.py": {
+  "clock": 6,
+  "private": 9,
+  "sleep": 2
+ },
+ "test_gateway_job_reads.py": {
+  "private": 4,
+  "private_patch": 2
+ },
+ "test_gateway_processes.py": {
+  "clock": 3,
+  "private_patch": 1,
+  "sleep": 1
+ },
+ "test_gateway_startup_state.py": {
+  "private": 1,
+  "test_import": 1
+ },
+ "test_group_create.py": {
+  "private": 1,
+  "private_patch": 3,
+  "test_import": 1
+ },
+ "test_guest_agent.py": {
+  "clock": 14,
+  "private": 5,
+  "private_patch": 1,
+  "sleep": 6
+ },
+ "test_guest_continuity.py": {
+  "private": 5,
+  "private_patch": 5,
+  "test_import": 2
+ },
+ "test_guest_environment.py": {
+  "new": 2,
+  "private": 7
+ },
+ "test_gvisor_distribution.py": {
+  "private_patch": 1
+ },
+ "test_heartbeat_identity_projection.py": {
+  "private_patch": 1,
+  "test_import": 1
+ },
+ "test_heartbeat_sender.py": {
+  "clock": 10,
+  "private": 6,
+  "sleep": 7,
+  "test_import": 1
+ },
+ "test_hetzner_foundation.py": {
+  "private": 4
+ },
+ "test_hibernation.py": {
+  "private": 2,
+  "private_patch": 1
+ },
+ "test_http_server.py": {
+  "clock": 2,
+  "private": 10,
+  "sleep": 4
+ },
+ "test_hybrid_memory_admission.py": {
+  "private": 5,
+  "test_import": 1
+ },
+ "test_image_build_admission.py": {
+  "clock": 4,
+  "private": 22,
+  "private_patch": 2,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_image_build_deadline.py": {
+  "clock": 4,
+  "private": 4,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_image_import.py": {
+  "clock": 2,
+  "new": 1,
+  "private": 11,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_image_polling.py": {
+  "new": 1,
+  "private": 78
+ },
+ "test_image_pool.py": {
+  "private": 1
+ },
+ "test_image_recipes.py": {
+  "private": 1
+ },
+ "test_image_recipes_gateway.py": {
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_image_rootfs.py": {
+  "clock": 2,
+  "sleep": 1
+ },
+ "test_image_roots.py": {
+  "private": 5,
+  "private_patch": 1,
+  "test_import": 1
+ },
+ "test_images.py": {
+  "clock": 2,
+  "private": 4,
+  "sleep": 1
+ },
+ "test_io_pressure_placement.py": {
+  "test_import": 1
+ },
+ "test_lifecycle_commit.py": {
+  "test_import": 1
+ },
+ "test_lifecycle_durability_batch.py": {
+  "clock": 4,
+  "private": 10,
+  "private_patch": 1,
+  "sleep": 2,
+  "test_import": 1
+ },
+ "test_live_inventory_load.py": {
+  "clock": 3,
+  "private": 2,
+  "sleep": 1
+ },
+ "test_live_relay_load_benchmark.py": {
+  "clock": 14,
+  "sleep": 10
+ },
+ "test_local_fleet_commit.py": {
+  "clock": 2,
+  "private": 3,
+  "private_patch": 1,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_local_fleet_drain.py": {
+  "clock": 4
+ },
+ "test_local_fleet_heartbeat_pull.py": {
+  "clock": 2,
+  "private": 3
+ },
+ "test_local_fleet_heartbeats.py": {
+  "clock": 2,
+  "sleep": 1
+ },
+ "test_local_fleet_worker_loss.py": {
+  "clock": 2,
+  "sleep": 1
+ },
+ "test_local_wait.py": {
+  "private": 17
+ },
+ "test_managed_control_admission.py": {
+  "clock": 4,
+  "private": 17,
+  "private_patch": 1,
+  "sleep": 2
+ },
+ "test_managed_growth.py": {
+  "clock": 7,
+  "private": 16,
+  "private_patch": 4,
+  "sleep": 3,
+  "test_import": 1
+ },
+ "test_managed_growth_routes.py": {
+  "private_patch": 2,
+  "test_import": 2
+ },
+ "test_managed_process.py": {
+  "clock": 2,
+  "sleep": 1
+ },
+ "test_managed_read_http.py": {
+  "test_import": 1
+ },
+ "test_managed_registry.py": {
+  "private_patch": 1
+ },
+ "test_managed_start_retry.py": {
+  "clock": 2,
+  "private": 3,
+  "private_patch": 1,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_memory_backing_mode.py": {
+  "private": 10,
+  "private_patch": 1,
+  "test_import": 1
+ },
+ "test_memory_filesystem.py": {
+  "private_patch": 6
+ },
+ "test_memory_forecast_policy.py": {
+  "test_import": 1
+ },
+ "test_memory_forecast_projection.py": {
+  "test_import": 1
+ },
+ "test_memory_reclamation.py": {
+  "test_import": 1
+ },
+ "test_memory_retention_batch.py": {
+  "private": 7,
+  "test_import": 1
+ },
+ "test_metrics.py": {
+  "clock": 3,
+  "private": 4,
+  "private_patch": 2,
+  "test_import": 2
+ },
+ "test_migration_runtime_eligibility.py": {
+  "new": 1,
+  "private": 4,
+  "test_import": 1
+ },
+ "test_model_relay.py": {
+  "private": 2,
+  "private_patch": 1,
+  "sleep": 5
+ },
+ "test_mount_status.py": {
+  "private": 2,
+  "private_patch": 2
+ },
+ "test_network_policy.py": {
+  "new": 3,
+  "private": 14,
+  "private_patch": 8
+ },
+ "test_node_agent.py": {
+  "private": 3
+ },
+ "test_node_http_async.py": {
+  "private": 14
+ },
+ "test_node_http_pools.py": {
+  "private": 5,
+  "private_patch": 3
+ },
+ "test_node_response_errors.py": {
+  "new": 2,
+  "private": 5,
+  "private_patch": 2
+ },
+ "test_node_runtime.py": {
+  "clock": 1,
+  "private": 65
+ },
+ "test_noded_admission_backend.py": {
+  "clock": 2,
+  "private": 3,
+  "test_import": 1
+ },
+ "test_noded_client.py": {
+  "private": 10,
+  "sleep": 6,
+  "test_import": 4
+ },
+ "test_nydusd_spike.py": {
+  "private": 5,
+  "private_patch": 1
+ },
+ "test_oci_layer_materialize.py": {
+  "private": 3,
+  "private_patch": 6
+ },
+ "test_oci_release.py": {
+  "test_import": 1
+ },
+ "test_overload_maintenance.py": {
+  "clock": 13,
+  "private": 23,
+  "sleep": 5
+ },
+ "test_package_cache.py": {
+  "clock": 2,
+  "private": 1,
+  "sleep": 2
+ },
+ "test_pause_tier.py": {
+  "clock": 17,
+  "private": 47,
+  "private_patch": 1,
+  "sleep": 5,
+  "test_import": 4
+ },
+ "test_phase_timings.py": {
+  "new": 1
+ },
+ "test_placement_capacity_concurrency.py": {
+  "private": 2,
+  "test_import": 1
+ },
+ "test_placement_completion_reads.py": {
+  "private": 5,
+  "sleep": 2
+ },
+ "test_placement_queue.py": {
+  "private": 2
+ },
+ "test_placement_queue_http.py": {
+  "clock": 8,
+  "private_patch": 1,
+  "sleep": 3,
+  "test_import": 1
+ },
+ "test_placement_scoring.py": {
+  "private": 6,
+  "private_patch": 1,
+  "test_import": 1
+ },
+ "test_placement_snapshot_reads.py": {
+  "private": 2,
+  "test_import": 1
+ },
+ "test_placement_worker_turns.py": {
+  "clock": 2,
+  "private": 2,
+  "private_patch": 1,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_postgres_gateway.py": {
+  "private": 2,
+  "test_import": 3
+ },
+ "test_postgres_relay.py": {
+  "clock": 4,
+  "private": 77,
+  "private_patch": 11,
+  "sleep": 21
+ },
+ "test_postgres_routing.py": {
+  "test_import": 1
+ },
+ "test_postgres_routing_snapshot.py": {
+  "private": 1,
+  "test_import": 2
+ },
+ "test_prepared_images.py": {
+  "private": 1,
+  "test_import": 1
+ },
+ "test_program_capacity_fences.py": {
+  "private": 4,
+  "test_import": 1
+ },
+ "test_provisioning_admission.py": {
+  "private": 6,
+  "test_import": 1
+ },
+ "test_published_workspace_capacity.py": {
+  "new": 1,
+  "private": 5,
+  "test_import": 1
+ },
+ "test_rafs_build_publisher.py": {
+  "private": 2
+ },
+ "test_ram_memory_backing.py": {
+  "test_import": 1
+ },
+ "test_reflink_overlap_capacity.py": {
+  "test_import": 1
+ },
+ "test_reflink_retention.py": {
+  "private": 4,
+  "private_patch": 1,
+  "test_import": 2
+ },
+ "test_registry_blob_mount.py": {
+  "private_patch": 7,
+  "test_import": 1
+ },
+ "test_registry_client_contract.py": {
+  "private_patch": 1
+ },
+ "test_registry_disk.py": {
+  "new": 1,
+  "private": 5,
+  "test_import": 1
+ },
+ "test_registry_hot_paths.py": {
+  "private": 11,
+  "private_patch": 2,
+  "test_import": 1
+ },
+ "test_registry_index.py": {
+  "clock": 2,
+  "private": 21,
+  "sleep": 2,
+  "test_import": 1
+ },
+ "test_registry_sweep.py": {
+  "clock": 1
+ },
+ "test_registry_usage_hotpaths.py": {
+  "private_patch": 4
+ },
+ "test_registry_writer_fence.py": {
+  "clock": 1,
+  "test_import": 2
+ },
+ "test_relay_keepalive.py": {
+  "private": 1
+ },
+ "test_relay_lifecycle_dispatch.py": {
+  "private": 16,
+  "private_patch": 9,
+  "sleep": 2
+ },
+ "test_relay_network_linux.py": {
+  "sleep": 1
+ },
+ "test_repack_node_bundle.py": {
+  "private": 3,
+  "test_import": 1
+ },
+ "test_resident_cache_policy.py": {
+  "clock": 2,
+  "private": 5,
+  "test_import": 1
+ },
+ "test_resident_memory.py": {
+  "clock": 3,
+  "private": 3,
+  "test_import": 1
+ },
+ "test_resident_memory_backing.py": {
+  "private": 1,
+  "test_import": 1
+ },
+ "test_resident_reclaim_fence.py": {
+  "private": 7,
+  "test_import": 1
+ },
+ "test_resident_wait_ranking.py": {
+  "private": 17,
+  "test_import": 1
+ },
+ "test_resource_phase_forwarding.py": {
+  "new": 3,
+  "private": 16,
+  "test_import": 2
+ },
+ "test_retired_memory_maintenance.py": {
+  "private": 1,
+  "test_import": 1
+ },
+ "test_routing.py": {
+  "private": 16,
+  "private_patch": 8,
+  "test_import": 3
+ },
+ "test_routing_cutover.py": {
+  "private": 1,
+  "test_import": 1
+ },
+ "test_routing_migration_scope.py": {
+  "private": 2,
+  "private_patch": 2,
+  "test_import": 1
+ },
+ "test_routing_pool.py": {
+  "new": 2,
+  "private": 33,
+  "private_patch": 1,
+  "sleep": 1,
+  "test_import": 1
+ },
+ "test_routing_single_statement_reads.py": {
+  "private": 5,
+  "test_import": 1
+ },
+ "test_routing_writer.py": {
+  "clock": 4,
+  "private": 10,
+  "sleep": 2,
+  "test_import": 1
+ },
+ "test_run_tests.py": {
+  "private_patch": 2
+ },
+ "test_runtime_metrics.py": {
+  "private": 1,
+  "private_patch": 1
+ },
+ "test_runtime_process.py": {
+  "test_import": 1
+ },
+ "test_rust_create_handoff.py": {
+  "clock": 2,
+  "private": 6,
+  "private_patch": 1,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_rust_exec_fence.py": {
+  "clock": 6,
+  "private": 9,
+  "test_import": 2
+ },
+ "test_rust_pause_tier.py": {
+  "clock": 5,
+  "private": 12,
+  "private_patch": 3,
+  "sleep": 3,
+  "test_import": 4
+ },
+ "test_rust_resident_sampling.py": {
+  "clock": 1,
+  "private": 11,
+  "private_patch": 4,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_sandbox_build.py": {
+  "test_import": 1
+ },
+ "test_sandbox_exec.py": {
+  "clock": 2,
+  "new": 2,
+  "private": 37
+ },
+ "test_selective_environment_publication.py": {
+  "private": 3,
+  "private_patch": 10,
+  "test_import": 2
+ },
+ "test_selective_group_claims.py": {
+  "private": 11,
+  "private_patch": 10,
+  "test_import": 3
+ },
+ "test_soft_drain.py": {
+  "new": 1,
+  "private": 19,
+  "private_patch": 3,
+  "test_import": 3
+ },
+ "test_split_memory_lifecycle.py": {
+  "private": 8,
+  "test_import": 2
+ },
+ "test_split_memory_wiring.py": {
+  "private": 6,
+  "test_import": 4
+ },
+ "test_split_snapshot_routing.py": {
+  "private": 2,
+  "test_import": 1
+ },
+ "test_split_storage_identity.py": {
+  "private": 3,
+  "test_import": 1
+ },
+ "test_sqlite_permissions.py": {
+  "private": 3
+ },
+ "test_sqlite_pool.py": {
+  "clock": 2,
+  "private": 2,
+  "sleep": 1
+ },
+ "test_stage_source_image.py": {
+  "private": 9
+ },
+ "test_startup_admission.py": {
+  "clock": 2,
+  "private": 19,
+  "private_patch": 2,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_startup_scaling.py": {
+  "private": 3,
+  "test_import": 2
+ },
+ "test_storage_admission.py": {
+  "clock": 2,
+  "private": 4,
+  "sleep": 3,
+  "test_import": 1
+ },
+ "test_storage_compaction_policy.py": {
+  "test_import": 2
+ },
+ "test_storage_journal_hotpaths.py": {
+  "private": 12,
+  "private_patch": 4,
+  "test_import": 1
+ },
+ "test_storage_journal_pool.py": {
+  "private": 9
+ },
+ "test_storage_native.py": {
+  "private": 2
+ },
+ "test_storage_native_compaction.py": {
+  "private": 27,
+  "test_import": 1
+ },
+ "test_storage_native_daemon.py": {
+  "clock": 5,
+  "private": 29,
+  "private_patch": 7,
+  "sleep": 1
+ },
+ "test_storage_native_local_cache.py": {
+  "private": 4,
+  "private_patch": 2,
+  "test_import": 3
+ },
+ "test_storage_native_migration.py": {
+  "clock": 6
+ },
+ "test_storage_native_publication.py": {
+  "private": 2,
+  "private_patch": 1,
+  "test_import": 2
+ },
+ "test_storage_native_s3.py": {
+  "private": 4
+ },
+ "test_storage_native_s3_gc.py": {
+  "test_import": 1
+ },
+ "test_storage_native_stateful.py": {
+  "test_import": 1
+ },
+ "test_streaming_upload.py": {
+  "private": 9,
+  "private_patch": 2,
+  "test_import": 2
+ },
+ "test_telemetry.py": {
+  "clock": 2,
+  "private": 2,
+  "sleep": 4
+ },
+ "test_toolkits.py": {
+  "test_import": 1
+ },
+ "test_transition_admission.py": {
+  "clock": 1,
+  "private": 12,
+  "test_import": 2
+ },
+ "test_ucloud.py": {
+  "private": 2
+ },
+ "test_upstream_mirror.py": {
+  "private": 1
+ },
+ "test_verifiers_relay_integration.py": {
+  "clock": 2,
+  "private": 1
+ },
+ "test_vm_init.py": {
+  "private": 3
+ },
+ "test_wake_admission.py": {
+  "private": 4,
+  "private_patch": 1,
+  "test_import": 1
+ },
+ "test_wake_batch.py": {
+  "clock": 2,
+  "new": 1,
+  "private": 7,
+  "sleep": 1,
+  "test_import": 2
+ },
+ "test_wake_capacity.py": {
+  "new": 10,
+  "private": 62,
+  "private_patch": 3,
+  "test_import": 2
+ },
+ "test_wake_owner_admission.py": {
+  "new": 3,
+  "private": 10,
+  "private_patch": 2,
+  "test_import": 1
+ },
+ "test_wake_placement.py": {
+  "test_import": 1
+ }
+}
