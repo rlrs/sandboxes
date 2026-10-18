@@ -20,7 +20,7 @@ import unittest
 
 from tests.harness import LocalFleet, process_alive
 
-SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
+SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 
 
 def in_background(call):
@@ -47,7 +47,7 @@ class AgentCrashReplayTests(unittest.TestCase):
                 # The overlay mount runs. Quota is prepared but commits only with
                 # the rootfs (C5.2), so the registry still says planned.
                 ("quota", "planned",
-                 lambda name: node.arm_fault("mount", "hang"), lambda _: node.kill_hung()),
+                 lambda name: node.arm_fault("mount", "hang", sandbox_id=name), lambda _: node.kill_hung()),
                 # runsc create made a sentry, but nothing journaled it.
                 ("created", "rootfs_ready",
                  lambda name: node.arm_fault("create", "hang-after", sandbox_id=name), lambda _: node.kill_hung()),
@@ -58,7 +58,7 @@ class AgentCrashReplayTests(unittest.TestCase):
                 with self.subTest(phase=name):
                     blocker = block(name)
                     thread, result = in_background(lambda name=name: fleet.request(
-                        "POST", "/v1/sandboxes", payload={"id": name, **SPEC}, token="sandbox"))
+                        "POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image}, token="sandbox"))
                     if name == "planned":
                         self.assertTrue(blocker.reached.wait(15))
                     else:
@@ -85,7 +85,7 @@ class AgentCrashReplayTests(unittest.TestCase):
                     self.assertEqual(sorted(node.live_sentries()), sorted(survivors.values()))
                     fleet.heartbeat()
                     self.assertEqual(fleet.route(name).state, "running")
-                    retried = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC}, token="sandbox")
+                    retried = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image}, token="sandbox")
                     self.assertEqual((retried.status, retried.json()["recovered"]), (200, True))
                     self.assertEqual(fleet.route(name).generation, 1)
                     self.assertEqual(fleet.exec(name, ["cat", "/opt/greeting"]).stdout, "hello from the image\n")

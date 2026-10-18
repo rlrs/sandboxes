@@ -12,8 +12,12 @@ these boundaries:
   ``fake_mount.py`` behind per-node wrappers.
 - The storage-native service is the real service and unix-socket server with
   ``storage.FakeBlockBackend`` and ``storage.FakeStorageHost``.
-- Images come from ``images.ImageCatalog`` through ``images.LocalRootfsStore``;
-  the node's image "pull" is ``DockerImageRuntime(dry_run=True)``.
+- Images are signed environments on a local HTTP registry
+  (``environments.py``), read by the production ``EnvironmentRootfsStore``
+  through each node's ``FakeEnvironmentBackend`` and fake mounts. With
+  ``environments=False`` they come from ``images.ImageCatalog`` through
+  ``images.LocalRootfsStore``, and the node's image "pull" is
+  ``DockerImageRuntime(dry_run=True)``.
 - Host metrics are a sample the test sets (``FleetNode.sample_metrics``),
   and heartbeats are relayed on demand by ``LocalFleet.heartbeat()``, as the
   production heartbeat timer would.
@@ -33,6 +37,7 @@ import atexit
 from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, field, replace
 from datetime import timedelta
+from functools import partial
 import hashlib
 from http.client import HTTPConnection
 import inspect
@@ -71,7 +76,9 @@ from sandboxes.storage_native_daemon import (
 )
 
 from . import faults
-from .assembly import NodeAgentConfig, assemble_node_agent, fixed_metrics
+from .assembly import NodeAgentConfig, assemble_node_agent, environment_rootfs_store, fixed_metrics
+from .environments import EnvironmentBackendService, EnvironmentPublisher, FakeEnvironmentBackend, FakeOciRegistry
+from .fake_mount import has_dependents
 from .fake_runsc import kill_exec_groups
 from .images import ImageCatalog, LocalRootfsStore
 from .pidfd import SyscallPidfdFencer, native_pidfd_available
@@ -270,6 +277,11 @@ class FleetNode:
         self._socket_dir: Path | None = None
         self.storage_backend: FakeBlockBackend | None = None
         self.storage_host: FakeStorageHost | None = None
+        # LocalFleet(environments=True): the node's artifact-I/O backend,
+        # which outlives agent restarts as the root service does.
+        self.environment_backend: FakeEnvironmentBackend | None = None
+        self.environment_socket: Path | None = None
+        self._environment_service: EnvironmentBackendService | None = None
         # Closed connections drop out once the server releases them.
         self._connections: weakref.WeakSet[socket.socket] = weakref.WeakSet()
         # LocalFleet(rust_admission=True): this node's noded, across agent restarts.
@@ -339,14 +351,20 @@ class FleetNode:
             _write_wrapper(self.bin / kind, "fake_mount",
                            f"fake_mount.main({kind!r}, sys.argv, {str(mount_config)!r})")
         self._start_storage()
+        if self.fleet.environments:
+            self.environment_backend = FakeEnvironmentBackend(
+                self.root / "environment-backend", self.fleet.publisher.environments, self.root / "mounts")
+            self.environment_socket = self._socket_path(self.root / "environment-backend", "backend.sock")
+            self._environment_service = EnvironmentBackendService(self.environment_socket, self.environment_backend)
 
-    def _socket_path(self) -> Path:
-        path = self.root / "storage" / "storage.sock"
+    def _socket_path(self, directory: Path, name: str) -> Path:
+        path = directory / name
         if len(str(path)) <= 100:
             return path
         # AF_UNIX paths are bounded; keep long temporary roots usable.
-        self._socket_dir = Path(tempfile.mkdtemp(prefix="ucloud-local-fleet-"))
-        return self._socket_dir / "storage.sock"
+        if self._socket_dir is None:
+            self._socket_dir = Path(tempfile.mkdtemp(prefix="ucloud-local-fleet-"))
+        return self._socket_dir / name
 
     def _start_storage(self) -> None:
         storage_root = self.root / "storage"
@@ -367,7 +385,7 @@ class FleetNode:
             host=(host := FakeStorageHost(backend)),
         )
         self.storage_host = host
-        self.storage_socket = self._socket_path()
+        self.storage_socket = self._socket_path(storage_root, "storage.sock")
         self._storage_server = StorageNativeNodeServer(
             self.storage_socket, service, require_root_peer=False
         )
@@ -390,6 +408,13 @@ class FleetNode:
         unix_server.handle_error = handle_error
 
     def _agent_config(self) -> NodeAgentConfig:
+        environment = {} if not self.fleet.environments else dict(
+            environment_registry_url=self.fleet.registry.url,
+            environment_repository=self.fleet.publisher.repository,
+            environment_trusted_keys={key: value.hex() for key, value in self.fleet.publisher.trusted_keys.items()},
+            environment_backend_socket=str(self.environment_socket),
+            mount_table=str(self.root / "mounts"),
+        )
         return NodeAgentConfig(
             bin=str(self.bin), proc_root=str(self.proc_root), state_root=str(self.state_root),
             volumes=str(self.volumes), runtime_root=str(self.runtime_root),
@@ -401,7 +426,13 @@ class FleetNode:
             heartbeat_token=self.fleet.tokens.heartbeat,
             heartbeat_interval_seconds=HEARTBEAT_INTERVAL_SECONDS,
             rust_admission=self.fleet.rust_admission,
+            **environment,
         )
+
+    def _rootfs_store(self, config: NodeAgentConfig):
+        if self.fleet.environments:
+            return environment_rootfs_store(config, referenced=partial(has_dependents, Path(config.mount_table)))
+        return LocalRootfsStore(self.state_root / "image-cache", self.fleet.catalog)
 
     @property
     def running(self) -> bool:
@@ -414,9 +445,10 @@ class FleetNode:
         if self.fleet.node_processes:
             self._spawn()
             return
+        config = self._agent_config()
         server, self.service = assemble_node_agent(
-            self._agent_config(),
-            rootfs_store=LocalRootfsStore(self.state_root / "image-cache", self.fleet.catalog),
+            config,
+            rootfs_store=self._rootfs_store(config),
             fencer=None if native_pidfd_available() else SyscallPidfdFencer(proc_root=self.proc_root),
             sample_metrics=lambda: self._sample_metrics(),
         )
@@ -562,6 +594,9 @@ class FleetNode:
             self.reap_containers()
             if self._storage_server is not None:
                 self._stop_storage()
+            if self._environment_service is not None:
+                self._environment_service.close()
+                self._environment_service = None
             if self._socket_dir is not None:
                 shutil.rmtree(self._socket_dir, ignore_errors=True)
 
@@ -604,6 +639,16 @@ class FleetNode:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+    def mounts(self) -> dict[str, str]:
+        """Fake mount table: target -> ``overlay`` (a sandbox's writable
+        overlay), ``overlay-ro`` (a composed image) or ``bind`` (a
+        one-component image)."""
+        table = {}
+        for entry in (self.root / "mounts").glob("*.json"):
+            record = json.loads(entry.read_text(encoding="utf-8"))
+            table[record["merged"]] = record["kind"]
+        return table
 
     def live_sentries(self) -> list[int]:
         """PIDs of fake sentries started on this node that still run."""
@@ -662,9 +707,13 @@ class FleetNode:
                   generation: int = 1) -> None:
         """Arm a one-shot fault (``faults.py``) on a fake runsc or mount command.
 
-        With ``sandbox_id`` it fires only for that incarnation's container.
+        With ``sandbox_id`` it fires only for that incarnation's container,
+        or for a mount command, its rootfs overlay (not an image's mount).
         """
-        match = self.container_id(sandbox_id, generation) if sandbox_id is not None else ""
+        match = ""
+        if sandbox_id is not None:
+            match = (f"{sandbox_id}.sandbox-{generation}" if command in ("mount", "umount", "mountpoint")
+                     else self.container_id(sandbox_id, generation))
         faults.arm(self.faults, command, action, match)
 
     def wait_hung(self, command: str, *, timeout: float = 15.0) -> int:
@@ -748,19 +797,25 @@ class LocalFleet:
     is the deployment switch; ``gateway_options`` pass further ``build_server``
     arguments (a managed registry, an environment registry).
     ``rust_admission`` runs each node's admission in a real noded
-    (``NodedAdmission``; in-process nodes only).
+    (``NodedAdmission``; in-process nodes only). ``environments`` selects
+    signed environment images (the default) over the legacy local image
+    store; sandboxes then name images by ``fleet.image`` or
+    ``fleet.catalog.ref(name)``, refs on the fleet's registry.
     """
 
     def __init__(self, *, nodes: int = 1, postgres: bool = False, heartbeat_ttl_seconds: int = 120,
                  node_processes: bool = False, admission_wait_seconds: float = 30.0,
                  max_concurrent_sandbox_creates: int | None = None, gateways: int = 1,
                  create_placement: str = "ranked", gateway_options: dict | None = None,
-                 rust_admission: bool = False) -> None:
+                 rust_admission: bool = False, environments: bool = True) -> None:
         if nodes < 1:
             raise ValueError("a fleet needs at least one node")
         if rust_admission and node_processes:
             raise ValueError("noded's admission harness runs with in-process node agents")
         self.rust_admission = rust_admission
+        self.environments = environments
+        self.registry: FakeOciRegistry | None = None
+        self.publisher: EnvironmentPublisher | None = None
         if postgres and not POSTGRES_DSN:
             raise unittest.SkipTest("requires real PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)")
         self.node_count = nodes
@@ -798,7 +853,12 @@ class LocalFleet:
     def start(self) -> None:
         self._temporary = tempfile.TemporaryDirectory(prefix="ucloud-local-fleet-", dir=_scratch_root())
         self.root = Path(self._temporary.name).resolve()
-        self.catalog = ImageCatalog(self.root / "catalog")
+        if self.environments:
+            self.registry = FakeOciRegistry()
+            self.publisher = EnvironmentPublisher(self.registry, self.root / "publisher")
+        self.catalog = ImageCatalog(self.root / "catalog", self.publisher)
+        # The ref of the image every scenario starts from.
+        self.image = self.catalog.ref(DEFAULT_IMAGE)
         self.catalog.add(DEFAULT_IMAGE, {
             "etc/hostname": "harness\n",
             "etc/motd": "local fleet base image\n",
@@ -877,6 +937,12 @@ class LocalFleet:
             except BaseException as exc:
                 errors.append(exc)
             self._postgres_schema = ""
+        if self.registry is not None:
+            try:
+                self.registry.close()
+            except BaseException as exc:
+                errors.append(exc)
+            self.registry = None
         if self._temporary is not None:
             self._temporary.cleanup()
             self._temporary = None
@@ -981,9 +1047,9 @@ class LocalFleet:
         return _request(f"http://{host}:{port}", method, path, credential,
                         payload=payload, body=body, timeout=timeout)
 
-    def create(self, sandbox_id: str, *, image: str = DEFAULT_IMAGE, **spec) -> dict:
+    def create(self, sandbox_id: str, *, image: str | None = None, **spec) -> dict:
         payload = {
-            "id": sandbox_id, "image": image, "cpus": 1, "memory_mb": 256,
+            "id": sandbox_id, "image": image or self.image, "cpus": 1, "memory_mb": 256,
             "disk_mb": 1024, "network": "none", **spec,
         }
         response = self.request("POST", "/v1/sandboxes", payload=payload, token="sandbox")

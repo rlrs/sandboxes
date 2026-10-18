@@ -305,24 +305,25 @@ class GatewayDispatchTests(unittest.TestCase):
     def test_clients_cannot_choose_a_root_and_only_capable_workers_take_one(self):
         with LocalFleet(nodes=1) as fleet:
             handler = fleet.gateway.RequestHandlerClass
-            mapped = {"harness/base:1": D["7"]}
+            mapped = {fleet.image: D["7"]}
             handler.dispatch_environment_roots = True
             handler.services.registry_refs.dependency_resolver = SimpleNamespace(
                 root=lambda image: next((root for name, root in mapped.items() if image.startswith(name)), None))
             chosen = fleet.request("POST", "/v1/sandboxes", token="sandbox", payload={
-                "id": "chosen", "image": "harness/base:1", "environment_root": D["8"], **self.SPEC})
+                "id": "chosen", "image": fleet.image, "environment_root": D["8"], **self.SPEC})
             self.assertEqual(chosen.status, 400, chosen.body)
             self.assertIn("set by the gateway", chosen.json()["error"])
-            # The harness workers' Docker store honours no root: no capable worker.
+            # A dispatched root needs a worker that reads RAFS components. Harness
+            # workers do not, so none is capable.
             pinned = fleet.request("POST", "/v1/sandboxes", token="sandbox", payload={
-                "id": "pinned", "image": "harness/base:1", **self.SPEC})
+                "id": "pinned", "image": fleet.image, **self.SPEC})
             self.assertEqual(pinned.status, 503, pinned.body)
             self.assertTrue(pinned.json()["retryable"])
             self.assertEqual(pinned.json()["error_code"], "no_ready_node", pinned.body)
             self.assertIsNone(fleet.route("pinned"))
             mapped.clear()  # No environment: nothing is pinned and nothing is required.
             plain = fleet.request("POST", "/v1/sandboxes", token="sandbox", payload={
-                "id": "plain", "image": "harness/base:1", **self.SPEC})
+                "id": "plain", "image": fleet.image, **self.SPEC})
             self.assertEqual(plain.status, 201, plain.body)
             self.assertNotIn("environment_root", fleet.route("plain").spec)
 

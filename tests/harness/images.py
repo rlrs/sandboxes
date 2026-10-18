@@ -6,6 +6,12 @@ it copies a catalog image into its own cache on first use (a pull) and hands
 the real ``OverlayRootfsManager`` that directory as the immutable lower.
 Identity follows the Docker overlay2 ABI, so bundle metadata, checkpoint
 fingerprints and remount validation are unchanged production code.
+
+With a publisher (``LocalFleet(environments=True)``), ``add`` also publishes
+the image as a signed environment (``environments.EnvironmentPublisher``),
+which nodes resolve through the production ``EnvironmentRootfsStore``
+instead of ``LocalRootfsStore``. Refs then live on the harness registry:
+``catalog.ref(name)``.
 """
 
 from __future__ import annotations
@@ -18,7 +24,7 @@ import json
 from pathlib import Path
 import shutil
 import threading
-from typing import Callable, Iterable, Iterator, Mapping
+from typing import Callable, Iterable, Iterator, Mapping, Sequence
 
 from sandboxes.direct_warden import DirectWardenError
 from sandboxes.environment_manifest import DOCKER_OVERLAY2_ABI, EnvironmentManifest
@@ -42,10 +48,16 @@ class ImageCatalog:
     """Refs live only in ``refs.json``, so every process sees each add,
     including a ref re-added with new content."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, publisher=None) -> None:
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.root = root
+        self.publisher = publisher
         self._guard = threading.Lock()
+
+    def ref(self, name: str) -> str:
+        """The ref a sandbox names this image by: on the harness registry
+        when images are environments, unless ``name`` names a registry."""
+        return name if self.publisher is None else self.publisher.ref(name)
 
     def _index(self) -> dict[str, CatalogImage]:
         try:
@@ -68,12 +80,18 @@ class ImageCatalog:
         env: tuple[str, ...] = ("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",),
         working_dir: str = "",
         user: str = "0",
+        toolkits: Sequence[Mapping[str, bytes | str]] = (),
     ) -> CatalogImage:
-        """Publish an image whose rootfs holds exactly ``files``.
+        """Publish an image whose rootfs holds exactly ``files``, with each
+        of ``toolkits`` stacked above it in order (later files win).
 
         Paths are relative to /. A trailing ``/`` names an empty directory.
+        As an environment, the base and each toolkit are separate signed
+        components, which the node composes as overlay lowers.
         """
+        ref = self.ref(ref)
         config = DockerImageConfig(command=command, env=env, working_dir=working_dir, user=user)
+        layers = (files, *toolkits)
         manifest = {
             "config": {"cmd": list(command), "env": list(env), "user": user, "workdir": working_dir},
             "files": {
@@ -82,6 +100,9 @@ class ImageCatalog:
                 ).hexdigest()
                 for path, data in sorted(files.items())
             },
+            **({"toolkits": [{path: hashlib.sha256(data.encode("utf-8") if isinstance(data, str) else data
+                                                   ).hexdigest() for path, data in sorted(layer.items())}
+                             for layer in toolkits]} if toolkits else {}),
         }
         digest = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode("ascii")).hexdigest()
         rootfs = self.root / digest / "rootfs"
@@ -89,14 +110,17 @@ class ImageCatalog:
             staging = self.root / f".{digest}.staging"
             shutil.rmtree(staging, ignore_errors=True)
             (staging / "rootfs").mkdir(mode=0o755, parents=True)
-            for path, data in files.items():
-                target = staging / "rootfs" / path.strip("/")
-                if path.endswith("/"):
-                    target.mkdir(mode=0o755, parents=True, exist_ok=True)
-                    continue
-                target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-                target.write_bytes(data.encode("utf-8") if isinstance(data, str) else data)
+            for layer in layers:
+                for path, data in layer.items():
+                    target = staging / "rootfs" / path.strip("/")
+                    if path.endswith("/"):
+                        target.mkdir(mode=0o755, parents=True, exist_ok=True)
+                        continue
+                    target.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+                    target.write_bytes(data.encode("utf-8") if isinstance(data, str) else data)
             staging.rename(self.root / digest)
+        if self.publisher is not None:
+            self.publisher.publish(ref, layers, config)
         image = CatalogImage(ref, "sha256:" + digest, rootfs, config)
         with self._guard:
             images = {**self._index(), _normalize(ref): image}
@@ -111,7 +135,7 @@ class ImageCatalog:
 
     def resolve(self, ref: str) -> CatalogImage:
         images = self._index()
-        image = images.get(_normalize(ref))
+        image = images.get(_normalize(self.ref(ref)))
         if image is None:
             image = next((item for item in images.values() if item.image_id == ref), None)
         if image is None:

@@ -1,21 +1,17 @@
 """Chunk store M2 OCI release (plan §5.4): a released image keeps resolving,
 by tag and by digest, after ``chunk-migrate release-oci`` deletes its OCI
 manifest, and the release deletes nothing a lease, route or build still needs."""
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import json
-import re
 import sqlite3
-import threading
 from types import SimpleNamespace
 import unittest
-from urllib.parse import unquote, urlparse
 
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
 from tests.harness import LocalFleet
+from tests.harness.environments import FakeOciRegistry
 from sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
 from sandboxes.chunk_migrate import drop_staged, release_oci, release_originals
-from sandboxes.environment_artifact import OCI_IMAGE, canonical_bytes, content_digest, publish_environment
+from sandboxes.environment_artifact import publish_environment
 from sandboxes.environment_dependencies import EnvironmentDependencyResolver
 from sandboxes.environment_manifest import EnvironmentManifest
 from sandboxes.gateway.image_resolution import ImageResolution
@@ -28,83 +24,12 @@ TEST_TIER = "contract"
 D = {name: "sha256:" + name * 64 for name in "123456789"}
 
 
-class FakeOciRegistry(ThreadingHTTPServer):
-    """Distribution's manifest API: by tag or digest, tag lists, protection-tag
-    PUTs, and DELETE of a digest with every tag on it."""
-
-    def __init__(self):
-        self.manifests, self.tags = {}, {}  # (repository, digest) -> bytes; (repository, tag) -> digest
-        super().__init__(("127.0.0.1", 0), FakeOciHandler)
-        self.url = "http://%s:%d" % self.server_address
-        self.host = urlparse(self.url).netloc
-        threading.Thread(target=self.serve_forever, daemon=True).start()
-
-    def push(self, repository, tag, config_digest, layers=((D["9"], 100),)):
-        body = canonical_bytes({"schemaVersion": 2, "mediaType": OCI_IMAGE, "config": {"digest": config_digest,
-                                "size": 2}, "layers": [{"digest": d, "size": s} for d, s in layers]})
-        self.manifests[(repository, content_digest(body))] = body
-        self.tags[(repository, tag)] = content_digest(body)
-        return content_digest(body)
-
-    def delete(self, repository, digest):
-        self.manifests.pop((repository, digest))
-        for key in [key for key, value in self.tags.items() if key[0] == repository and value == digest]:
-            del self.tags[key]
-
-
-class FakeOciHandler(BaseHTTPRequestHandler):
-    def log_message(self, *_args):
-        pass
-
-    def reply(self, status, body=b"", headers=()):
-        self.send_response(status)
-        for name, value in (("Content-Length", str(len(body))), *headers):
-            self.send_header(name, value)
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(body)
-
-    def manifest(self):
-        match = re.fullmatch(r"/v2/(.+)/manifests/([^?]+)", self.path)
-        repository, reference = unquote(match[1]), unquote(match[2])
-        digest = reference if reference.startswith("sha256:") else self.server.tags.get((repository, reference))
-        return repository, reference, digest, self.server.manifests.get((repository, digest))
-
-    def do_GET(self):
-        listing = re.fullmatch(r"/v2/(.+)/tags/list(\?.*)?", self.path)
-        if listing:
-            name = unquote(listing[1])
-            tags = sorted(tag for repository, tag in self.server.tags if repository == name)
-            return self.reply(200, json.dumps({"name": name, "tags": tags}).encode())
-        _repository, _reference, digest, body = self.manifest()
-        if body is None:
-            return self.reply(404, b'{"errors":[{"code":"MANIFEST_UNKNOWN"}]}')
-        self.reply(200, body, (("Docker-Content-Digest", digest), ("Content-Type", OCI_IMAGE)))
-
-    do_HEAD = do_GET
-
-    def do_PUT(self):
-        repository, tag, _digest, _body = self.manifest()
-        body = self.rfile.read(int(self.headers["Content-Length"]))
-        self.server.manifests[(repository, content_digest(body))] = body
-        self.server.tags[(repository, tag)] = content_digest(body)
-        self.reply(201, headers=(("Docker-Content-Digest", content_digest(body)),))
-
-    def do_DELETE(self):
-        repository, _reference, digest, body = self.manifest()
-        if body is None:
-            return self.reply(404)
-        self.server.delete(repository, digest)
-        self.reply(202)
-
-
 class OciReleaseTests(unittest.TestCase):
     def setUp(self):
         # The artifact fixtures (a signing key, an environments registry), not their tests.
         artifact_fixtures.EnvironmentArtifactTests.setUp(self)
         self.oci = FakeOciRegistry()
-        self.addCleanup(self.oci.server_close)
-        self.addCleanup(self.oci.shutdown)
+        self.addCleanup(self.oci.close)
         manifest, self.source = EnvironmentManifest(self.digest), self.component.source_image
         self.old, self.new = (publish_environment(self.registry, source_image=self.source, environment=manifest,
                                                   image_config={"Cmd": [f"/bin/{name}"]}, signing_key=self.key,
@@ -255,7 +180,9 @@ class OciReleaseTests(unittest.TestCase):
         self.client.ensure_digest_protection_tag = lambda *_args: None  # The environments repository's.
         digest, repository = self.oci.push("ucloud-managed/task", "v1", self.source), "ucloud-managed/task"
         tag_ref, digest_ref = f"{self.oci.host}/{repository}:v1", f"{self.oci.host}/{repository}@{digest}"
-        with LocalFleet(nodes=1, gateway_options={
+        # The image and its roots live on this test's own registries; only
+        # the legacy image store accepts that image, ignoring its root.
+        with LocalFleet(nodes=1, environments=False, gateway_options={
                 "registry_url": self.oci.url, "registry_usage_file": self.root / "usage.sqlite",
                 "environment_registry": self.registry, "dispatch_environment_roots": True}) as fleet:
             for ref in (f"{tag_ref}@{digest}", digest_ref):

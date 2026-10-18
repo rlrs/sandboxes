@@ -21,7 +21,7 @@ import unittest
 from tests.harness import LocalFleet
 from sandboxes import routing
 
-SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 8192, "network": "none"}
+SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 8192, "network": "none"}
 PER_NODE = 65536 // SPEC["disk_mb"]
 
 
@@ -33,7 +33,7 @@ class CreateBurstTests(unittest.TestCase):
             self.assertEqual(closed.drain("burst").status, 200)
 
             def create(name):
-                return fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC}, token="sandbox")
+                return fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image}, token="sandbox")
 
             names = [f"burst-{index}" for index in range(2 * PER_NODE + 4)]
             with ThreadPoolExecutor(len(names)) as pool:
@@ -100,7 +100,7 @@ class CreateBurstTests(unittest.TestCase):
                     fleet.heartbeat()
                 self.assertEqual(node.drain("solo").status, 200)
                 before = len(node.requests)
-                refused = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC}, token="sandbox")
+                refused = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image}, token="sandbox")
                 self.assertEqual(refused.status, 503, refused.body)
                 self.assertEqual((refused.json()["error_code"], refused.json()["retryable"]),
                                  ("node_admission_closed", True))
@@ -115,11 +115,11 @@ class CreateBurstTests(unittest.TestCase):
             node.arm_fault("create", "hang", sandbox_id="first")
             result: dict = {}
             first = threading.Thread(target=lambda: result.setdefault("response", fleet.request(
-                "POST", "/v1/sandboxes", payload={"id": "first", **SPEC}, token="sandbox")), daemon=True)
+                "POST", "/v1/sandboxes", payload={"id": "first", **SPEC, "image": fleet.image}, token="sandbox")), daemon=True)
             first.start()
             node.wait_hung("create")
 
-            busy = fleet.request("POST", "/v1/sandboxes", payload={"id": "second", **SPEC}, token="sandbox")
+            busy = fleet.request("POST", "/v1/sandboxes", payload={"id": "second", **SPEC, "image": fleet.image}, token="sandbox")
             self.assertEqual((busy.status, busy.json()), (503, {
                 "error": "gateway admission wait deadline exceeded",
                 "error_code": "gateway_startup_busy",

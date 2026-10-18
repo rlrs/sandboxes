@@ -11,7 +11,9 @@ import signal
 import tarfile
 import unittest
 
+from sandboxes.image_rootfs import DockerImageConfig
 from tests.harness import LocalFleet, process_alive
+from tests.harness.environments import EnvironmentPublisher
 from tests.harness.fleet import _request
 
 
@@ -56,7 +58,8 @@ class LocalFleetScenarioTests(unittest.TestCase):
         self.assertEqual(node.storage_backend.devices, {})
         self.assertEqual(list((node.state_root / "bundles").iterdir()), [])
         self.assertEqual(list((node.state_root / "journals").iterdir()), [])
-        self.assertEqual(list((node.root / "mounts").iterdir()), [])
+        # Only the image stays mounted, for the next sandbox of it.
+        self.assertEqual(list(node.mounts().values()), ["bind"])
         fleet.heartbeat()
         self.assertEqual(fleet.status("alpha").json()["sandboxes"], [])
         self.assertEqual(fleet.request("GET", "/v1/sandboxes/alpha").status, 404)
@@ -160,7 +163,7 @@ class LocalFleetScenarioTests(unittest.TestCase):
             # its mountpoint is empty and the overlay is unmounted.
             self.assertFalse((node.runtime_root / "fake-memory" / cid).exists())
             self.assertEqual(list((node.volumes / "gamma.sandbox-1").iterdir()), [])
-            self.assertEqual(list((node.root / "mounts").iterdir()), [])
+            self.assertNotIn("overlay", node.mounts().values())
 
             woken = fleet.wake("gamma", generation=fleet.route("gamma").generation)
             self.assertEqual(woken.status, 200, woken.body)
@@ -290,6 +293,43 @@ class LocalFleetScenarioTests(unittest.TestCase):
                 sorted((item["id"], item["state"]) for item in fleet.status("running").json()["sandboxes"]),
                 [("running", "running")],
             )
+
+    def test_an_image_composes_its_signed_components_in_order(self):
+        with LocalFleet() as fleet:
+            ref = fleet.catalog.add("harness/tools:1", {"etc/motd": "base\n", "opt/base.txt": "base\n"},
+                                    toolkits=[{"etc/motd": "toolkit\n", "opt/tool/run.sh": "echo tool\n"}]).ref
+            fleet.create("alpha", image=ref, parkable=True)
+            node = fleet.node_for("alpha")
+            read = fleet.exec("alpha", ["cat", "/etc/motd", "/opt/base.txt", "/opt/tool/run.sh"])
+            self.assertEqual((read.exit_code, read.stdout), (0, "toolkit\nbase\necho tool\n"))
+            # The sandbox's own overlay sits on one read-only overlay of both components.
+            self.assertEqual(sorted(node.mounts().values()), ["overlay", "overlay-ro"])
+            self.assertEqual(fleet.write_file("alpha", "/opt/base.txt", b"changed\n").status, 200)
+
+            self.assertEqual(fleet.park("alpha").status, 200)
+            self.assertEqual(fleet.wake("alpha", generation=fleet.route("alpha").generation).status, 200)
+            self.assertEqual(fleet.exec("alpha", ["cat", "/opt/base.txt"]).stdout, "changed\n")
+            fleet.create("beta", image=ref)
+            self.assertEqual(fleet.exec("beta", ["cat", "/opt/base.txt", "/etc/motd"]).stdout, "base\ntoolkit\n")
+            self.assertEqual(fleet.delete("alpha").status, 200)
+            self.assertEqual(fleet.delete("beta").status, 200)
+            # Both sandboxes shared one composition, which stays for the next one.
+            self.assertEqual(len(node.environment_backend.attached), 2)
+            self.assertEqual(list(node.mounts().values()), ["overlay-ro"])
+
+    def test_a_node_refuses_an_image_signed_by_an_untrusted_producer(self):
+        with LocalFleet() as fleet:
+            untrusted = EnvironmentPublisher(fleet.registry, fleet.root / "untrusted")
+            untrusted.publish(fleet.catalog.ref("harness/forged:1"), [{"etc/motd": "forged\n"}],
+                              DockerImageConfig(command=("sleep", "infinity")))
+            refused = fleet.request("POST", "/v1/sandboxes", token="sandbox", payload={
+                "id": "forged", "image": fleet.catalog.ref("harness/forged:1"), "cpus": 1, "memory_mb": 256,
+                "disk_mb": 1024, "network": "none"})
+            self.assertEqual((refused.status, refused.json()["pull"]["timings"]["failed_phase"]),
+                             (502, "environment_resolve"), refused.body)
+            self.assertIsNone(fleet.route("forged"))
+            self.assertIsNone(fleet.nodes[0].registration("forged"))
+            self.assertEqual(fleet.nodes[0].environment_backend.attached, [])
 
 
 if __name__ == "__main__":

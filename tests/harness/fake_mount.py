@@ -1,15 +1,20 @@
 """Copy-based stand-in for overlayfs ``mount``/``umount``/``mountpoint``.
 
 Stdlib only; each node's wrappers run it under ``python -S``. It accepts only
-the invocations ``OverlayRootfsManager`` issues.
+the invocations ``OverlayRootfsManager`` and ``EnvironmentRootfsStore`` issue.
 
-``mount -t overlay`` materializes lower + upper into the merged directory.
-``umount`` writes the merged tree's difference from lower back into a fresh
-upper (deletions as ``.wh.<name>`` whiteouts) and empties the merged
+``mount -t overlay`` with an upper materializes lower + upper into the merged
+directory. ``umount`` writes the merged tree's difference from lower back into
+a fresh upper (deletions as ``.wh.<name>`` whiteouts) and empties the merged
 directory. Between the two, upper is stale: writes reach it only on unmount,
-which is when the real stack seals it. The mount table is one JSON file per
-merged path in the node's table directory, so it survives node-agent
-restarts like a kernel mount would.
+which is when the real stack seals it.
+
+A read-only overlay (``-o ro,lowerdir=top:...:bottom``, an image's stacked
+components; relative lowers resolve against the working directory) merges
+its lowers bottom first, honouring whiteouts, and ``mount --bind`` copies its
+source; ``umount`` of either only empties the target. The mount table is one
+JSON file per merged path in the node's table directory, so it survives
+node-agent restarts like a kernel mount would.
 """
 
 from __future__ import annotations
@@ -69,30 +74,69 @@ def _entry(table: Path, merged: str) -> Path:
     return table / f"{key}.json"
 
 
+def _require_mountpoint(table: Path, merged: Path, sources: list[Path]) -> Path:
+    entry = _entry(table, str(merged))
+    if entry.exists():
+        raise MountError(f"{merged} is already mounted")
+    for path in (*sources, merged):
+        if path.is_symlink() or not path.is_dir():
+            raise MountError(f"mount path is not a directory: {path}")
+    if any(merged.iterdir()):
+        raise MountError(f"mountpoint is not empty: {merged}")
+    return entry
+
+
 def _mount(table: Path, args: list[str]) -> int:
+    if len(args) == 3 and args[0] == "--bind":
+        return _mount_bind(table, Path(os.path.abspath(args[1])), Path(os.path.abspath(args[2])))
     if len(args) != 6 or args[:3] != ["-t", "overlay", "overlay"] or args[3] != "-o":
         raise MountError(f"unsupported mount invocation: {args}", 2)
-    options = dict(item.partition("=")[::2] for item in args[4].split(","))
+    items = args[4].split(",")
+    if items[0] == "ro":
+        options = dict(item.partition("=")[::2] for item in items[1:])
+        if set(options) != {"lowerdir"} or not all(options["lowerdir"].split(":")):
+            raise MountError(f"unsupported overlay options: {args[4]}", 2)
+        lowers = [Path(os.path.abspath(path)) for path in options["lowerdir"].split(":")]
+        return _mount_readonly(table, lowers, Path(os.path.abspath(args[5])))
+    options = dict(item.partition("=")[::2] for item in items)
     if set(options) != {"lowerdir", "upperdir", "workdir"} or ":" in options["lowerdir"]:
         raise MountError(f"unsupported overlay options: {args[4]}", 2)
     lower, upper, work = (Path(options[name]) for name in ("lowerdir", "upperdir", "workdir"))
     merged = Path(args[5])
-    entry = _entry(table, args[5])
-    if entry.exists():
-        raise MountError(f"{merged} is already mounted")
-    for path in (lower, upper, work, merged):
-        if path.is_symlink() or not path.is_dir():
-            raise MountError(f"overlay path is not a directory: {path}")
-    if any(merged.iterdir()):
-        raise MountError(f"mountpoint is not empty: {merged}")
+    entry = _require_mountpoint(table, merged, [lower, upper, work])
     original_mode = stat.S_IMODE(merged.lstat().st_mode)
     _copy_children(lower, merged)
     _apply_upper(upper, merged)
     # Overlayfs exposes the upper directory inode as the mounted root.
     os.chmod(merged, stat.S_IMODE(upper.lstat().st_mode))
     _write_json(entry, {
-        "lower": str(lower), "upper": str(upper), "work": str(work),
+        "kind": "overlay", "lowers": [str(lower)], "upper": str(upper), "work": str(work),
         "merged": str(merged), "merged_mode": original_mode,
+    })
+    return 0
+
+
+def _mount_readonly(table: Path, lowers: list[Path], merged: Path) -> int:
+    entry = _require_mountpoint(table, merged, lowers)
+    original_mode = stat.S_IMODE(merged.lstat().st_mode)
+    for lower in reversed(lowers):
+        _apply_upper(lower, merged)
+    # The topmost lower's root inode is the mounted root.
+    os.chmod(merged, stat.S_IMODE(lowers[0].lstat().st_mode))
+    _write_json(entry, {
+        "kind": "overlay-ro", "lowers": [str(path) for path in lowers],
+        "merged": str(merged), "merged_mode": original_mode,
+    })
+    return 0
+
+
+def _mount_bind(table: Path, source: Path, target: Path) -> int:
+    entry = _require_mountpoint(table, target, [source])
+    original_mode = stat.S_IMODE(target.lstat().st_mode)
+    _copy_children(source, target)
+    os.chmod(target, stat.S_IMODE(source.lstat().st_mode))
+    _write_json(entry, {
+        "kind": "bind", "source": str(source), "merged": str(target), "merged_mode": original_mode,
     })
     return 0
 
@@ -105,7 +149,12 @@ def _umount(table: Path, args: list[str]) -> int:
         record = json.loads(entry.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise MountError(f"{args[0]}: not mounted") from None
-    lower, upper, merged = (Path(record[name]) for name in ("lower", "upper", "merged"))
+    merged = Path(record["merged"])
+    if record["kind"] != "overlay":
+        _empty(merged, record["merged_mode"])
+        entry.unlink()
+        return 0
+    lower, upper = Path(record["lowers"][0]), Path(record["upper"])
     staging = upper.parent / f".fake-upper-{uuid.uuid4().hex}"
     staging.mkdir(mode=0o700)
     _diff(lower, merged, staging)
@@ -114,17 +163,36 @@ def _umount(table: Path, args: list[str]) -> int:
     os.rename(upper, retired)
     os.rename(staging, upper)
     shutil.rmtree(retired)
-    for child in list(merged.iterdir()):
-        _remove(child)
-    os.chmod(merged, record["merged_mode"])
+    _empty(merged, record["merged_mode"])
     entry.unlink()
     return 0
+
+
+def _empty(merged: Path, mode: int) -> None:
+    for child in list(merged.iterdir()):
+        _remove(child)
+    os.chmod(merged, mode)
 
 
 def _mountpoint(table: Path, args: list[str]) -> int:
     if len(args) != 2 or args[0] != "--quiet":
         raise MountError(f"unsupported mountpoint invocation: {args}", 2)
     return 0 if _entry(table, args[1]).exists() else 32
+
+
+def has_dependents(table: Path, path: Path) -> bool:
+    """Whether an overlay in ``table`` names ``path``, or a path below it, as
+    a lower: ``mount_has_dependents(path, include_bind_mounts=False)`` over
+    the fake mount table."""
+    target = os.path.abspath(path)
+    for entry in table.glob("*.json"):
+        try:
+            record = json.loads(entry.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        if any(lower == target or lower.startswith(target + "/") for lower in record.get("lowers", ())):
+            return True
+    return False
 
 
 def _copy_children(source: Path, target: Path) -> None:

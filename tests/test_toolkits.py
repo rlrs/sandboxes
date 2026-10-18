@@ -151,7 +151,9 @@ class GatewayToolkitCreateTests(unittest.TestCase):
             return self.COMPOSED
 
         composer.pin, composer.compose = pin, compose
-        with LocalFleet(nodes=1) as fleet:
+        # The composed root is a made-up digest no registry holds, which only
+        # the legacy image store ignores.
+        with LocalFleet(nodes=1, environments=False) as fleet:
             node = fleet.nodes[0]
             node.server.RequestHandlerClass.__bases__[0].capabilities += (
                 ENVIRONMENT_ROOT_CAPABILITY, ENVIRONMENT_RAFS_CAPABILITY)
