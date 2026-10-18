@@ -1540,14 +1540,11 @@ def cmd_serve_model_relay(args: argparse.Namespace) -> int:
 
     from .shared_control.database import PostgresDatabase
     from .shared_control.credentials import read_private_dsn
-    from .shared_control.migration import assert_relay_cutover
-    cutover = assert_relay_cutover(config.relay_state_file(), config.deployment_id, config.relay_postgres.schema)
     postgres_store = PostgresDatabase(
         read_private_dsn(Path(config.relay_postgres.dsn_file)), config.deployment_id,
         schema=config.relay_postgres.schema,
         max_connections=config.relay_postgres.max_connections,
     )
-    postgres_store.expected_relay_import_digest = cutover['source_digest'] if cutover else None
     from .shared_control.database import postgres_transaction_observer
     postgres_store.observe = postgres_transaction_observer(telemetry)
     app = create_model_relay_app(

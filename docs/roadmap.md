@@ -78,7 +78,6 @@ under [Open decisions](#open-decisions).
 - **Wire or delete the guest agent** (`agent_linux.go`, `guest_agent.py`): ~26 ms CPU per exec
   saved versus ~800 lines removed.
 - **Retire relay-driven park and wake** once every trainer sets `guest_relay_url`.
-- **Delete the legacy SQLite relay importer** (`shared_control/legacy_relay.py`, `import_idle_relay`).
 - **Registry disk guard on a shared drive:** replace `statvfs` percentages with a byte bound, or turn it off.
 - **One memory mode:** pick one of split, RAM or reflink-restore backing and delete the rest.
 - **A second store node:** removes the ~1.5 h cache-refill window after a loss, at a monthly cost.

@@ -10,6 +10,11 @@
   old `ucloud-sandboxes` distribution from the venv, and repacking a node bundle
   removes the old package. Environment variables, headers, host paths, unit names,
   runtime binaries and labels are unchanged.
+- **The SQLite relay importer is gone.** `python -m sandboxes.shared_control
+  import-idle-relay` and the relay's startup check of `model-relay.sqlite3` are
+  deleted; the relay has run only on PostgreSQL since 0.5.114. A deployment still on
+  an older relay imports with 0.9.75 first. A relay still refuses to start on an
+  import that was never activated.
 
 ## 0.9.75 - 2026-10-12 (gateway)
 

@@ -9,7 +9,6 @@ import ipaddress
 import json
 import logging
 import os
-from pathlib import Path
 import re
 import socket
 import struct
@@ -67,11 +66,8 @@ ACCEPTED_NOTIFIER_KEY = web.AppKey(
 TELEMETRY_KEY = web.AppKey("model_relay_telemetry", Telemetry)
 _DISABLED_TELEMETRY = Telemetry.disabled("model-relay")
 RELAY_POSTGRES_REQUIRED = (
-    "Model relay 0.5.114 requires PostgreSQL; configure relay_postgres. "
-    "For an existing SQLite journal, stop the relay and run "
-    "python -m sandboxes.shared_control import-idle-relay --sqlite-file PATH "
-    "with the target --dsn-file and --deployment-id before restarting. "
-    "See docs/architecture.md; do not delete or reset the old journal."
+    "Model relay requires PostgreSQL; configure relay_postgres. "
+    "See docs/architecture.md."
 )
 
 
@@ -216,7 +212,6 @@ def create_model_relay_app(
     maintenance_interval_seconds: float = DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
     completed_request_retention_seconds: float = DEFAULT_COMPLETED_REQUEST_RETENTION_SECONDS,
     worker_retention_seconds: float = DEFAULT_WORKER_RETENTION_SECONDS,
-    state_path: Path | None = None,
     postgres_store=None,
     postgres_storage_budget_bytes: int = 64 * 1024**3,
     accepted_notifier: Callable[[RelayRequest], Awaitable[str | None]] | None = None,
@@ -240,7 +235,7 @@ def create_model_relay_app(
         + [_database_admission_middleware],
     )
     app[TELEMETRY_KEY] = resolved_telemetry
-    if postgres_store is None or state_path is not None:
+    if postgres_store is None:
         raise ValueError(RELAY_POSTGRES_REQUIRED)
     from .shared_control.relay import PostgresRelayState
 

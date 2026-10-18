@@ -675,5 +675,23 @@ class ModelRelayTests(unittest.IsolatedAsyncioTestCase):
                             pass
 
 
+class RelayRequiresPostgresTests(unittest.TestCase):
+    def test_relay_without_postgres_fails_before_touching_sqlite(self):
+        with patch("sqlite3.connect", side_effect=AssertionError("live SQLite")):
+            with self.assertRaisesRegex(ValueError, "requires PostgreSQL"):
+                create_model_relay_app()
+
+    def test_cli_rejects_missing_postgres_before_reading_credentials_or_opening_routes(self):
+        from types import SimpleNamespace
+        from sandboxes.cli import cmd_serve_model_relay
+
+        with patch(
+            "sandboxes.cli.load_config",
+            return_value=SimpleNamespace(relay_postgres=None),
+        ):
+            with self.assertRaisesRegex(ValueError, "configure relay_postgres"):
+                cmd_serve_model_relay(SimpleNamespace())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,4 @@
-"""Explicit live relay migration, status and idle cutover."""
+"""Explicit relay schema migration and status."""
 from __future__ import annotations
 
 import argparse
@@ -18,11 +18,6 @@ async def run(args):
         if args.command == "migrate":
             await store.migrate()
             return {"schema": args.schema, "authority": "relay", "version": store.schema_version, "migrated": True}
-        if args.command == "import-idle-relay":
-            from .migration import import_idle_relay
-            if args.sqlite_file is None:
-                raise ValueError("--sqlite-file is required for idle relay cutover")
-            return await import_idle_relay(store, args.sqlite_file)
         from .relay import PostgresRelayState
         # Status is read-only: do not start dispatchers, record runtime mode,
         # initialize quota, or otherwise pretend this CLI is a relay process.
@@ -33,8 +28,7 @@ async def run(args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("migrate", "status", "import-idle-relay"))
-    parser.add_argument("--sqlite-file", type=Path)
+    parser.add_argument("command", choices=("migrate", "status"))
     parser.add_argument("--dsn-file", type=Path, required=True)
     parser.add_argument("--deployment-id", required=True)
     parser.add_argument("--schema", default="ucloud_shared")
