@@ -1,4 +1,4 @@
-"""C3.1 residue policy and commit schemas (docs/rl-state-primitives.md §3.3, §10.1)."""
+"""C3.1 residue policy and commit schemas (docs/roadmap.md)."""
 from dataclasses import replace
 import hashlib
 import io

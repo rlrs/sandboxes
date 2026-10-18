@@ -2,7 +2,7 @@
 
     .venv/bin/python runtime/noded/src/admission/testdata/goldens.py
 
-Every trace runs the Python implementation itself (docs/admission-port-3c.md,
+Every trace runs the Python implementation itself (docs/node-admission-and-memory.md,
 step 3c.1):
 - fair: FairCapacity under tests/test_admission_properties.FairHarness;
 - ledger: TransitionLedger;

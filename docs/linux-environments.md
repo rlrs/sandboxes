@@ -73,7 +73,7 @@ systemd and reboot remain separate work.
 
 ## Qualification
 
-`docs/prime-tasksets.json` pins the source and hashes for all 23 environment
+`scripts/data/prime-tasksets.json` pins the source and hashes for all 23 environment
 families in Prime Intellect's [Scaling Agentic RL article](https://www.primeintellect.ai/blog/scaling-agentic-rl).
 It is a coverage inventory, not a claim that every task passes.
 
@@ -131,7 +131,7 @@ checkpoint contract. Do not silently fall back to a less isolated backend.
 
 ### Public image sources and oracle checks
 
-Use `--image-aliases docs/prime-image-aliases.json` to reverse the documented
+Use `--image-aliases scripts/data/prime-image-aliases.json` to reverse the documented
 SWE-rebench namespace rewrite. Mappings are scoped to a taskset, recorded in the
 plan, and logged when applied. Unrecognized names remain unchanged. For locally
 rebuilt task Dockerfiles, an alias can instead specify an exact `source` and
@@ -146,24 +146,23 @@ pass supplements setup evidence; it still tests only the selected task.
 
 The initial September 5 taskset sample found that the then-pinned July gVisor
 runtime lacked POSIX ACLs: the OpenThoughts oracle failed at `setfacl`. The
-patched `20260817.0` upgrade enabled those ACL operations. The
-[runtime integration qualification](reviews/gvisor-integration-2026-09-05.md)
-passed ACL enforcement/inheritance, file locks and identities across ten
-hibernation cycles. The new distribution was
-[deployed in release 0.5.28](reviews/gvisor-deployment-2026-09-05.md).
-A fresh original-oracle run on the
+patched `20260817.0` upgrade enabled those ACL operations. Its runtime
+integration qualification passed ACL enforcement/inheritance, file locks and
+identities across ten hibernation cycles, and the new distribution was deployed
+in release 0.5.28. A fresh original-oracle run on the
 isolated August-runtime node completed the solution but failed three of nine
 grader tests: inherited ACLs did not permit the expected cross-user writes.
 The focused runtime probe did not expose this umask/inheritance boundary.
 This project does **not** claim compatibility with every task in the 23 families.
 
-See the [UCloud qualification report](reviews/sandbox-qualification-2026-09-05.md)
-for the 23-family sample matrix and remaining blockers. The existing
+The 23-family sample matrix and its remaining blockers are recorded in
+`git show a04c1ad:docs/reviews/sandbox-qualification-2026-09-05.md`. The existing
 `verifiers-ucloud` adapter also lacks the framework-aware network policy needed
 by BrowseComp-Plus and SWE-bench Multilingual; disabling all network access is not a substitute for
 allowing only framework services.
-The [September 7 compatibility review](reviews/prime-compatibility-2026-09-07.md)
-reconciles that sample with the later runtime deployment and documents resource
+The September 7 compatibility review
+(`git show a04c1ad:docs/reviews/prime-compatibility-2026-09-07.md`) reconciles
+that sample with the later runtime deployment and documents resource
 requirements and outstanding grading, image and networking coverage.
 
 ## Explicit requirements and environment description
@@ -268,13 +267,13 @@ rootfs, UID 1000, group 42 and no capabilities. Run it as root on a disposable L
 host, using a root-owned executable helper built from `runtime/managed_process`.
 It checks shellless file operations, readiness, identity and write containment.
 
-See [follow-up qualification](reviews/sandbox-compatibility-followup-2026-09-05.md)
-for the original version comparison and
-[patched runtime integration](reviews/gvisor-integration-2026-09-05.md) for the
-subsequently completed upgrade and lifecycle qualification.
+The original version comparison and the later upgrade and lifecycle
+qualification are in the git history
+(`git show a04c1ad:docs/reviews/sandbox-compatibility-followup-2026-09-05.md` and
+`git show a04c1ad:docs/reviews/gvisor-integration-2026-09-05.md`).
 
 For the pinned public Senior SWE build, check out the repository/commit in
-`docs/prime-public-builds.json`, then run:
+`scripts/data/prime-public-builds.json`, then run:
 
 ```bash
 python scripts/build_public_task_image.py --taskset senior-swe-bench \

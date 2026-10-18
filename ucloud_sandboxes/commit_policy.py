@@ -1,4 +1,4 @@
-"""C3.1 commit: residue policy and strict commit schemas (docs/rl-state-primitives.md §3).
+"""C3.1 commit: residue policy and strict commit schemas (docs/roadmap.md).
 
 Pure: no registry, runtime or key access. The keyless preparation child runs
 ``filter_upper`` before anything is signed (W7); the gateway, workers and
@@ -103,7 +103,7 @@ class CommitPolicy:
     exclude: tuple[str, ...] = ()
     identity: tuple[str, ...] = ()
     max_bytes: int = COMMIT_MAX_BYTES
-    # Sandbox builds keep package caches, as Docker images do (docs/sandbox-builds.md).
+    # Sandbox builds keep package caches, as Docker images do (docs/images.md).
     keep_build_residue: bool = False
 
     def __post_init__(self):

@@ -10,7 +10,7 @@ work, then a relay-shaped park (``relay_request_id`` and ``generation``, as
 the gateway forwards a model wait), a model wait, a wake, and work again.
 The node decides what each wait costs (keep resident, pause or hibernate),
 as in production. Run it on the node itself: it samples host memory, swap,
-zswap, PSI and the application-memory tmpfs (docs/benchmarks/memory-pressure-2026-10-03).
+zswap, PSI and the application-memory tmpfs (the 2026-10-03 memory-pressure run).
 """
 
 from __future__ import annotations

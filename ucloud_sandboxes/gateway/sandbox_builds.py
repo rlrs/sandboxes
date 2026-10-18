@@ -1,4 +1,4 @@
-"""The gateway half of sandbox builds (docs/sandbox-builds.md).
+"""The gateway half of sandbox builds (docs/images.md).
 
 ``job(payload)`` decides, for one recipe build, whether a sandbox builds it:
 the prepared catalog must split it into a base (a foundation or prepared

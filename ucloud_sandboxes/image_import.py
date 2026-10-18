@@ -1,7 +1,7 @@
 """Import external images for immutable-environment (EROFS) workers.
 
 An EROFS worker reads image content on demand from signed components in the
-managed registry (docs/immutable-environments.md), so it can only run images
+managed registry (docs/images.md), so it can only run images
 the trusted builder has published with an environment attachment. A sandbox
 that names an external image (for example one on Docker Hub) is imported
 first: the gateway submits an ordinary managed build of ``FROM <image>`` under

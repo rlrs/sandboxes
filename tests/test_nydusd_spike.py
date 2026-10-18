@@ -1,6 +1,6 @@
 """The nydusd spike's store side: blob-toc conversions keep nydus's chunk bytes
 and blob tails, and the store node rebuilds every blob exactly from packs
-(docs/benchmarks/nydusd-spike-2026-10-03)."""
+(the 2026-10-03 nydusd-spike run)."""
 import hashlib
 import os
 from pathlib import Path

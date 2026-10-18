@@ -1,4 +1,4 @@
-"""GATEWAY WIRING POINT for C3.1 commit (docs/rl-state-primitives.md §3.2, §3.5).
+"""GATEWAY WIRING POINT for C3.1 commit (docs/roadmap.md).
 
 ``gateway/commit.py`` is not written yet: C6.1 is moving ``control_plane.py``.
 Its route, the ``image_commits`` row, ``CommitReconciler`` and the builder

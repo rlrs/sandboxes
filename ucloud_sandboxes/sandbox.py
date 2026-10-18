@@ -26,7 +26,7 @@ from .models import ResourceQuantity, utc_now
 
 SANDBOX_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ENVIRONMENT_ROOT_RE = re.compile(r"sha256:[0-9a-f]{64}")
-# A toolkit (docs/toolkit-layers.md): files under /opt/ucloud/toolkits/<name>,
+# A toolkit (docs/images.md): files under /opt/ucloud/toolkits/<name>,
 # named by tag in a request and pinned by root digest by the gateway.
 TOOLKIT_NAME_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 TOOLKIT_REF_RE = re.compile(r"([a-z0-9][a-z0-9-]{0,62})(?::([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})|@(sha256:[0-9a-f]{64}))")
@@ -469,7 +469,7 @@ class SandboxSpec:
     # by the gateway only, it pins a sandbox's root for its whole life, moves
     # included. Absent, the worker reads the image's annotation.
     environment_root: str | None = None
-    # Toolkits stacked on the image (docs/toolkit-layers.md): `name:tag` in a
+    # Toolkits stacked on the image (docs/images.md): `name:tag` in a
     # request, `name@sha256:<root>` once the gateway pinned them.
     toolkits: tuple[str, ...] = ()
 
@@ -781,7 +781,7 @@ class SandboxRecord:
     operation_id: str
     spec_hash: str
     # A parked managed-process sandbox's exact job record at park
-    # (docs/managed-process-reads.md); None otherwise.
+    # (docs/node-admission-and-memory.md); None otherwise.
     managed_process: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:

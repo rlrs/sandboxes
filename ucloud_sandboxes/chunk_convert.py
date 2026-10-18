@@ -468,7 +468,7 @@ class RafsConverter:
 
     def extend(self, parent_root, layer, diff_id, *, image_config, repository):
         """A root one layer above ``parent_root``, a whole-image chunk-store root:
-        sandbox builds (docs/sandbox-builds.md). ``layer`` is the filtered commit
+        sandbox builds (docs/images.md). ``layer`` is the filtered commit
         layer (an uncompressed OCI layer tar) and ``diff_id`` its digest. No OCI
         image is read or written: the parent's merged bootstrap is the merge's
         ``--parent-bootstrap``, so only the new layer is converted. The config

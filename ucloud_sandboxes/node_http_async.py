@@ -30,7 +30,7 @@ class BufferedNodeResponse(BytesIO):
 
 class AsyncNodeHttpPool:
     # Connection lanes per worker origin: control RPCs, exec event polls, and
-    # held job reads (docs/managed-process-reads.md). Waiting requests in one
+    # held job reads (docs/node-admission-and-memory.md). Waiting requests in one
     # lane never take the connections another lane needs.
     def __init__(
         self,

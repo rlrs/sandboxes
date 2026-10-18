@@ -1,6 +1,6 @@
 """A real ``ucloud-noded --admission-only`` behind a test's DirectSandboxService.
 
-Step 3c.3 of docs/admission-port-3c.md runs the admission service tests over
+Step 3c.3 of docs/node-admission-and-memory.md runs the admission service tests over
 both backends: ``LocalAdmission`` (the agent's own ledger) and
 ``NodedAdmission`` against noded's admission service, built from this
 worktree with cargo. ``NodedHarness`` owns that process and keeps it fed

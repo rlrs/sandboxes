@@ -23,7 +23,7 @@ from .environment_artifact import OCI_IMAGE, canonical_bytes, content_digest, re
 _LOG = logging.getLogger(__name__)
 TRACE_SCHEMA = "ucloud-environment-startup-trace-v1"
 # Chunk-store images record chunk ids, which are global: one image's trace
-# can warm another's chunks (docs/chunk-store-design.md §4 step 5).
+# can warm another's chunks (docs/images.md step 5).
 TRACE_SCHEMA_IDS = "ucloud-environment-startup-trace-v2"
 MAX_TRACE_CHUNKS = 2048
 _MAX_TRACE_FILE_BYTES = 64 * 1024

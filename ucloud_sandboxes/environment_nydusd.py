@@ -1,6 +1,6 @@
 """Stock nydusd as a worker's RAFS block device (C2.1).
 
-docs/benchmarks/nydusd-spike-2026-10-03. On with ``chunk_store.nydusd``: a
+the 2026-10-03 nydusd-spike run. On with ``chunk_store.nydusd``: a
 nydusd v2.4.5 built with ``--features block-nbd``, pinned by sha256. Each attached
 chunk-store image gets one ``nydusd nbd`` process on the selected device,
 exporting the same unified address space as environment_rafs (bootstrap, then

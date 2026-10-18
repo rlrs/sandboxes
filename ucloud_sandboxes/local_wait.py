@@ -1,4 +1,4 @@
-"""Node-local model waits (pause-reclaim item 6; docs/node-local-model-waits.md).
+"""Node-local model waits (pause-reclaim item 6; docs/node-admission-and-memory.md).
 
 The node sees a sandbox's plaintext HTTP/1.1 calls to a private relay
 endpoint (``sandbox.network_relays``: private IPv4 literals, or names for
@@ -7,7 +7,7 @@ outstanding when the last relay payload went out; its answer is the next
 inbound payload. The node pauses a sandbox whose call is outstanding and whose
 cgroup has been idle, and thaws it on the answer's first packet, which a
 paused gVisor network stack holds until then
-(docs/benchmarks/node-local-wake-2026-10-03). Nothing here reads payloads:
+(the 2026-10-03 node-local-wake run). Nothing here reads payloads:
 nftables logs only the IP and TCP headers of relay flows to one NFLOG group.
 """
 from __future__ import annotations

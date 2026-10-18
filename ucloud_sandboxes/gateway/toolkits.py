@@ -1,4 +1,4 @@
-"""Toolkit layers (C2.5, docs/toolkit-layers.md).
+"""Toolkit layers (C2.5, docs/images.md).
 
 A toolkit is a signed environment whose one whole-image component holds only
 ``/opt/ucloud/toolkits/<name>/`` (``publish-environment`` with that allow path

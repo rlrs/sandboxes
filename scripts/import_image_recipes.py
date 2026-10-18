@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register a training dataset's image recipes with the gateway (docs/image-recipes.md).
+"""Register a training dataset's image recipes with the gateway (docs/images.md).
 
 Two steps, so the dataset checkouts and the gateway's token never meet:
 

@@ -2,7 +2,7 @@
 // extents on its disk, on every core. Anything else (a miss, a bad token, a
 // malformed request, warm jobs, residency checks, health) goes to
 // ucloud-chunk-store on the loopback address, so the Python node stays the one
-// authority on fills, errors and control (docs/chunk-store-m2-plan.md §4.1).
+// authority on fills, errors and control (docs/images.md).
 package main
 
 import (

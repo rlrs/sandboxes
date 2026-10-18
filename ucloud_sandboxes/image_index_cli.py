@@ -1,5 +1,5 @@
 """``ucloud-sandboxes image-index``: the gateway's index of training image names
-(docs/image-index.md), read through its API with the SDK key.
+(docs/images.md), read through its API with the SDK key.
 
   summary                       names and tasks per environment, by state
   show NAME                     one name: its environment, tasks, source, image and state

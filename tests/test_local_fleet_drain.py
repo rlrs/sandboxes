@@ -11,7 +11,7 @@ Not covered: drain during an image pull or a memory wait, and the
 empty-inventory stop proof, which belong to the autoscaler (S9).
 
 ``NodedDrainAdmissionTests`` runs every scenario again with each node's
-admission in a real noded (docs/admission-port-3c.md, steps 3c.3 and 3c.4):
+admission in a real noded (docs/node-admission-and-memory.md):
 the drain waits out a create noded admitted, and the heartbeat reads noded's
 claims before the registry.
 """

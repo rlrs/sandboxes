@@ -1,4 +1,4 @@
-"""The agent's NodedAdmission against a real noded (docs/admission-port-3c.md, 3c.3).
+"""The agent's NodedAdmission against a real noded (docs/node-admission-and-memory.md, 3c.3).
 
 What the both-backend suites cannot show: claims a restarted noded takes back
 through the agent's hello (§3.5), the heartbeat's composition with noded's

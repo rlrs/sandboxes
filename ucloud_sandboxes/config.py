@@ -297,32 +297,32 @@ class SandboxPoolConfig:
     direct_pause_tier: bool = False
     # zswap ahead of the pause tier's swap: only for measured compressible heaps.
     direct_pause_tier_zswap: bool = False
-    # Node-local model waits (docs/node-local-model-waits.md): nodes pause on a
+    # Node-local model waits (docs/node-admission-and-memory.md): nodes pause on a
     # sandbox's outstanding plaintext call to a private relay endpoint and thaw
     # on its answer; the relay sends no park and wakes only an unacknowledged
     # answer. Needs the pause tier.
     direct_local_model_waits: bool = False
     # runtime/noded (Rust) owns the node's port and forwards to the Python agent
-    # on a Unix socket (docs/rust-node-daemon-plan.md, phase 0).
+    # on a Unix socket (docs/node-admission-and-memory.md).
     direct_node_front_door: bool = False
     # noded owns the node registry and runs creates; the agent keeps admission
-    # (docs/rust-node-daemon-plan.md, phase 1). Requires the front door.
+    # (docs/node-admission-and-memory.md). Requires the front door.
     direct_node_rust_create: bool = False
     # noded runs execs on running, unpaused sandboxes; the agent fences them
-    # through flock files (docs/rust-node-daemon-plan.md, phase 2a).
+    # through flock files (docs/node-admission-and-memory.md).
     # Requires the front door.
     direct_node_rust_exec: bool = False
     # noded owns the pause tier: pause and thaw, idle pauses, local waits,
-    # paused reclaim and escalation decisions (docs/rust-node-daemon-plan.md,
+    # paused reclaim and escalation decisions (docs/node-admission-and-memory.md,
     # phase 3a). Requires the pause tier and Rust execs.
     direct_node_rust_pause: bool = False
-    # Node admission moves to noded (docs/admission-port-3c.md); step 3c.0
+    # Node admission moves to noded (docs/node-admission-and-memory.md); step 3c.0
     # adds noded's internal socket and the agent's hello on it, and noded's
     # resident sampling of managed sandboxes for the agent (3b). Requires
     # the front door, Rust creates, Rust execs and the Rust pause tier.
     direct_node_rust_admission: bool = False
     # Split workspaces start with an XFS filesystem this large and grow online
-    # toward disk_mb (docs/disk-density.md). 0 formats full-size workspaces.
+    # toward disk_mb (docs/node-admission-and-memory.md). 0 formats full-size workspaces.
     direct_workspace_initial_grant_mb: int = 512
     max_concurrent_image_pulls: int = 8
 
@@ -663,9 +663,9 @@ class DeploymentConfig:
     upstream_mirror: UpstreamMirrorConfig | None = None
     # How a create picks its worker: "ranked" scans the fleet and reserves
     # capacity transactionally; "power_of_k" samples k workers and lets the
-    # node's admission decide (C4.3, docs/c43-placement-wiring-plan.md).
+    # node's admission decide (C4.3, docs/scaling-policy.md).
     gateway_create_placement: str = "ranked"
-    # Filesystem registry disk guard (docs/managed-registry.md): at the cleanup
+    # Filesystem registry disk guard (docs/images.md): at the cleanup
     # threshold the registry-pressure unit prunes, evicts least-recently-used
     # managed images down to the target, and garbage collects; at the refuse
     # threshold the gateway stops accepting image builds and imports.

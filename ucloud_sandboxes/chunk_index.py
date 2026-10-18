@@ -1,6 +1,6 @@
 """``ucloud-chunk-index``: the chunk store's SQLite index and its HTTP API.
 
-Only builders and GC use the index (docs/chunk-store-design.md §1.3, §5).
+Only builders and GC use the index (docs/images.md).
 Workers ask it for one thing, a root's unsigned locator: with presigned GET
 URLs (decision 2), or with a store node configured (C2.6) the node's URLs,
 so the S3 key stays on this service, the builders and the store node.
@@ -620,7 +620,7 @@ class ChunkIndexService:
 
         A merged bootstrap omits chunks only whiteout-hidden files use, but
         nydusd and block readahead read across them, so they live with the
-        root (docs/benchmarks/nydusd-spike-2026-10-03).
+        root (the 2026-10-03 nydusd-spike run).
         """
         compressed = self.store.get(bootstrap_key(self.store.prefix, bootstrap_digest[7:]), MAX_BOOTSTRAP_BYTES)
         bootstrap = zstd_decompress(compressed, zstd_content_size(compressed, MAX_BOOTSTRAP_BYTES))

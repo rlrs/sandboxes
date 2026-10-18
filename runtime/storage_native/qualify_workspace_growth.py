@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify grow-on-demand workspaces on real ublk/XFS (docs/disk-density.md).
+"""Qualify grow-on-demand workspaces on real ublk/XFS (docs/node-admission-and-memory.md).
 
 Drives the journaled storage-native service with a private AgentEnv backend:
 

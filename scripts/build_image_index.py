@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fill the gateway's image index with every training task that has something
-prepared (docs/image-index.md).
+prepared (docs/images.md).
 
   export --inventory ZIP --tmax-bundle DIR --terminal-lego-bundle DIR
          --openswe-recipes SQLITE --out DIR

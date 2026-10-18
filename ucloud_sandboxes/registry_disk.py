@@ -4,7 +4,7 @@ Docker Distribution returns HTTP 500 for every push once its filesystem is
 full, which fails builds and snapshot publications mid-upload. The gateway,
 autoscaler, and registry-pressure unit share one statvfs view of the registry
 volume so admission can stop new writes before the disk fills and maintenance
-can free space before admission has to (docs/managed-registry.md).
+can free space before admission has to (docs/images.md).
 """
 
 from __future__ import annotations

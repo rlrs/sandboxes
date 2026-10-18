@@ -1,4 +1,4 @@
-"""Chunk store M2 operator tool (docs/chunk-store-m2-plan.md §5).
+"""Chunk store M2 operator tool (docs/images.md).
 
 - ``inventory`` (step 1): a read-only list of every managed image with its
   environment root, components, sizes, build-input status and family, from

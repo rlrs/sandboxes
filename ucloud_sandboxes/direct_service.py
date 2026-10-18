@@ -417,7 +417,7 @@ class DirectSandboxService:
         self.admission = LocalAdmission(self)
 
     def use_noded_admission(self, backend) -> None:
-        """--rust-admission (docs/admission-port-3c.md, step 3c.3): noded holds
+        """--rust-admission (docs/node-admission-and-memory.md: noded holds
         the node's one ledger. This agent's growth intents, forecasts and
         provisional claims are then never read or written."""
         self.admission = backend

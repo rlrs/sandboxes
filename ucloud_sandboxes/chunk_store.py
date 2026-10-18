@@ -1,4 +1,4 @@
-"""Content-addressed chunk store formats (docs/chunk-store-design.md §1).
+"""Content-addressed chunk store formats (docs/images.md).
 
 A chunk is at most 256 KiB of a RAFS v6 blob's uncompressed data, named by
 the sha256 of those bytes. Packs hold chunks once each; the signed chunk map
@@ -434,7 +434,7 @@ def blob_layout_key(prefix, blob_id):
 
 def tail_key(prefix, blob_id):
     """A nydus blob's chunk table and tail (encode_tail); only conversions
-    for nydusd keep one (spike, docs/benchmarks/nydusd-spike-2026-10-03)."""
+    for nydusd keep one (spike, the 2026-10-03 nydusd-spike run)."""
     return f"{prefix}/meta/{require_hex(blob_id)}.tail"
 
 

@@ -1,4 +1,4 @@
-"""Phase 3b, the agent's half (docs/admission-port-3c.md, step 3c.0(a)).
+"""Phase 3b, the agent's half (docs/node-admission-and-memory.md
 
 With --rust-admission runtime/noded samples owned, parkable, managed sandboxes
 (and paused ones) every second and publishes them to resident.json; the agent

@@ -427,7 +427,7 @@ class FreshEnvironmentBuilder:
     work_root: Path
     mkfs_erofs: str = "mkfs.erofs"
     # lz4 made SWE-bench images 38% smaller with a faster mkfs; workers read
-    # fewer bytes per chunk and the kernel decompresses (docs/image-import.md).
+    # fewer bytes per chunk and the kernel decompresses (docs/images.md).
     compression: str = "lz4"
     # Production builders isolate CPU-heavy private preparation from the GIL
     # shared by concurrent build threads. Test adapters retain the local path.

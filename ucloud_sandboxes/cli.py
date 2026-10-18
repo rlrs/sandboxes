@@ -337,7 +337,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     toolkit_register = subparsers.add_parser(
         "toolkit-register",
-        help="Point a toolkit name:tag at a published toolkit image's signed root (docs/toolkit-layers.md).",
+        help="Point a toolkit name:tag at a published toolkit image's signed root (docs/images.md).",
     )
     add_config_args(toolkit_register)
     toolkit_register.add_argument("--name", required=True)
@@ -1925,7 +1925,7 @@ def run_registry_prune(
     """Age retention for image repositories, reference retention for the rest.
 
     The snapshot and environment repositories are excluded from the age rules
-    and pruned by reference (docs/managed-registry.md). With ``evict_lru`` and
+    and pruned by reference (docs/images.md). With ``evict_lru`` and
     the registry volume above its cleanup threshold, least-recently-used
     managed images are evicted down to the target first, so their
     environments are pruned in the same run. Callers hold the registry

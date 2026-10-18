@@ -1,4 +1,4 @@
-"""Toolkit layers (docs/toolkit-layers.md): the spec field, and the gateway's
+"""Toolkit layers (docs/images.md): the spec field, and the gateway's
 composition of an image root with toolkit components."""
 
 from pathlib import Path

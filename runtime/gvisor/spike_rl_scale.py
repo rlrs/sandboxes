@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RL-scale M0 spikes S1, S2, S4, S6, S7 and S8 (docs/rl-scale-architecture-plan.md, section 9).
+"""RL-scale M0 spikes S1, S2, S4, S6, S7 and S8 (git show a04c1ad:docs/rl-scale-architecture-plan.md, section 9).
 
 Run as root on a disposable Linux qualification VM, never on a node that serves
 sandboxes. Each probe writes one JSON section with status

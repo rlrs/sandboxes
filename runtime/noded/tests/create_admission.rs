@@ -1,4 +1,4 @@
-//! Step 3c.4 (docs/admission-port-3c.md §3.3): where the node runs its own
+//! Step 3c.4 (docs/node-admission-and-memory.md): where the node runs its own
 //! admission, the create front takes the startup slot and capacity claim in
 //! process, hands the agent its token (`"admitted"`), and releases the claim
 //! only after finish returns (I18). Refusals answer as the agent's create

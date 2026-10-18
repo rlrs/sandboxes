@@ -1,4 +1,4 @@
-"""Physical disk claims that follow demonstrated usage (docs/disk-density.md).
+"""Physical disk claims that follow demonstrated usage (docs/node-admission-and-memory.md).
 
 A sandbox's ``disk_mb`` and ``memory_mb`` are maximums. The node charges:
 

@@ -1,7 +1,6 @@
 //! The node admission decision: a port of `ucloud_sandboxes/admission_decision.py`
 //! (`gate` and `decide`), which `DirectSandboxService._active_admission_guard`
-//! drives. Neither has CPU checks (docs/admission-port-3c.md §0.9 and
-//! decision G).
+//! drives. Neither has CPU checks (docs/node-admission-and-memory.md).
 //!
 //! One guard pass is two lock sections around a metrics sample:
 //! 1. [`gate`] before sampling: the drain fence, the node shape, and a retry

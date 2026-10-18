@@ -5,18 +5,18 @@ sandboxes. Give each coding agent, evaluation task, or reinforcement-learning
 rollout its own environment: choose an image, allocate CPU, memory and disk, run
 commands, and read or write files through a Python SDK or HTTP API.
 
-The service manages a shared pool of compute nodes on **SDU UCloud or Hetzner
-Cloud**. Clients use one gateway URL and API token; the backend handles placement,
-routing, image builds, and worker scaling. Despite the name, the sandbox API and
-runtime are shared across both providers.
+The service manages a shared pool of compute nodes. Production runs on **SDU
+UCloud**; a Hetzner Cloud provider is also built in. Clients use one gateway URL and
+API token; the backend handles placement, routing, image builds, and worker
+scaling.
 
 > **This repository is the server.** Clients never install it. To use sandboxes
 > from verifiers, install
 > [`verifiers-ucloud`](https://github.com/rlrs/verifiers-ucloud) at a tag
-> (`uv add "verifiers-ucloud @ git+https://github.com/rlrs/verifiers-ucloud@v0.3.7"`),
+> (`uv add "verifiers-ucloud @ git+https://github.com/rlrs/verifiers-ucloud@v0.3.8"`),
 > which pins the [SDK](https://github.com/rlrs/ucloud-sandboxes-sdk) release it
-> was tested with. `main` is what production runs; releases are tagged
-> (`v0.9.66`).
+> was tested with. `main` is what production runs; releases are tagged `vX.Y.Z`
+> and described in the [changelog](CHANGELOG.md).
 
 A central feature is **sharing worker capacity across agents waiting for models**.
 Managed agents stay resident when memory is available, so they can continue
@@ -30,9 +30,11 @@ for workloads containing long model waits.
 - **Run isolated tools and agents.** Execute commands, stream command output,
   transfer files, and keep a workspace across tool calls. Use synchronous or
   asynchronous Python clients, or call the HTTP API directly.
-- **Bring your own environment.** Start from an OCI/container image or build a
-  custom image through the service. Separate builder nodes and a private registry
-  keep image preparation independent of sandbox execution.
+- **Bring your own environment.** Start from an OCI/container image, a prepared
+  task image from the image index, or a recipe the service builds on demand.
+  Images are mounted read-only on workers, which fetch what a sandbox reads
+  (plus prefetch) instead of unpacking the whole image; training images live in
+  a content-addressed chunk store.
 - **Pause and resume work.** Park eligible sandboxes with process and filesystem
   state intact. Published checkpoints also support moving work to another
   compatible node and releasing idle workers.
@@ -54,10 +56,12 @@ runners can use the same sandbox API.
 
 ```mermaid
 flowchart LR
-    Client["Your agent runner / SDK"] --> Gateway["Gateway"]
-    Gateway --> Sandboxes["Sandbox worker pool"]
-    Gateway --> Builders["Image builder pool"]
-    Autoscaler["Autoscaler"] --> Provider["UCloud or Hetzner"]
+    Client["Your agent runner / SDK"] --> Gateway["Gateway<br/>(PostgreSQL)"]
+    Gateway --> Sandboxes["Sandbox workers<br/>(ucloud-noded + gVisor)"]
+    Gateway --> Builders["Image builders"]
+    Builders --> Store["Store node<br/>(chunk store)"]
+    Store --> Sandboxes
+    Autoscaler["Autoscaler"] --> Provider["UCloud (or Hetzner)"]
     Provider --> Sandboxes
     Provider --> Builders
     Sandboxes --> Relay["Model relay"]
@@ -65,10 +69,13 @@ flowchart LR
 ```
 
 The gateway places a sandbox on a suitable worker and routes subsequent requests
-to it by sandbox ID. Workers run gVisor sandboxes with the requested images and
-resources. The autoscaler provisions provider VMs when the pool needs more
-capacity. Your model inference runs separately; the relay connects it to the
-sandbox workload.
+to it by sandbox ID. On each worker, the `ucloud-noded` daemon and the node agent
+run gVisor sandboxes with the requested images and resources. Builders turn
+recipes into images and publish them to the registry or the store node's chunk
+store, from which workers mount them on demand. The autoscaler provisions provider VMs when the pool
+needs more capacity. Your model inference runs separately; the relay connects it
+to the sandbox workload. See [Architecture](docs/architecture.md) for the full
+picture.
 
 For a managed agent, the model-wait cycle is:
 
@@ -140,13 +147,12 @@ managed agents, and Inspect AI. For clients in other languages, use the
 ## Deploy and operate the service
 
 This repository contains the server, runtime, autoscaler, and deployment tooling.
-A deployment combines a persistent control plane (gateway, relay, registry, and
-autoscaler) with sandbox and builder worker pools. Worker pools can scale down
-when idle; the control plane stays available.
+A deployment combines a persistent control plane (gateway with PostgreSQL, relay,
+store node, and autoscaler) with sandbox and builder worker pools. Worker pools
+can scale down when idle; the control plane stays available.
 
-Start with the [deployment flow](docs/deployment-flow.md) and
-[CLI and operations guide](docs/cli-and-operations.md). For Hetzner, also follow
-[the provider setup guide](docs/hetzner.md). Inspect the configuration with:
+Start with [Deployment](docs/deployment.md); production operations are in the
+[runbook](docs/operations-runbook.md). Inspect the configuration with:
 
 ```bash
 uv run ucloud-sandboxes sample-config
@@ -155,39 +161,38 @@ uv run ucloud-sandboxes sample-config
 Deployment provisions the required credentials and pinned runtime artifacts;
 installing the Python client alone does not start a sandbox service.
 
-| Topic | Guide |
-| --- | --- |
-| Pool sizing, prewarming, and autoscaling | [Scaling policy](docs/scaling-policy.md) |
-| Linux profiles and workload compatibility | [Linux environments](docs/linux-environments.md) |
-| Isolation and authentication | [Security stance](docs/security-stance.md) |
-| Direct, disabled, or relay-only network access | [Network policies](docs/network-policy.md) |
-| Checkpoint storage and migration | [Object-storage snapshots](docs/object-storage-snapshots.md) |
-| Custom images and registry maintenance | [Managed registry](docs/managed-registry.md) |
-| Metrics and tracing | [Performance telemetry](docs/telemetry.md) |
-| Components, placement, and routing | [Architecture](docs/architecture.md) · [Routing gateway](docs/routing-gateway.md) |
-| Adding or adapting a compute provider | [Provider portability](docs/provider-portability.md) |
-
 Sandboxes provide CPU-based Linux userspace under gVisor, rather than a full guest
 kernel per sandbox. Workloads that require systemd, reboot, kernel modules, or
 host devices need separate compatibility consideration. Capacity and startup
 latency depend on available workers, image preparation, and checkpoint storage;
 preparing capacity helps avoid cold provisioning during a burst.
 
+## Documentation
+
+| Guide | Covers |
+| --- | --- |
+| [Architecture](docs/architecture.md) | Components, request paths, placement and routing |
+| [State protocol](docs/state-protocol.md) | Durable state, ownership, and node-failure semantics |
+| [API reference](docs/api-reference.md) | HTTP endpoints, fleet status, asynchronous responses, SDK |
+| [Images](docs/images.md) | Image index, recipes, builds, toolkits, chunk store, registry |
+| [Node admission and memory](docs/node-admission-and-memory.md) | What fits on a worker; resident, paused and parked sandboxes |
+| [Model relay](docs/model-relay.md) | Managed agents, model waits, parking and waking |
+| [Scaling policy](docs/scaling-policy.md) | Pools, autoscaling, prewarming, placement scoring |
+| [Linux environments](docs/linux-environments.md) | Linux profiles and workload compatibility |
+| [Security](docs/security.md) | Isolation, authentication, network policies |
+| [Deployment](docs/deployment.md) | Machines, configuration, release bundles, providers, CLI |
+| [Operations runbook](docs/operations-runbook.md) | Production procedures, backups, telemetry |
+| [Roadmap](docs/roadmap.md) | Work still open |
+| [Decisions](docs/decisions.md) | Why the system is built the way it is |
+
 ## Development
 
-Run the local verification suite:
+See [AGENTS.md](AGENTS.md) for the repository layout, how to run the checks, and
+the rules for what goes into this public repository. In short:
 
 ```bash
 bash scripts/check.sh
 ```
 
-It checks the main Python package, shell scripts, managed-process Go code, and
-SDK checkout. It fails if ShellCheck or the SDK checkout is absent. For a
-deliberately reduced run, set `UCLOUD_CHECK_ALLOW_MISSING_SHELLCHECK=1` and/or
-`UCLOUD_CHECK_ALLOW_MISSING_SDK=1`; the output identifies omitted checks. For a
-main-package-only test run, use `uv run python scripts/run_tests.py`. It runs
-each test module in its own process in parallel, with a per-test watchdog, and
-selects tiers with `--tier unit|contract|linux|live` (each module's
-`TEST_TIER`; unmarked modules are `unit`). Add `--no-fsync` when `eatmydata` is
-installed, and `--json PATH` for per-test timings. `uv run python -m unittest`
-still runs the same suite serially.
+runs ruff, the Python suite, the Go and Rust runtime tests, and the SDK checkout's
+suite.

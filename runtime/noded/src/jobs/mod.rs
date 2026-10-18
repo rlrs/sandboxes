@@ -1,4 +1,4 @@
-//! Managed-process job routes in the daemon (docs/managed-process-reads.md):
+//! Managed-process job routes in the daemon (docs/node-admission-and-memory.md):
 //! status and logs read from the supervisor's files through the state mount,
 //! with held waits; start and signal dispatch the supervisor's `ctl` under the
 //! exec fences. Growth admission (launch, bind, terminal) goes through an

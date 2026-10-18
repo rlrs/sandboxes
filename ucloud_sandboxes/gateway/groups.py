@@ -1,4 +1,4 @@
-"""C3.2 group create (docs/c43-placement-wiring-plan.md, "C3.2 (implemented)").
+"""C3.2 group create (docs/api-reference.md).
 
 ``POST /v1/sandboxes:batch`` creates ``count`` ordinary sandboxes
 ``<group>-<i:04d>`` of one spec, resolved once; GET lists them and DELETE

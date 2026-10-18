@@ -1,4 +1,4 @@
-"""The agent's half of runtime/noded's creates (docs/rust-node-daemon-plan.md, phase 1).
+"""The agent's half of runtime/noded's creates (docs/node-admission-and-memory.md).
 
 The daemon runs a create's I/O itself, but admission stays here, with its one
 owner: ``admit`` holds exactly what ``DirectSandboxService.create`` holds
@@ -13,7 +13,7 @@ unfinished when it expires, or when a request names a new daemon session: a
 restarted daemon finishes nothing its predecessor admitted.
 
 With ``--rust-admission`` noded admits its creates in process (step 3c.4 of
-docs/admission-port-3c.md) and names its claim in ``admitted``: the hold is
+docs/node-admission-and-memory.md) and names its claim in ``admitted``: the hold is
 then the lifecycle lock and the layout alone, and noded releases its claim
 after finish returns.
 """
@@ -235,7 +235,7 @@ class CreateHandoff:
 
 def admission_config(service: Any, *, rust_admission_enabled: bool) -> dict[str, Any]:
     """Node admission's configuration as the live service holds it
-    (docs/admission-port-3c.md §3.3): what noded needs to admit as this agent
+    (docs/node-admission-and-memory.md): what noded needs to admit as this agent
     does. The RAM backing root is create_config's ``application_memory_root``."""
     from . import pause_tier
     from .admission_decision import RETRY_SECONDS

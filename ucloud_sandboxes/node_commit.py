@@ -1,4 +1,4 @@
-"""Worker half of C3.1 commit (docs/rl-state-primitives.md §3.2, §3.5, §8).
+"""Worker half of C3.1 commit (docs/roadmap.md).
 
 ``POST /v1/sandboxes/{id}/commit-export`` is idempotent per operation ID and
 doubles as the poll: 202 while exporting, 200 with the recorded result. Pause,

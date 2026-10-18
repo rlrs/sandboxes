@@ -26,7 +26,7 @@ _UPLOAD_ATTEMPTS = 3
 CHUNK_BYTES = 256 * 1024
 COMPONENT_SCHEMA = "ucloud-environment-erofs-v1"
 # One EROFS component per group of OCI layers, shared by every image whose
-# layers include that group on the same parent chain (docs/immutable-environments.md).
+# layers include that group on the same parent chain (docs/images.md).
 COMPONENT_SCHEMA_V2 = "ucloud-environment-erofs-v2"
 LAYER_SOURCE_KIND = "oci-layer-diffs-v1"
 LAYER_TAG_PREFIX = "layer-"
@@ -50,7 +50,7 @@ COMMIT_SCHEMA = "ucloud-environment-erofs-commit-v1"
 COMMIT_SOURCE_KIND = "sandbox-commit-v1"
 _COMMIT_DOMAIN = b"ucloud.immutable-environment-commit.v1\0"
 MAX_COMMIT_DEPTH = 8
-# Chunk-store images (C2.13, docs/chunk-store-design.md §1.5): a RAFS v6
+# Chunk-store images (C2.13, docs/images.md): a RAFS v6
 # bootstrap and chunk map named by digest, their bytes in the object store.
 RAFS_SCHEMA = "ucloud-environment-rafs-v1"
 _RAFS_DOMAIN = b"ucloud.immutable-environment-rafs.v1\0"
@@ -286,7 +286,7 @@ class LayerEnvironmentComponent:
 
 @dataclass(frozen=True)
 class CommitEnvironmentComponent:
-    """EROFS of one sandbox commit's filtered upper (docs/rl-state-primitives.md §3.4).
+    """EROFS of one sandbox commit's filtered upper (docs/roadmap.md).
 
     The signature attests a deterministic conversion (these bytes come from
     the filtered tar ``diff_id`` under policy ``policy_sha256``, on parent root
@@ -560,7 +560,7 @@ class EnvironmentArtifactRegistry:
         component.authenticate(self.trusted_keys)
         # One streamed upload of the whole image. A registry handles each blob
         # as a separate upload and commit; per-chunk blobs made publication of
-        # a 3.5 GB image take minutes (docs/image-import.md).
+        # a 3.5 GB image take minutes (docs/images.md).
         if image.stat().st_size != component.image_size:
             raise ValueError("environment image size changed after signing")
         # No local re-hash: the registry verifies the signed digest when it

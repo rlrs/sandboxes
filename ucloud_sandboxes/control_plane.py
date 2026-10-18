@@ -476,7 +476,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
     server_version = "ucloud-sandboxes-control-plane/0.1"
     routing_write_process = None
     dispatch_environment_roots = False
-    # Toolkit layers (docs/toolkit-layers.md); None without a signing key.
+    # Toolkit layers (docs/images.md); None without a signing key.
     toolkit_composer = None
     sandbox_builds = None
     image_recipes = None
@@ -3189,7 +3189,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
 
     def _compose_toolkits(self, spec: SandboxSpec, root: Any) -> SandboxSpec | None:
         """Pin the requested toolkits and dispatch the image's root with them on
-        top (docs/toolkit-layers.md); None after writing the refusal."""
+        top (docs/images.md); None after writing the refusal."""
         from .gateway.toolkits import ToolkitError
         composer = self.toolkit_composer
         if composer is None:
@@ -4698,7 +4698,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         """Hand a waiting job read to the asynchronous response owner.
 
         The worker may hold it for up to wait_ms, so it must not hold a handler
-        thread (docs/managed-process-reads.md). Its record is cached off the
+        thread (docs/node-admission-and-memory.md). Its record is cached off the
         I/O loop before the reply, as the synchronous path does.
         """
         if self.async_responses is None or (
@@ -5311,7 +5311,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
     def _external_image_import(
         self, image: str, *, wait: bool,
     ) -> tuple[str, dict[str, Any] | None]:
-        """Map an external image to its imported managed copy (docs/image-import.md).
+        """Map an external image to its imported managed copy (docs/images.md).
 
         Only fleets whose workers run immutable environments import; their
         workers cannot run an image without a signed attachment. Returns the
@@ -6346,7 +6346,7 @@ def build_server(
     BoundHandler.dispatch_environment_roots = bool(dispatch_environment_roots and dependency_resolver is not None)
     BoundHandler.sandbox_builds = None
     if sandbox_builds is not None and dependency_resolver is not None:
-        # Recipes on a chunk-store base build in sandboxes (docs/sandbox-builds.md).
+        # Recipes on a chunk-store base build in sandboxes (docs/images.md).
         from .gateway.sandbox_builds import SandboxBuilds
         from .sandbox_build import Spool
         BoundHandler.sandbox_builds = SandboxBuilds(

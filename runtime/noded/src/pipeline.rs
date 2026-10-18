@@ -84,7 +84,7 @@ pub struct CreateConfig {
     pub config_sha256: String,
 }
 
-/// The agent's node admission configuration (docs/admission-port-3c.md §3.3),
+/// The agent's node admission configuration (docs/node-admission-and-memory.md),
 /// read from its live service. The RAM backing root is the top-level
 /// `application_memory_root`.
 #[derive(Debug, Clone, PartialEq, Deserialize)]

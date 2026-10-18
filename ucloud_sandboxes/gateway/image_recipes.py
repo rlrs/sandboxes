@@ -25,7 +25,7 @@ releases the image's OCI copy, as the M2 waves did for the corpus, but per
 image: it can always be rebuilt from its recipe, so no regeneration receipt.
 
 The store is also the gateway's index of training image names
-(docs/image-index.md). A name is either a recipe (built as above) or
+(docs/images.md). A name is either a recipe (built as above) or
 ``prepared``: an image already in the chunk store, ready from registration.
 Each name carries its environment, the dataset tasks that use it and where it
 came from, so the index answers what a trainer may sample: ``task_ids``.
@@ -389,7 +389,7 @@ class ImageRecipeStore:
             return {"names": db.execute("SELECT COUNT(*) FROM recipes").fetchone()[0],
                     "images": dict(db.execute("SELECT state, COUNT(*) FROM recipe_images GROUP BY state").fetchall())}
 
-    # --- The index's views (docs/image-index.md) ---
+    # --- The index's views (docs/images.md) ---
 
     def summary(self):
         """{environment: {names, tasks, prepared, recipes, states: {state: names}}};

@@ -4,7 +4,7 @@
 Direct dependencies are pinned. Resolve each Node dependency variant's lock once
 before measuring builds; reuse that lock for baseline and application changes.
 Python records its resolved dependency graph in the image, and accepts an
-optional fully pinned requirements lock. See docs/benchmarks/build-load-fixtures.md.
+optional fully pinned requirements lock.
 """
 
 from __future__ import annotations

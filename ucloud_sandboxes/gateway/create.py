@@ -1,4 +1,4 @@
-"""Power-of-k create placement (C4.3 phase 1, docs/c43-placement-wiring-plan.md).
+"""Power-of-k create placement (C4.3 phase 1, docs/scaling-policy.md).
 
 A create samples k capable workers from the shared heartbeats, plus incoming
 migrations' reservations, and charges this process's in-flight overlay. It

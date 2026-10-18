@@ -1,4 +1,4 @@
-"""The admission service suites over both backends (docs/admission-port-3c.md, 3c.3).
+"""The admission service suites over both backends (docs/node-admission-and-memory.md, 3c.3).
 
 A suite class mixes in ``AdmissionBackendCase`` and passes each service it
 builds through ``admitted``. Its subclass with ``noded = True`` runs every

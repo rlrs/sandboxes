@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the agent harness toolkit image (docs/toolkit-layers.md) from offline harness
+# Build the agent harness toolkit image (docs/images.md) from offline harness
 # bundles: the trees verifiers' ACP harnesses install under /var/tmp (Node, Pi,
 # OpenCode, Prime Agent), already installed, at /opt/ucloud/toolkits/vf-agents/<tree>.
 #   build.sh IMAGE_REF BUNDLE.tar.gz...

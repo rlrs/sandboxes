@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build nydusd for the node bundle: nydus v2.4.5 with the block-nbd export
-# (C2.1, docs/benchmarks/nydusd-spike-2026-10-03). No release binary carries
+# (C2.1, the 2026-10-03 nydusd-spike run). No release binary carries
 # block-nbd, so this is the only source of the bundle's nydusd.
 #   build_pinned.sh NYDUS_CHECKOUT OUTPUT_DIRECTORY   (PROTOC must name protoc)
 set -euo pipefail

@@ -1,4 +1,4 @@
-"""Step 3c.0 of docs/admission-port-3c.md, the agent's half: the client for
+"""Step 3c.0 of docs/node-admission-and-memory.md, the agent's half: the client for
 noded's internal socket (ucloud_sandboxes/noded_client.py), the hello at
 agent start, the ``admission`` block of the create configuration, and the
 ``--rust-admission`` flag. runtime/noded/tests/internal_admission.rs runs the

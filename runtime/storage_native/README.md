@@ -91,8 +91,8 @@ Its range server runs in a separate process so mmap page faults cannot block
 the HTTP server on Python's GIL. Add `--runsc`, `--conformance-workload` and
 `--noop-workload` (the latter two built statically from the repository C
 sources) to verify real gVisor processes across all three migration cases.
-See the
-[qualification report](../../docs/reviews/agentenv022-upgrade-2026-09-22.md)
+See the qualification report
+(`git show a04c1ad:docs/reviews/agentenv022-upgrade-2026-09-22.md`)
 for measured results and remaining production acceptance checks.
 
 The device-reuse patch treats the pool high watermark as a steady-state idle
@@ -107,7 +107,7 @@ exclusive-use checks, and quarantine remain prerequisites for safe reuse.
 Sandbox VM init also sets `vm.watermark_scale_factor=100` so background reclaim
 starts with more free-page headroom during buffered snapshot/rootfs I/O. This
 does not cap sandbox memory or disable compaction. The isolated UCloud
-[qualification](../../docs/reviews/device-reuse-memory-2026-09-20.md) records
+qualification (`git show a04c1ad:docs/reviews/device-reuse-memory-2026-09-20.md`) records
 the measured reduction in churn and compaction, including its limitations.
 
 ## Published snapshot-chain compaction
@@ -168,8 +168,7 @@ sudo python3 benchmark_node_service.py \
 The Hetzner CPX62 qualification compacted two generations into one 98.7 MB
 layer in 0.868 seconds, then mounted and verified both generations in 59 ms.
 That is a correctness and small-warm-chain measurement, not a cold multi-GiB
-compaction or concurrent-publication SLO. Machine-readable evidence is in
-`docs/benchmarks/hetzner-agentenv-compaction-2026-08-12.json`.
+compaction or concurrent-publication SLO.
 
 The pooled-delete patch is deliberately narrow. AgentEnv continues to own pool
 acquire, target swapping, cache eviction, refill, and release. The patch only
@@ -241,7 +240,7 @@ sudo python3 benchmark_node_service.py \
 ```
 
 The benchmark deletes every test volume and fails if any hard reservation
-remains. Raw DFM results are stored in `docs/benchmarks`; the 2/16 pool reduced
+remains. In the recorded run, the 2/16 pool reduced
 sequential wake-plus-release p50 by about 38%, reduced eight-way release p50 by
 about 65%, and reused a warm device for all 189 measured acquisitions. The
 stock high watermark of 64 eagerly created 64 idle devices and provided no
@@ -296,8 +295,8 @@ sudo env PYTHONPATH=/path/to/repository python3 qualify_local_compaction.py \
 
 This creates no block devices or mounts and leaves production journals unchanged.
 It checks a 29-layer chain, a wake and appended delta during export, and 24 more
-cycles against expected logical contents. See the
-[qualification report](../../docs/reviews/local-checkpoint-compaction-2026-09-21.md)
+cycles against expected logical contents. See the qualification report
+(`git show a04c1ad:docs/reviews/local-checkpoint-compaction-2026-09-21.md`)
 for results and measurement limits.
 
 ## Local reuse after publication
@@ -337,7 +336,8 @@ sudo env PYTHONPATH=/path/to/repository python3 qualify_published_local_cache.py
 The qualifier uses an isolated backend and temporary files without creating block
 devices. It compares native restacking of local pins and dense exported layers,
 with the original names removed, cache entries evicted and the remote origin
-unreachable. See the [qualification report](../../docs/reviews/published-local-cache-2026-09-21.md).
+unreachable. See the qualification report
+(`git show a04c1ad:docs/reviews/published-local-cache-2026-09-21.md`).
 
 ## Write-volume qualification
 
@@ -365,7 +365,8 @@ and native remount. It never trims an existing sandbox. Passing this is a
 prerequisite for designing/enabling an incremental runtime trim policy; it does
 not qualify concurrent trim latency or production load.
 
-The [2026-09-22 production-worker qualification](../../docs/benchmarks/write-volume-prod-2026-09-22/README.md)
+The 2026-09-22 production-worker qualification
+(`git show a04c1ad:docs/benchmarks/write-volume-prod-2026-09-22/README.md`)
 passed native tiered-compaction and XFS trim checks with the deployed backend.
 Tiered selection reduced exported bytes by 87.48% on the synthetic overwrite
 trace; trim removed 64.125 MiB of deleted payload, including with concurrent

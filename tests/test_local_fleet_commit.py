@@ -1,4 +1,4 @@
-"""C3.1 worker export over the local fleet (docs/rl-state-primitives.md §3.2, §3.5).
+"""C3.1 worker export over the local fleet (docs/roadmap.md).
 
 The gateway route is not wired yet, so these drive the node agent's
 ``commit-export`` through ``commit_steps.export_step``, as the route will,

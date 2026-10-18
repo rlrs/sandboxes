@@ -1,4 +1,4 @@
-"""Volume-free builds (docs/chunk-store-m2-plan.md §5.4).
+"""Volume-free builds (docs/images.md).
 
 A build whose Dockerfile or build arguments name an image whose OCI manifest
 ``chunk-migrate release-oci`` deleted gets that image back as a BuildKit named

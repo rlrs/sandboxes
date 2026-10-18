@@ -221,7 +221,7 @@ def _dynamic_split_spec(route, heartbeat) -> tuple[int, int] | None:
 def _route_initial_claim_mb(route, heartbeat) -> int:
     """What a create not yet in the heartbeat will charge the worker registry.
 
-    A node that advertises dynamic claims (docs/disk-density.md) charges a new
+    A node that advertises dynamic claims (docs/node-admission-and-memory.md) charges a new
     parkable sandbox its initial workspace grant plus an idle memory claim,
     not the 2x-memory-plus-disk maximum.
     """

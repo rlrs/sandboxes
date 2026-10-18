@@ -1,5 +1,5 @@
 //! The agent's admission routes on noded's internal socket
-//! (docs/admission-port-3c.md §3.3), on top of [`AdmissionService`].
+//! (docs/node-admission-and-memory.md), on top of [`AdmissionService`].
 //! `internal.rs` owns the transport (auth, sessions, framing); this module
 //! parses bodies and answers. Bodies are JSON objects with exactly the keys
 //! listed; errors are `{error, error_code, retryable}`.

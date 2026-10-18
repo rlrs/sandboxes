@@ -1,6 +1,6 @@
 """The worker's RAFS device: a chunk-store image as one verified block device.
 
-Read path of docs/chunk-store-design.md §4. The bootstrap is served from
+The read path (docs/images.md): the bootstrap is served from
 memory, a block resolves to a chunk id through the signed chunk map, and the
 unsigned locator says which pack range holds it. Misses fetch 1 MiB windows
 (prefetch up to 4 MiB) with plain HTTP ranges, from S3 or, when configured,

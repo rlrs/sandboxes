@@ -71,7 +71,7 @@ RELAY_POSTGRES_REQUIRED = (
     "For an existing SQLite journal, stop the relay and run "
     "python -m ucloud_sandboxes.shared_control import-idle-relay --sqlite-file PATH "
     "with the target --dsn-file and --deployment-id before restarting. "
-    "See docs/postgres-relay.md; do not delete or reset the old journal."
+    "See docs/model-relay.md; do not delete or reset the old journal."
 )
 
 
@@ -804,7 +804,7 @@ async def _deliver_local_wait(request, relay_request, status, headers, payload) 
     """Answer a node-local wait, then wait for the guest's TCP acknowledgment.
 
     A paused guest is thawed by the answer's first packet and acknowledges it
-    within milliseconds (docs/benchmarks/node-local-wake-2026-10-03). One that
+    within milliseconds (the 2026-10-03 node-local-wake run). One that
     was hibernated while its call was out never does: its request becomes
     reattachable before the delayed wake restores it, so the agent's retry
     gets this answer instead of a second sample.

@@ -53,7 +53,7 @@ existing physical-capacity ledger before cloning. Sharing extents is not treated
 as free quota or permission to overcommit physical disk.
 
 The native and product Warden qualification is recorded in
-[`memory-tiers-2026-09-23`](../../docs/benchmarks/memory-tiers-2026-09-23/README.md).
+`git show a04c1ad:docs/benchmarks/memory-tiers-2026-09-23/README.md`.
 It includes incomplete restore, private-clone integrity, real project transfer,
 RAM-to-file ownership, live reclaim, TCP and SQLite checks. Density and provider
 performance remain separate rollout gates.
@@ -103,14 +103,14 @@ The exact executable and companion fingerprints enforce this boundary even
 though the upstream source commit is unchanged.
 
 Actual UCloud qualification and artifact identity are recorded in
-[`gvisor-integration-2026-09-05.md`](../../docs/reviews/gvisor-integration-2026-09-05.md).
+`git show a04c1ad:docs/reviews/gvisor-integration-2026-09-05.md`.
 
 ## Image root filesystems
 
 Workers with `immutable_environments.worker_enabled`, including the Hetzner
 production workers, use the EROFS adapter `EnvironmentRootfsStore`, which reads
 image chunks on demand over NBD; see
-[`immutable-environments.md`](../../docs/immutable-environments.md).
+[Images](../../docs/images.md).
 
 Without `immutable_environments`, `DockerOverlay2RootfsStore` is the code
 default. It mounts Docker's immutable overlay2 layers without flattening or
@@ -163,7 +163,7 @@ requirements; adding the patch does not itself establish a live runtime pass.
 ## RL-scale spikes
 
 `spike_rl_scale.py` answers spikes S1, S2, S4, S6, S7 and S8 of the
-[RL-scale plan](../../docs/rl-scale-architecture-plan.md) (section 9) against
+RL-scale plan (`git show a04c1ad:docs/rl-scale-architecture-plan.md`, section 9) against
 the pinned runsc. S3 (multi-lower EROFS) and S5 (restore into another netns)
 need runtime changes and are not covered. Run it as root on a disposable
 qualification VM, never on a node that serves sandboxes:

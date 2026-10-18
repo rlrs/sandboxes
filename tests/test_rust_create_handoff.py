@@ -1,4 +1,4 @@
-"""Phase 1 of the Rust node daemon, the agent's half (docs/rust-node-daemon-plan.md).
+"""Phase 1 of the Rust node daemon, the agent's half (docs/node-admission-and-memory.md).
 
 runtime/noded owns the registry and runs creates; the agent is a foreign
 registry process with a revalidated read cache, and holds each create's

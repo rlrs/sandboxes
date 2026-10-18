@@ -1855,7 +1855,7 @@ class RoutingStore:
         self._claim_prepared_capacity_unlocked(conn, stored)
         return stored, pending
 
-    # C4.3 power-of-k creates (docs/c43-placement-wiring-plan.md, phase 1): the
+    # C4.3 power-of-k creates (docs/scaling-policy.md): the
     # route intent is written before dispatch without a fleet capacity read;
     # the chosen worker's admission is the authority.
     def reserve_create_intent(

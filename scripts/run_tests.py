@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run each test module in its own process, across a process pool.
 
-A module declares its tier (docs/rl-scale-architecture-plan.md, C8.2) with one
+A module declares its tier (AGENTS.md lists the tiers) with one
 top-level string assignment, read from the source without importing it:
 
     TEST_TIER = "contract"

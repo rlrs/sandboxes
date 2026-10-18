@@ -1,4 +1,4 @@
-//! Node-local model waits (pause-reclaim item 6; docs/node-local-model-waits.md;
+//! Node-local model waits (pause-reclaim item 6; docs/node-admission-and-memory.md;
 //! phase-3 spec §1.5, §3): a port of `ucloud_sandboxes/local_wait.py`.
 //!
 //! The node sees a sandbox's plaintext HTTP/1.1 calls to a private relay

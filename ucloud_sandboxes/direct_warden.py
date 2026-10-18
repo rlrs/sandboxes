@@ -461,7 +461,7 @@ class DirectRunscWarden:
         self.journals = HibernationJournalStore(config.journal_root)
         # Sentries fully verified for (container, bundle, pid, start ticks).
         self._verified_sentries: dict[tuple[str, str, int, int], None] = {}
-        # Dynamic disk claims (docs/disk-density.md). Mounted workspaces the
+        # Dynamic disk claims (docs/node-admission-and-memory.md). Mounted workspaces the
         # growth monitor polls, owners whose memory claim can return to idle,
         # and incarnations whose demonstrated capture reservation failed.
         self._claims_guard = threading.Lock()
@@ -1947,7 +1947,7 @@ class DirectRunscWarden:
 
     @staticmethod
     def _record_parked_managed_state(sandbox: DirectSandbox) -> None:
-        """Keep the parked job record exact (docs/managed-process-reads.md).
+        """Keep the parked job record exact (docs/node-admission-and-memory.md).
 
         The guest is stopped and its rootfs still mounted. Best effort: a
         guest that broke its own state files loses only the exact record.
@@ -2777,7 +2777,7 @@ class DirectRunscWarden:
                 f"{label} must be owned and not group/world writable"
             )
 
-    # -- Dynamic disk claims (docs/disk-density.md) -------------------------
+    # -- Dynamic disk claims (docs/node-admission-and-memory.md) -------------------------
 
     def _demonstrated_memory(self, sandbox: DirectSandbox) -> bool:
         return bool(

@@ -15,7 +15,7 @@ Everything else becomes deletable once its newest known registry time is
 older than a grace period. Registry leases still fence every deletion.
 
 Under disk pressure, managed images are additionally evicted least recently
-used first (``select_lru_evictions``); see docs/managed-registry.md.
+used first (``select_lru_evictions``); see docs/images.md.
 """
 
 from __future__ import annotations

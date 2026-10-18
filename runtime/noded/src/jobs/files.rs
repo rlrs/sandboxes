@@ -1,6 +1,5 @@
 //! The managed supervisor's files as the host reads them through the state
-//! mount (docs/managed-process-reads.md, "Safe opens" and "Record
-//! derivation"). The guest writes these files, so every open refuses
+//! mount (docs/node-admission-and-memory.md). The guest writes these files, so every open refuses
 //! symlinks and anything but a regular file, and `state.json` is parsed
 //! strictly.
 

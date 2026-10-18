@@ -5,7 +5,7 @@ it is created with ``IF NOT EXISTS`` and no strict schema check, so an older
 release simply ignores it. A row is keyed by the pinned (annotated) manifest
 digest and moves converted → switched → released, or back to reverted; every
 change is journaled so a wave can be reverted from the journal
-(docs/chunk-store-m2-plan.md §3.2).
+(docs/images.md).
 
 OCI release (plan §5.4) deletes a released image's manifest, and with it every
 tag. ``image_tags`` remembers those tags first, so a tag still resolves to the
@@ -45,7 +45,7 @@ def retention_view(image_file):
     still releases its EROFS root. Empty before the gateway opens the table."""
     path = roots_path(image_file)
     toolkits = Path(image_file).with_name("toolkits.sqlite3")  # gateway/toolkits.py
-    # Registered toolkits and every composition with them (docs/toolkit-layers.md).
+    # Registered toolkits and every composition with them (docs/images.md).
     toolkit_roots = set()
     if toolkits.exists():
         from .toolkits import ToolkitStore

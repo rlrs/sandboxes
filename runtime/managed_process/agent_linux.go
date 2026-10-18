@@ -2,7 +2,7 @@
 
 package main
 
-// Guest agent, protocol version 1. docs/guest-agent-protocol.md gives the
+// Guest agent, protocol version 1. git show a04c1ad:docs/guest-agent-protocol.md gives the
 // rationale; this comment is the wire contract.
 //
 // Transport. The agent dials a Warden-owned Unix stream socket in a directory

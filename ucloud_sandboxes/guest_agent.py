@@ -1,7 +1,7 @@
 """Warden side of the in-guest agent (plan C5.1).
 
 The wire contract is the doc comment of runtime/managed_process/agent_linux.go;
-docs/guest-agent-protocol.md explains it. A GuestAgentListener owns one host
+git show a04c1ad:docs/guest-agent-protocol.md explains it. A GuestAgentListener owns one host
 socket per sandbox and one thread, which accepts the agent's connection and
 reads it. Caller threads write; the thread only flushes what a full socket
 buffer left behind. Ops never outlive their connection: when it ends, every op

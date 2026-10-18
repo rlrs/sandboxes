@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RL-scale client benchmark for plan W0/C0.1 (docs/rl-scale-architecture-plan.md).
+"""RL-scale client benchmark for plan W0/C0.1 (docs/roadmap.md).
 
 Each live scenario drives a gateway through the public Python SDK and writes one
 report with schema ``ucloud-rl-scale-bench/v1``. Every metric of the plan's
@@ -201,7 +201,7 @@ FIRST_COMMANDS = {
                  '$(find "$SCAN" -maxdepth 3 2>/dev/null | head -n 5000 | wc -l)"\n' + _PY_RUN),
 }
 FIRST_COMMANDS["generic"] = FIRST_COMMANDS["swe"]
-# The rc57 agentic turn mix (docs/image-import.md). Each turn exits 0 unless
+# The rc57 agentic turn mix (docs/images.md). Each turn exits 0 unless
 # the sandbox itself fails; test outcomes are markers, not failures.
 TURN_COMMANDS = {
     "grep": ('P="def |class |func |function "\n'
@@ -1923,7 +1923,7 @@ class LiveRun:
         # linux_host is what SandboxSpec.benchmark builds: no security or
         # filesystem override, so the gateway's host defaults apply. A managed
         # agent (relay mode) runs as root, as the training integration's
-        # sandboxes do (docs/image-pools.md), in the container profile.
+        # sandboxes do (docs/images.md), in the container profile.
         profile = ({} if self.args.profile == "container" else
                    {"profile": self.args.profile, "security": None, "filesystem": None})
         if managed:
@@ -2842,7 +2842,7 @@ def run_live(args: argparse.Namespace, *, sdk: Any = None, client: Any = None,
         operator = OperatorApi(url, read_secret(args.operator_token_file),
                                args.request_timeout_seconds)
     if getattr(args, "think_mode", None) == "relay":
-        # The Hetzner ingress publishes the relay under <gateway>/relay (docs/hetzner.md).
+        # The Hetzner ingress publishes the relay under <gateway>/relay (docs/deployment.md).
         args.relay_url = (args.relay_url or os.environ.get("UCLOUD_RELAY_URL", "").strip()
                           or gateway_origin(url) + "/relay")
         args.sandbox_relay_url = args.sandbox_relay_url or args.relay_url

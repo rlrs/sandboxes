@@ -1,4 +1,4 @@
-"""Sandbox builds (C2.14, docs/sandbox-builds.md).
+"""Sandbox builds (C2.14, docs/images.md).
 
 A recipe whose Dockerfile the prepared catalog splits into a foundation and a
 remainder is built without Docker: a sandbox starts from the foundation's

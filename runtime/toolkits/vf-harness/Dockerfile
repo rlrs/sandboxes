@@ -1,4 +1,4 @@
-# The verifiers harness toolkit (docs/toolkit-layers.md): uv, a managed Python and
+# The verifiers harness toolkit (docs/images.md): uv, a managed Python and
 # the prebuilt uv script environment of each harness program in programs/ (copied
 # from the pinned verifiers checkout by build.sh), at the path every sandbox sees.
 FROM ubuntu:22.04 AS build

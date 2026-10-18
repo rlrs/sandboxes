@@ -154,7 +154,7 @@ class DirectSandboxProvisioner:
                 # it here concurrently with the daemon; the registry's revision
                 # fences make one of them fail, but the loser's side effects
                 # (network, runsc) are not fenced. Kept until reconcile moves
-                # to the daemon (docs/rust-node-daemon-plan.md, phase 4).
+                # to the daemon (docs/node-admission-and-memory.md).
                 results.append(
                     self._advance(
                         item,

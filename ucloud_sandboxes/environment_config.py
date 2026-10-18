@@ -205,7 +205,7 @@ NYDUSD_INSTALL_PATH = "/usr/local/libexec/ucloud-sandboxes/nydusd"
 
 @dataclass(frozen=True)
 class NydusdConfig:
-    """``chunk_store.nydusd`` (C2.1, docs/benchmarks/nydusd-spike-2026-10-03):
+    """``chunk_store.nydusd`` (C2.1, the 2026-10-03 nydusd-spike run):
     workers serve RAFS images with stock nydusd v2.4.5 (built with
     ``block-nbd``) from the store node's virtual blobs. The backend refuses a
     binary whose sha256 differs."""
@@ -226,7 +226,7 @@ class NydusdConfig:
 
 @dataclass(frozen=True)
 class SandboxBuildsConfig:
-    """``immutable_environments.sandbox_builds`` (docs/sandbox-builds.md):
+    """``immutable_environments.sandbox_builds`` (docs/images.md):
     recipes on a chunk-store base build in sandboxes on the workers, run by
     ``serve-sandbox-builds`` on the gateway host; ``slots`` builds at once,
     each sandbox with these resources and ``timeout_seconds`` for its steps;
@@ -260,7 +260,7 @@ class SandboxBuildsConfig:
 
 @dataclass(frozen=True)
 class ChunkStoreConfig:
-    """``immutable_environments.chunk_store`` (docs/chunk-store-design.md).
+    """``immutable_environments.chunk_store`` (docs/images.md).
 
     The S3 key is named by environment variable and read only by
     ``ucloud-chunk-index``, builders and the store node; workers get presigned
@@ -434,9 +434,9 @@ class EnvironmentDeploymentConfig:
     # Chunk-store (RAFS) images, off by default (C2.13, design §9 M1).
     chunk_store: ChunkStoreConfig | None = None
     # What a build publishes: "erofs" components in the registry, or "rafs":
-    # the image converted into the chunk store on the builder (docs/image-recipes.md).
+    # the image converted into the chunk store on the builder (docs/images.md).
     builder_format: str = "erofs"
-    # Sandbox builds (docs/sandbox-builds.md); None: every recipe builds on builders.
+    # Sandbox builds (docs/images.md); None: every recipe builds on builders.
     sandbox_builds: SandboxBuildsConfig | None = None
 
     @classmethod

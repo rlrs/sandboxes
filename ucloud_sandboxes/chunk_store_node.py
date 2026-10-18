@@ -1,6 +1,6 @@
 """``ucloud-chunk-store``: the store node's read-through NVMe cache over S3.
 
-Phase B of docs/chunk-store-design.md (C2.6, S12). Workers range-read packs,
+Phase B of docs/images.md (C2.6, S12). Workers range-read packs,
 bootstraps and chunk maps here on the private network with the index's read
 token; they never hold S3 credentials or URLs. A miss fills one aligned
 extent from S3 with the node's own key (M1's SigV4 presigning), coalescing
@@ -50,7 +50,7 @@ ATTEMPT_READ_TIMEOUT_SECONDS = 20.0
 # bytes) for 3 x the median time to first byte, within [150 ms, 2 s]; at most
 # twice. S12: stalls, before the first byte or mid-body, carry the tail. A
 # slow but flowing transfer is never duplicated: in a bandwidth-bound burst
-# that only halves everyone's share (docs/benchmarks/chunk-store-node-2026-10-02).
+# that only halves everyone's share (the 2026-10-02 chunk-store-node run).
 HEDGE_MIN_SECONDS, HEDGE_MAX_SECONDS, MAX_HEDGES = 0.15, 2.0, 2
 READ_BLOCK = 256 * 1024  # Progress granularity of a fill.
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
@@ -804,7 +804,7 @@ class ReplicaMirror:
 
 
 class VirtualBlobs:
-    """nydusd's blobs, rebuilt from packs (spike, docs/benchmarks/nydusd-spike-2026-10-03).
+    """nydusd's blobs, rebuilt from packs (spike, the 2026-10-03 nydusd-spike run).
 
     A converter run with ``--nydusd-blobs`` keeps nydus's own chunk bytes and
     each blob's tail object: its chunk table, then the bytes after its last
@@ -912,7 +912,7 @@ def parse_range(header):
 
 
 class ChunkStoreServer:
-    """HTTP/1.1 keep-alive on one asyncio loop (docs/benchmarks/chunk-store-node-2026-10-02).
+    """HTTP/1.1 keep-alive on one asyncio loop (the 2026-10-02 chunk-store-node run).
 
     Every read is resolved, filled and faulted into the page cache in a thread
     pool; the loop only accepts and sends with sendfile(2). One GIL bounds it

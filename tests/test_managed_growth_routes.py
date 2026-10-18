@@ -1,8 +1,7 @@
 """runtime/noded's managed-process growth calls into the agent.
 
 noded starts, signals and reads managed processes itself; the growth ledger
-stays in the agent (docs/managed-process-reads.md, "Start and signal in noded
-too"). These are its three internal routes on the agent's Unix socket.
+stays in the agent (docs/node-admission-and-memory.md). These are its three internal routes on the agent's Unix socket.
 """
 
 from dataclasses import replace

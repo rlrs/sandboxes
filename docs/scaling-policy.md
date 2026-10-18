@@ -1,664 +1,552 @@
 # Scaling policy
 
-UCloud VM startup can be slow or capacity-constrained, so the autoscaler should
-not behave like a normal fast container scheduler. The policy should balance
-two risks:
+The autoscaler buys and releases worker VMs. The gateway places each sandbox
+on one of them. This document covers both: how demand turns into VMs, how
+surplus VMs are emptied and stopped safely, and how a create or wake picks its
+worker.
 
-- Creating too few VMs and leaving sandbox requests waiting behind a slow VM
-  boot.
-- Creating too many VMs while UCloud is already queueing jobs.
+VM startup on UCloud is slow and sometimes capacity-constrained, so the
+autoscaler does not behave like a fast container scheduler. It balances two
+risks: too few VMs leave sandbox requests waiting behind a slow boot, and too
+many VMs pile up in the provider's queue and cost money while idle.
 
-The current policy is intentionally tunable rather than a single fixed answer.
+## The controller
 
-## Recommended starting point
+The autoscaler is one command:
 
-Use scale-to-zero with a strict in-flight cap until we have real VM startup
-data:
-
-```json
-{
-  "policy": {
-    "min_nodes": 0,
-    "max_nodes": 10,
-    "warm_resources": {
-      "vcpu": 0,
-      "memory_mb": 0,
-      "disk_mb": 0
-    },
-    "max_create_per_cycle": 1,
-    "max_stop_per_cycle": 1,
-    "max_provisioning_nodes": 2,
-    "provisioning_capacity_weight": 0.75,
-    "stale_provisioning_after_seconds": 1800,
-    "stale_provisioning_capacity_weight": 0.0,
-    "unreachable_stop_after_seconds": 1800,
-    "scale_down_idle_seconds": 600,
-    "builder_scale_down_idle_seconds": 900,
-    "live_pressure_enabled": true,
-    "live_pressure_window_seconds": 60,
-    "live_pressure_min_samples": 3,
-    "live_pressure_fresh_seconds": 30,
-    "target_cpu_utilization": 0.70,
-    "target_memory_utilization": 0.80,
-    "max_memory_psi_full_avg10": 5.0,
-    "target_storage_queue_utilization": 0.75,
-    "create_pressure_enabled": true,
-    "create_pressure_window_seconds": 30,
-    "create_pressure_min_samples": 2,
-    "create_pressure_fresh_seconds": 15,
-    "create_target_concurrency_per_node": 8,
-    "create_pressure_max_headroom_nodes": 1,
-    "pressure_scale_down_cooldown_seconds": 300,
-    "provisioning_latency_lookback_seconds": 604800,
-    "provisioning_scale_down_multiplier": 2.0,
-    "default_node_resources": {
-      "vcpu": 32,
-      "memory_mb": 98304,
-      "disk_mb": 1449984
-    }
-  }
-}
+```sh
+ucloud-sandboxes autoscaler --config /etc/ucloud-sandboxes/deployment.json [--execute] [--once]
 ```
 
-This keeps no idle VM by default, submits at most one new VM per reconciliation
-cycle, and uses the configured homogeneous storage-native node shape for
-planning: 32 vCPU, 96 GiB RAM, and 1,449,984 MiB of hard sandbox
-capacity on a 2-TB worker after bounded image storage, swap, cache, and
-headroom. A heartbeat replaces this estimate with measured capacity as soon as
-the node is ready.
+It is a dry run by default. `--execute` authorizes provider and node
+mutations, and `--once` exits after one cycle. In production it runs as
+`ucloud-sandbox-autoscaler.service` on the gateway VM, every
+`autoscaler_interval_seconds` (default 5).
 
-## Static safety and live feedback
-
-There is one resource-admission contract for sandbox create and wake. Requested
-CPU and memory must fit the physical node shape, but resident sandbox limits are
-not added together as if they were current usage. Actual host CPU, load,
-available memory, swap, and memory PSI decide whether the node can admit more
-work. Requested disk is different: it is a hard additive reservation and is
-never overallocated. A node without a fresh runtime-pressure sample fails
-closed for live create and wake admission.
-
-The worker uses those same CPU, load, memory, swap, and PSI thresholds for
-create, wake, and exec. It no longer has a second additive CPU/memory gate that
-can disagree with gateway placement.
-
-CPU utilization at or above 90% blocks admission. A one-minute load average at
-or above 1.25 times the CPU count blocks admission only when current CPU usage
-is also at least 80%, or when that CPU sample is unavailable. Linux load average
-includes both runnable tasks and uninterruptible sleepers, as documented in
-[the kernel load-average implementation](https://github.com/torvalds/linux/blob/master/kernel/sched/loadavg.c#L16).
-The former unconditional load gate could reject an exec as CPU overloaded
-during disk flushes or while their load average decayed, despite spare CPU.
-The corroborating sample prevents that rejection; it does not establish that
-storage throughput or latency is healthy. Density qualification must still pass
-its measured action, park, wake and queued-completion targets.
-
-Admission always retains at least 2 GiB of available physical RAM when memory
-telemetry is known, even when swap remains free. Above that floor, available RAM
-plus free swap must cover the larger of 2 GiB and the requested memory limit.
-Swap can absorb cold pages; it is not extra resident working-set capacity. OCI
-memory limits permit an equal additional swap allowance by expressing the
-combined bound as twice `memory_mb`.
-
-Autoscaler placement uses the same dynamic accounting: CPU and memory are
-reusable after the per-sandbox physical-shape check, while each planned
-placement consumes hard disk. Live pressure remains a separate retained-node
-signal, so the planner does not invent CPU or memory fragmentation from nominal
-sandbox limits.
-
-With `live_pressure_enabled`, the controller reads indexed recent heartbeat
-events from `metrics.sqlite`. Three pressure samples in the default 60-second
-window trigger one additional node when no node is already provisioning.
-Pressure is any configured CPU, memory, full-memory PSI, or storage-operation
-queue target being crossed by a node with active work. Idle host cache or an
-idle node's background state cannot trigger it.
-
-`target_cpu_utilization` and `target_memory_utilization` are the clearest
-density/latency tradeoff. Lower targets retain more headroom. The PSI and
-storage queue limits catch cases that average utilization misses.
-
-Direct-runtime exec admission follows the same live-usage model. A sandbox's
-configured CPU and memory remain its individual cgroup limits, but starting an
-exec does not reserve that entire theoretical shape from the node. The worker
-samples actual host CPU, load, available memory, swap, and full-memory PSI; it
-defers a new exec only when those live safeguards cross their limits or when
-node admission is closed. Exec lifetime leases still count as active operations
-for drain fencing and prevent idle parking, while contributing zero synthetic
-CPU or memory reservation. The exec session manager's 128-session bound remains
-the independent burst-safety ceiling.
-
-Consequently, autoscaling observes exec demand through measured heartbeat
-pressure rather than an additive sum of sandbox limits. Adding a node helps new
-placements and later wakes; it cannot relocate an exec for a sandbox that is
-already running on another node.
-
-Sampled gateway create rejections amplify sustained CPU, memory, PSI, storage
-or image-materialization pressure. HTTP rejection counts alone do not buy VMs.
-There is also an earlier, bounded path for a genuine startup queue: at least
-`create_target_concurrency_per_node` durable capacity requests must be waiting,
-the oldest such request must reach `create_pressure_window_seconds` (30 seconds
-by default), and the ready workers must be occupied with fresh observations.
-This queue can justify headroom even while CPU is below its pressure threshold.
-An idle ready worker suppresses this early path. Warm reservations, expired
-requests and suppressed image/publication errors do not age the capacity queue.
-
-Both feedback paths obey `create_pressure_max_headroom_nodes`: the default
-permits one temporary worker above the hard-resource baseline. Provisioning
-workers count toward the target, so repeated retries do not buy a new worker
-every cycle. The fleet and provisioning caps still apply. Once ordinary host
-pressure is also sustained, the existing pressure-confirmed pending-demand
-path can grow the fleet toward `max_nodes`.
-
-`gateway_max_concurrent_sandbox_creates` is an optional fleet-wide create
-override, disabled by default (`0`). A positive override queues creates in FIFO
-order. Wakes, streamed reads and small control operations bypass it. Buffered
-uploads reserve bytes against a separate memory budget before their bodies are
-read. Expired admission closes the connection with explicit retryable
-backpressure so unread bytes cannot become another request.
-
-New workers receive `policy.create_target_concurrency_per_node` as their
-`--max-concurrent-startups` limit. Creates/uploads, restores and buffered reads
-use independent FIFO queues, so bulk startup cannot consume restore capacity.
-A restore does not also need a startup slot. Admission waits are deadline-bound;
-physical disk reservations and live memory/resource checks remain authoritative.
-Same-sandbox lifecycle contention in interactive create/wake/exec paths returns
-backpressure instead of waiting indefinitely for a lifecycle lock. Long-running
-user commands do not hold a startup slot merely because they are running.
-
-Capacity rejection occurs before command execution and carries a precise
-retryable error code plus `Retry-After`. The SDK retries these explicit fences
-with jitter within the caller's deadline. It does not blindly replay an upload
-or exec after an ambiguous timeout. Clients must use the matching SDK update;
-older clients can surface the new 503 rejection directly.
-
-Placement still prefers an existing immutable image copy. At eight concurrent
-creates on that node it may spill to another ready node, using registry-layer
-cost estimates to decide whether another image transfer is cheaper than the
-queue. This prevents a cached image from pinning an entire diverse cold-start
-burst to one image-materialization queue.
-
-Node heartbeats expose active sandbox creates plus active, waiting, and maximum
-image-materialization operations. Queue pressure is `waiting / concurrency`:
-occupied slots are productive capacity and cannot trigger scale-up without a queue.
-Gateway saturation can widen a confirmed burst but cannot manufacture pressure
-from healthy cold creates. The durable-capacity-queue path above supplies the
-independent, bounded early-startup signal.
-
-Pending or active image builds keep one small runnable sandbox shape warm (1
-vCPU, 512 MiB memory, and 1 GiB disk). They do not reserve an entire pristine
-sandbox node, and a prepared builder without build work does not create any
-sandbox-node demand. Exact client capacity preparations and creates continue to
-drive exact hard-disk demand.
-
-`pressure_scale_down_cooldown_seconds` supplies hysteresis after the last
-pressure sample. Independently, measured submit-to-first-heartbeat p95
-multiplied by `provisioning_scale_down_multiplier` becomes a lower bound on the
-idle grace. With a 70-second p95 and multiplier `2`, an idle node is retained
-for at least 140 seconds even if `scale_down_idle_seconds` is lower.
-
-The executing autoscaler reads its complete policy from the `policy` object in
-`deployment.json`; the deployed systemd unit does not add environment-file
-overrides. Changes take effect after an autoscaler service restart. Set a
-feedback feature's `enabled` field to `false` for a shadow rollout: its metrics
-continue to update while that feedback neither creates nor retains nodes.
-
-## Program request phases
-
-The gateway persists each relay-bound request in one of four generation-fenced
-phases: `model_wait`, `ready_to_wake`, `waking`, or `acting`. The phases fence
-relay delivery and keep active model waits and response deliveries local during
-cold offload; they are reported in the metrics snapshot. The policy does not
-predict the next tool call, and the phases add no autoscaler demand. A wake that
-cannot be placed records ordinary pending wake demand, which the autoscaler
-already counts.
-
-## Knobs
-
-`warm_resources` keeps a standing resource-shaped buffer ready when
-scale-to-zero latency is unacceptable. It reserves CPU, RAM, and disk separately
-and should stay at zero unless there is a measured latency SLO that justifies
-always-on cost.
-
-Prepared-capacity signals are the burst-oriented alternative. `POST
-/v1/capacity/prepare` records a scale-up reservation equal to `count *
-per-sandbox resources`; the autoscaler treats it like pending sandbox demand.
-The count is bounded to 100 and remains one counted placement group internally,
-so request memory and routing-state size do not grow with the batch size.
-Use this when a runner knows a batch is about to start and wants VM scale-up to
-begin before the first `POST /v1/sandboxes`. Each newly reserved sandbox with
-the same resource shape and, when specified, image atomically claims one unit
-from the prepared count. This keeps the reservation alive through slow VM
-boots without double-counting the sandboxes it was created for. Unclaimed
-units expire at the TTL or can be canceled with `DELETE
-/v1/capacity/prepare/<id>`.
-For parkable sandboxes, the prepare request must also set `parkable: true`.
-The gateway converts writable `disk_mb` to the full hard hibernation
-reservation before recording demand, keeping both autoscaling and the later
-exact claim aligned with sandbox admission.
-If the prepare payload includes `image`, the gateway also tries to pull that
-image onto enough ready sandbox-node capacity for the requested sandbox count.
-If no suitable node is ready yet, the gateway records a transient image warmup
-work item with the same prepare id and TTL. Capacity is claimed by matching
-sandbox reservations; the image warmup is tracked independently so claiming
-capacity does not cancel an in-flight pull. It is completed when heartbeating
-sandbox nodes with the image can fit the requested `count * resources`, or it
-expires with the prepare TTL.
-
-Failed sandbox creates are not durable queue entries. When `POST /v1/sandboxes`
-cannot fit on a ready node, the gateway records a short-lived pending scale-up
-signal and returns `503`; callers must retry creation. The executing autoscaler
-loop consumes these pending signals after a reconciliation cycle, and unconsumed
-signals expire after a short TTL from the last failed create attempt. This keeps
-abandoned client attempts from holding VMs alive as phantom demand.
-
-If a create was already placed on a node but the gateway has not yet observed
-completion, retries with the same sandbox id return a retryable in-progress
-response instead of adding another scale-up signal or choosing a different node.
-
-Disk is credited only from the storage-native physical-capacity report in a
-fresh complete heartbeat. A node without storage-native authority receives no
-sandbox placement.
-
-`max_provisioning_nodes` caps queued or booting provider instances. Keep this
-low while the provider reports scarce machines, otherwise the autoscaler can
-submit redundant instances that all wait in the same provider queue.
-
-`provisioning_capacity_weight` controls how much queued or booting VM capacity
-counts toward pending demand. `1.0` is optimistic. Values around `0.5` to
-`0.75` are safer when startup latency is high and variable.
-
-`stale_provisioning_after_seconds` and
-`stale_provisioning_capacity_weight` reduce the credited capacity of a VM that
-has itself been provisioning too long. Backlog age does not make a newly
-submitted VM stale. With the default stale weight of `0.0`, a stale queued,
-suspended, or booting VM contributes no projected capacity, but it still counts
-against the hard provider and `max_provisioning_nodes` limits until the adapter
-reports it final. This prevents duplicate submissions from bypassing the cap
-while a billed or provider-visible job still exists.
-
-This weighting applies only to the initial pre-start `SUSPENDED` state. For
-UCloud, a post-start suspension or a historical RUNNING → SUSPENDED → RUNNING
-sequence means **unavailable**, not safe to destroy. Provider readiness can
-change without loss of the guest. The controller quarantines the node from new
-placement while retaining its routes and inventory. A quarantine persists
-across heartbeats and controller restarts. Recovery requires current provider
-RUNNING state plus a fresh authenticated direct heartbeat with a verified guest
-boot identity and complete inventory matching the assigned route generations,
-create operations, and specifications. A plain RUNNING status or heartbeat
-arrival cannot clear quarantine. Recovery records the latest provider
-suspension time it covered in the controller label
-`ucloud-sandboxes/controller-continuity-verified-through`, so a historical
-suspension quarantines once, not every cycle; only a newer (or untimed)
-suspension, or a current `SUSPENDED` state, quarantines again.
-
-Quarantined ingest retires no routes, yet continuity needs every route present.
-So when a probe has verified the quarantine's own boot and a complete inventory,
-the routes that inventory omits are retired by the ordinary reconcile rules
-(in-flight and newer-activity routes stay protected) before continuity is
-checked. This never happens across a boot change. While its boot is unchanged, a
-quarantined worker still wakes its own local parks; quarantine fences new
-placement only.
-
-An authenticated changed guest boot loses the old guest's processes, not the
-node: it retires running routes from the old incarnation, while fully published
-portable snapshots remain recoverable. It does not authorize termination of the
-new guest, which rejoins the pool: a quarantine taken before the new boot
-reported is re-anchored on the new boot once ingest has retired the old one, so
-the routes that now name the new boot can prove continuity. The gateway records every boot change, with
-its receipt time, in the controller label
-`ucloud-sandboxes/controller-epoch-retirements` (the last four, atomically with
-the retirement). A worker with two boot changes within 24 hours is a failing
-host: it stops counting as capacity, takes the soft-drain slot regardless of
-demand (with drain on park enabled) and, once idle, stops through the ordinary
-drain handshake. Old UCloud destructive stop authorizations are invalidated
-before replay; already submitted calls remain recorded as such.
-
-`unreachable_stop_after_seconds` retains the conservative empty-worker eviction
-behavior for every provider, and silence alone is never proof: a worker that
-has heartbeated is stopped through this path only after its last complete
-inventory was empty and a direct probe in the same cycle failed in transport.
-A reachable worker whose push path broke is refreshed instead. UCloud never
-deletes an occupied VM on silence, even combined with a failed direct probe.
-Workers that have reported a heartbeat must recover continuity and complete the
-ordinary drain handshake before automatic idle termination. A never-heartbeating
-VM with no assigned routes can still be retired under the existing unreachable
-startup policy. Quarantined and powered-off jobs (Hetzner `off` and `stopping`
-are unavailable, not lost) retain their provider/billing slots and count as
-unreachable; replacement planning does not pretend those VMs have ceased to
-exist. A persistently unavailable VM may therefore need operator investigation
-and explicit cleanup.
-
-For controlled incident reproduction, use a disposable pre-provisioned pool
-with the executing autoscaler stopped. `max_stop_per_cycle=0` is not a global
-provider-mutation kill switch. Preserve guest boot IDs, provider history, and
-stop-journal evidence before cleanup; provider SUSPENDED timestamps alone cannot
-establish an unrecoverable guest failure.
-
-`scale_down_idle_seconds` prevents the controller from stopping a VM immediately
-after its last sandbox exits. The control plane records when a heartbeat first
-reports zero active sandboxes and counts the grace from that idle transition,
-not from VM boot time. Keep this short when cost matters. It delays scale-down;
-it does not require a warm pool.
-
-## Fenced provider operations and drain-before-stop
-
-The supported topology has one control host. Every mutating autoscaler process
-therefore contends on one process-lifetime POSIX lock beside
-`<data_root>/autoscaler-state.sqlite`. The kernel releases the lock if the
-process exits; there is no renewable wall-clock leader lease or renewal thread.
-The SQLite file retains the provider-operation ambiguity journal and durable
-drain desired state. `autoscaler` is the only controller entry point. It is
-dry-run by default, `--execute` authorizes all controller mutations, and
-`--once` exits after one cycle.
-
-No executing autoscaler sends a provider terminate request directly from a
-scale-down decision. While holding the local controller lock it first writes a durable
-drain intent for the deployment and immutable UCloud job ID. The intent contains
-a random incarnation token. Restarts, replacement leaders, and later one-shot
-invocations adopt the same intent and token; they do not generate a new token
-for each attempt.
-
-Every cycle counterfactually evaluates active drains with their admission
-reopened. If current demand and policy still select the same node, the leader
-posts `{"token":"...","draining":true}` to the `/v1/drain` endpoint at the node
-URL from its heartbeat. If the node's capacity is now needed, it first persists
-the intent as `canceling`, then posts the exact token with `"draining":false`.
-An ambiguous undrain remains `canceling`, can never authorize a stop, and is
-retried after restart or leader handoff; the intent retires only after the node
-returns an exact admission-open acknowledgement. A later scale-down allocates a
-new token and stop-journal incarnation. Provider stop calls that have already
-started are irreversible and are not canceled.
-
-A failed or ambiguous drain request leaves the intent active and does not create
-a stop operation. A successful HTTP response is not an acknowledgement that the
-VM is safe to stop. The autoscaler waits for a
-fresh, gateway-receipt-stamped heartbeat that proves all of the following:
-
-- the node is draining, admission is closed, and the drain token matches;
-- the runtime inventory is complete and empty;
-- the drain activity epoch equals the current activity epoch;
-- active sandbox and build counts are zero; and
-- used, sandbox-reserved, and build-reserved resources are all zero.
-
-Only then is a provider stop written to the operation journal, and that journal
-is the only autoscaler terminate path. Consequently, two
-`autoscaler --once --execute` cycles are normally required: the first
-persists and posts the drain, while the later cycle observes the fresh heartbeat
-acknowledgement and performs the journaled terminate. Draining or
-admission-closed nodes remain in the provider pool count but contribute no ready
-or projected free placement capacity. Final UCloud jobs retire their drain
+There is one controller per deployment. Every executing process takes a
+process-lifetime POSIX lock beside `<data_root>/autoscaler-state.sqlite`; the
+kernel releases it when the process exits, so there is no lease to renew. That
+SQLite file holds the provider-operation journal and the durable drain
 intents.
 
-There is one bounded exception for a node that cannot participate in the drain
-protocol at all. After `unreachable_stop_after_seconds`, an owned running VM may
-receive a durable unreachable-stop proof when it has no gateway routes, its last
-complete heartbeat inventory was empty and a direct probe failed in transport,
-or when it never emitted a heartbeat. This proof permits the same journaled
-provider termination without a node acknowledgement. It does not apply to a
-fresh node, an incomplete last inventory, a reachable node, or any node with
-retained route ownership. Neither in-tree adapter treats lease expiry or a
-provider suspension as destructive node loss.
+The autoscaler reads its whole policy from the `policy` object in
+`deployment.json`. Changes take effect when the service restarts. To shadow a
+feedback feature, set its `*_enabled` flag to `false`: its metrics keep
+updating, but it neither creates nor retains nodes.
 
-Recorded client DELETE intents are replayed every executing cycle, least
-recently attempted first (attempt times persist in the autoscaler state), at
-most `autoscaler_max_pending_delete_retries_per_cycle` of them, eight at a time
-with a 30 s timeout each. A silent worker's intents therefore cannot starve
-younger ones or stall the cycle, and the durable delete operation id makes an
-abandoned attempt safe to repeat.
+### Pools
 
-The journal moves an operation from `prepared` to `uncertain` before making the
-provider call. A crash or timeout leaves that same operation uncertain. A
-subsequent exhaustive inventory marks
-the operation recovered when every target is explicitly final; otherwise the
-idempotent terminate call is retried. Absence from inventory is never treated as
-proof that a job is final.
+The autoscaler manages two pools, planned independently:
 
-Create operations similarly remain a visibility guard only until one exhaustive
-inventory has observed their target job IDs. They are then settled durably, so a
-completed job that later ages out of provider history cannot block new capacity
-forever. If the same deterministic planning slot is needed again, it receives a
-new journal incarnation. Settled and definitely failed audit rows are compacted
-to a bounded recent history; a small slot table retains the next incarnation.
+- **Sandbox nodes** run sandboxes. They carry the provider label
+  `ucloud-sandboxes/node=true`. Their shape comes from the `sandbox` config
+  block.
+- **Builder nodes** run image builds. They carry
+  `ucloud-sandboxes/builder=true` and must not carry the node label. Their
+  shape comes from the `builder` block. See [images](images.md) for builds.
 
-Builder VMs are scaled separately from sandbox resources. Pending image builds
-record count-based, one-shot scale-up signals in the gateway route file.
-Executing autoscaler cycles consume these signals after reacting; image-build
-callers retry `POST /v1/images/build` once a builder is ready. `POST
-/v1/builders/prepare` records the same kind of one-shot scale-up signal for
-known upcoming build bursts; it asks for `count` builder VMs, is consumed after
-an executing reconciliation cycle, and can be canceled with
-`DELETE /v1/builders/prepare/<id>` before it is consumed. The autoscaler creates
-up to `builder.max_nodes` builder-only VMs for
-`max(1 if pending_builds else 0, prepared_builder_count)`, and stops idle
-builder VMs after `builder_scale_down_idle_seconds` once pending builds are
-zero and prepared builder signals have been consumed. Keep this grace longer
-than sandbox idle grace because image builds often arrive in bursts and builder
-startup is comparatively expensive. Builder nodes must carry
-`ucloud-sandboxes/builder=true` and must not carry
-`ucloud-sandboxes/node=true`.
+### Providers
 
-Pending and active image-build work also acts as a transient sandbox
-warm-capacity signal. During those autoscaler cycles, the sandbox pool adds a
-small runnable probe of at most 1 vCPU, 512 MiB RAM, and 1 GiB disk. This is not
-stored as prepared capacity and is not durable demand. Prepared builder capacity
-does not produce this sandbox signal by itself. The goal is to avoid scaling
-sandbox nodes to zero while a builder is preparing an image that will likely be
-launched shortly afterward without reserving an entire pristine sandbox node.
+A small provider interface (`ComputeProvider` in
+[`providers/base.py`](../ucloud_sandboxes/providers/base.py)) translates
+provider APIs into list, retrieve, create, terminate and bootstrap-access
+calls. Scaling policy, routing and storage stay out of it. The autoscaler
+renders provider-neutral create intents (role, name, node id, labels), and the
+adapter maps them to machine types, images and networks.
 
-## Direct-runtime placement and wake
+| Provider | Module | Notes |
+| --- | --- | --- |
+| UCloud (production) | [`providers/ucloud`](../ucloud_sandboxes/providers/ucloud) | VMs are UCloud jobs. Requires per-instance continuity history and guest continuity proof (below). |
+| Hetzner Cloud | [`providers/hetzner`](../ucloud_sandboxes/providers/hetzner) | Still maintained. No guest-continuity requirement. |
+| Others | Python entry point group `ucloud_sandboxes.compute_providers` | A factory receives its tagged `provider` config. |
 
-Each direct node advertises physical CPU and RAM, but resident sandbox CPU and
-memory limits are not treated as additive lifetime reservations. They are
-limits, while actual usage is bursty. Parked and running sandboxes retain their
-exact hard disk reservation on their current node. Disk is never overallocated.
+`provider.kind` selects the adapter; the rest of the `provider` object is the
+adapter's own schema. [Deployment](deployment.md) covers provider settings.
 
-This produces two independent capacity questions:
+A provider mutation returns `accepted`, `rejected` or `uncertain`. An
+uncertain result (for example a timeout after the request was sent) is never
+retried blindly: the operation journal marks it `uncertain` before the call,
+and a later exhaustive inventory settles it. Absence from inventory is never
+proof that a job is gone.
 
-1. Can the sandbox's lifetime disk reservation remain on this node?
-2. Can its individual CPU and memory limit fit on one node, and does that node
-   currently have enough live headroom to admit more work?
+## Capacity model
 
-The first answer determines durable placement. The second is re-evaluated on
-create and wake using actual CPU, available RAM plus swap, load, and memory PSI.
-A parked sandbox wakes on its owning node when its individual shape fits and
-live pressure allows admission. Otherwise the gateway may migrate its verified
-storage-native snapshot to a fitting node before wake. The node independently
-applies the same pressure brake and reserves concurrent creates and wakes
-against physical CPU/RAM, so stale heartbeats and simultaneous requests cannot
-produce an unbounded activation burst.
+The autoscaler and the gateway count resources the same way the nodes admit
+them ([node admission and memory](node-admission-and-memory.md)):
 
-Failed create and wake attempts persist individual request shapes as pending
-demand. The autoscaler consumes disk additively and bin-packs exact disk shapes.
-CPU and memory contribute the largest individual shape and are reusable within
-a dynamic-admission node; sustained live pressure adds a headroom node.
+- **CPU and memory** must fit the node's physical shape per sandbox, but
+  sandbox limits are not added up as if they were usage. Live samples of CPU,
+  load, available memory, swap and pressure stall decide whether a node can
+  take more work.
+- **Disk** is a hard, additive reservation and is never overallocated. It is
+  credited only from the storage-native capacity report in a fresh, complete
+  heartbeat. A node without that report gets no sandboxes.
 
-Closing admission and selecting placement can race. A node that has durably
-closed its admission gate returns the structured, retryable
-`node_admission_closed` error before provisioning begins. The gateway treats
-that response as definitive rather than ambiguous: it removes the provisional
-route, restores the exact request shape as pending demand, and allows the SDK
-retry to select another node. Timeouts and generic 5xx responses remain
-identity-fenced because the original create may have reached provisioning.
+Before a node has heartbeated, the planner assumes the configured node shape.
+It is derived from the `sandbox` block: `default_vcpu`, `default_memory_mb`,
+and `disk_gb` minus image store (`docker_quota_image_gb`), swap (`swap_gb`),
+block cache (`storage_native_cache_gb`) and headroom
+(`direct_disk_headroom_mb`). With the defaults that is 32 vCPU, 96 GiB RAM and
+1,449,984 MiB of sandbox disk on a 2,000 GB worker. A heartbeat replaces the
+estimate with measured capacity.
 
-Scale-down requires a proven empty node or detached, durable parked storage:
+## Scaling the sandbox pool up
 
-1. persist a drain incarnation and close node admission;
-2. wait for running ownership to be deleted and require every remaining route
-   to be a `storage-native-v1` park;
-3. synchronously publish any park that does not yet have a durable registry
-   descriptor, validate that descriptor against the exact sandbox incarnation,
-   and persist both the descriptor and its registry reference in the gateway;
-4. evict each now-published park from the worker through the fenced
-   `sandbox-detach-published-v1` contract, while retaining its immutable
-   registry descriptor in the gateway route;
-5. require a fresh complete empty inventory and zero resource ownership after
-   detachment;
-6. journal and execute the provider stop.
+Each cycle the planner adds up demand, subtracts what ready and booting nodes
+can still take, and creates VMs for the deficit, subject to caps.
 
-Detachment is different from migration: it does not need another running
-worker and does not immediately download the sandbox again. A later wake
-selects a node, imports the published descriptor, and activates it there. An
-attached parked sandbox normally takes the fast same-worker wake path; the
-optional consolidation policy below can select an occupied destination. An
-ambiguous eviction leaves the route in `detaching`; it cannot be counted as
-free until a successful retry or a fresh complete heartbeat proves the local
-incarnation absent.
+### Demand
 
-### Consolidating on wake
+- **Pending demand.** When a create or wake cannot be placed, the gateway
+  records its exact resource shape as pending demand and answers 503; the
+  caller retries. Pending demand expires 300 seconds after the last failed
+  attempt, so abandoned clients do not keep VMs alive. A create already
+  dispatched to a node returns a retryable "in progress" answer on retry
+  instead of adding demand.
+- **Prepared capacity.** `POST /v1/capacity/prepare` with `count`, `cpus`,
+  `memory_mb`, `disk_mb`, optional `image`, `parkable` and `ttl_seconds`
+  (default 900) announces a batch before its first create, so VMs start
+  booting early. Each matching create claims one unit; unclaimed units expire
+  at the TTL or are canceled with `DELETE /v1/capacity/prepare/<id>`. For
+  parkable sandboxes, set `parkable: true`: the gateway then reserves the full
+  hibernation disk, matching later admission. With `image`, the gateway also
+  pulls the image onto enough ready nodes, or tracks a warmup until nodes
+  appear.
+- **Warm resources.** `policy.warm_resources` keeps a standing buffer of CPU,
+  memory and disk. Keep it at zero unless a measured latency target justifies
+  paying for idle capacity.
+- **Build activity.** While image builds are pending or active, the sandbox
+  pool adds a small probe of at most 1 vCPU, 512 MiB and 1 GiB. This keeps
+  one sandbox node from scaling to zero while a build is about to produce an
+  image, without reserving a whole empty node.
 
-`policy.parked_wake_consolidation_enabled` defaults to `false`, including when
-loading an older deployment configuration without that field. When enabled,
-a published attached park can resume on an already occupied worker even if
-its current worker could run it. This lets sparsely used nodes empty over
-successive park/wake cycles and become eligible for normal idle scale-down.
-Running processes are not forcibly checkpointed or moved by this policy.
+### Forecasting cold demand
 
-Optional relocation requires:
+Runs usually start cold, so pending and prepared sandboxes are sized from
+earlier runs rather than from their limits:
 
-- source CPU at or below half the configured CPU target (35% with the default
-  70% target), and a destination with at least as many active sandboxes;
-- a strictly lower immutable job/node rank, so consolidation cannot bounce a
-  sandbox back and forth as utilization changes;
-- fresh complete inventories and runtime samples, open admission, and no
-  concurrent creates or storage errors/queues on either worker;
-- a cached exact image on the destination, normal migration capabilities and
-  disk admission, plus room for the full waking CPU/memory shape under the
-  configured utilization targets and PSI/storage pressure limits. A fresh
-  `memory_observation` for the exact owner, node boot, generation and spec hash
-  (the resident sampler's last cgroup `memory.current`, copied into the
-  heartbeat inventory) replaces the declared memory only when it is larger; it
-  never weakens the full-shape check;
-- no active migration anywhere, no creating/waking/unknown routes on the
-  destination, and expiration of the gateway's 60-second consolidation
-  cooldown. The cooldown applies after reservation and successful completion;
-  it is process-local, while the active migration reservation is durable.
+- **Memory.** `UsageHistory`
+  ([`usage_history.py`](../ucloud_sandboxes/usage_history.py)) keeps the peak
+  measured memory per image and requested shape, from heartbeat samples of
+  running sandboxes. It lives in `<data_root>/usage-history.json` and entries
+  expire after 30 days. Cold demand is charged min(request, 1.25 × peak). The
+  lookup tries the exact image and shape, then the same image at any shape,
+  then the same shape across images. With no history it uses the request.
+- **Disk.** Cold demand is charged what a worker actually reserves at create:
+  the initial workspace grant plus the idle memory claim, from worker
+  heartbeats, or from the deployment config when no worker exists yet. Growth
+  is reserved later as the sandbox writes.
+- The memory charge is then divided by `target_memory_utilization`, as is
+  the measured working set of ready nodes plus their in-progress creates and
+  wakes. Parked sandboxes contribute nothing.
 
-The gateway reserves through the existing fenced migration journal while
-holding the placement lock, then performs transfer outside that lock. Retries
-resume the same migration instead of waking the old incarnation locally.
-The `sandbox_wake_consolidation` metric event records the sandbox, migration,
-source job, and destination job. If optional placement has no suitable target,
-the normal local wake remains available. Necessary relocation from a draining,
-missing, or pressured source remains independent of these optional limits.
+A low forecast only delays scale-up: node admission still owns execution
+safety, and placement checks real free disk. With this forecast, 100 small
+announced sandboxes planned two workers where full requests planned three
+(`tests/test_usage_history.py`).
 
-This is incremental consolidation at existing park points. It does not
-proactively evacuate running or non-parkable workloads, guarantee a minimum
-worker count, or bypass the configured idle grace and drain/stop proof.
+### Booting VMs and caps
+
+- `max_create_per_cycle` limits VMs submitted per cycle.
+- `max_provisioning_nodes` caps queued or booting VMs. Keep it low while the
+  provider reports scarce machines, or several VMs wait in the same queue.
+- `provisioning_capacity_weight` scales how much a booting VM counts against
+  demand. `1.0` is optimistic; 0.5–0.75 is safer when boot time varies.
+- After `stale_provisioning_after_seconds` in a pre-start state, a VM's credit
+  falls to `stale_provisioning_capacity_weight` (default 0). It still counts
+  against `max_nodes` and `max_provisioning_nodes` until the provider reports
+  it final, so a stuck job cannot cause duplicate submissions.
+- `max_nodes` caps the pool; `min_nodes` keeps a floor.
+- A running VM whose heartbeat has expired still counts toward `max_nodes`,
+  but may be replaced one for one.
+
+### Pressure feedback
+
+Demand accounting misses some cases: a full node can still be overloaded, and
+a burst can queue on startup slots. Three signals add headroom:
+
+- **Live pressure** (`live_pressure_enabled`). The controller reads recent
+  heartbeat samples from `metrics.sqlite`. A sample is pressure when a node
+  with active work crosses `target_cpu_utilization`,
+  `target_memory_utilization`, `max_memory_psi_full_avg10`,
+  `max_io_psi_full_avg10`, or `target_storage_queue_utilization` for its
+  storage or image-materialization queue. Queue pressure is
+  waiting ÷ concurrency: occupied slots are useful work. At least
+  `live_pressure_min_samples` samples in `live_pressure_window_seconds`, the
+  latest within `live_pressure_fresh_seconds`, add a node, unless a ready
+  node is idle.
+- **Create pressure** (`create_pressure_enabled`). Sampled gateway create
+  rejections amplify live pressure, but never act alone: a burst of healthy
+  cold creates is not a reason to buy a VM.
+- **Startup backlog.** If at least `create_target_concurrency_per_node`
+  capacity requests are waiting, the oldest has waited
+  `create_pressure_window_seconds`, and every ready node is busy with fresh
+  observations, the planner may add a node even below the CPU threshold.
+
+Both feedback paths together add at most `create_pressure_max_headroom_nodes`
+(default 1) above the resource baseline, and booting nodes count toward it.
+Once live pressure is sustained, pending demand can grow the pool toward
+`max_nodes` at `create_target_concurrency_per_node` sandboxes per node.
+
+The CPU and memory targets are the main density-versus-latency trade-off;
+lower targets keep more headroom. The stall and queue limits catch cases that
+average utilization misses.
+
+## Scaling the sandbox pool down
+
+### Idle grace
+
+`scale_down_idle_seconds` counts from when a heartbeat first reports zero
+active sandboxes, not from boot. Two things extend it:
+
+- `pressure_scale_down_cooldown_seconds` after the last pressure sample.
+- Measured provisioning p95 (submit to first heartbeat, over
+  `provisioning_latency_lookback_seconds`) times
+  `provisioning_scale_down_multiplier`. With a 70-second p95 and multiplier 2,
+  an idle node is kept at least 140 seconds.
+
+`max_stop_per_cycle` limits stops per cycle.
+
+### Drain before stop
+
+The autoscaler never terminates a VM straight from a scale-down decision.
+Every stop goes through a drain handshake:
+
+1. Write a durable drain intent with a random token for the deployment and
+   provider job, then post `{"token":..., "draining":true}` to the node's
+   `/v1/drain`. Restarts and later cycles adopt the same intent and token.
+2. Each cycle re-evaluates the drain as if admission were open. If demand now
+   needs the node, the intent becomes `canceling` and the controller posts
+   `"draining":false`; it retires only on the node's exact acknowledgment. An
+   ambiguous undrain can never authorize a stop.
+3. Wait until running sandboxes are gone and every remaining route is a
+   `storage-native-v1` park. Publish any park without a durable registry
+   descriptor, store the descriptor in the gateway, then evict the park from
+   the worker (`sandbox-detach-published-v1`). A later wake imports the
+   descriptor on another node. At most
+   `autoscaler_max_storage_native_detaches_per_cycle` detaches run per cycle.
+4. Wait for a fresh heartbeat, stamped on gateway receipt, that proves: the
+   node is draining with the matching token and closed admission; the
+   inventory is complete and empty; the drain's activity epoch is current;
+   active sandbox and build counts are zero; used and reserved resources are
+   zero.
+5. Only then journal and execute the provider stop. So two executing cycles
+   are normally needed: one to drain, one to stop.
+
+A draining node counts toward the pool but offers no placement capacity. A
+failed publication leaves the park attached and blocks the stop. An
+ambiguous eviction leaves the route `detaching`, which is not free until a
+retry or a complete heartbeat proves the copy gone.
+
+Publication also bounds the snapshot chain: the old remote layers plus the
+new local delta are compacted when they exceed eight layers or 4 GiB of delta
+beyond the base. Compaction streams one flattened layer to the registry, and
+the old layers remain authoritative until the new manifest is durable.
+
+The node agent returns `node_admission_closed` before provisioning when its
+admission gate is closed. The gateway treats that as a definite rejection:
+it removes the provisional route, records pending demand and lets the SDK
+retry elsewhere. Timeouts and generic 5xx answers stay ambiguous, because the
+create may have started.
 
 ### Drain on park
 
-A busy RL fleet is never idle, so idle scale-down alone never removes surplus
-workers. `policy.drain_on_park_enabled` (default `true`) lets the autoscaler
-soft-drain one surplus worker at a time and empty it through cheap parked
-moves (measured 0.6-0.8 s per move, and a 0.6-1.0 s first wake on the
-destination):
+A busy RL fleet is never idle, so idle grace alone never removes surplus
+workers. With `drain_on_park_enabled` (default on), the autoscaler soft-drains
+one surplus worker at a time and empties it through cheap parked moves
+(about 0.6–0.8 s per move):
 
-- Selection runs only when the cycle plans no creates, has no resource or
-  placement deficit, no pending demand and no pressure cooldown, above
-  `min_nodes`, with at least two busy ready workers. A worker qualifies when
-  the scale-down math still fits demand without it, including the disk its
-  parks hold. The one with the fewest sandboxes wins; ties go to the newest.
-- The choice is the controller-owned heartbeat label
-  `ucloud-sandboxes/soft-drain`, preserved across heartbeat receipts and
-  quarantine recovery. Admission stays open: the worker keeps serving execs
-  and local wakes. Creates rank it last and use it only when nothing else
-  fits; migrations never target it, and a wake uses it only as a last resort.
-  The scale-up math withholds its capacity while it stays soft-drained.
-- Each cycle posts gateway migrations for up to
-  `policy.drain_on_park_moves_per_cycle` (default 4) of its attached parks,
-  with the stable id `drain-<job>-<sandbox>-<generation>`.
-  - Agents that wake every few seconds are rarely seen as published parks,
-    because the gateway learns publication from heartbeats. So the move first
-    asks the owner to publish, or reuse, its snapshot.
-  - Running sandboxes move after they park.
-  - A soft-drain move never records pending demand. Without a destination it
-    is retried next cycle.
-  - A move that fails before route commit is rolled back at once, so the
-    source can always wake.
-- Checkpoint import compares the full runtime fingerprint, including CPU
-  features. Same-model Hetzner VMs can expose different flags (for example
-  `erms`, `fsrm`).
-  - Workers advertise `runtime-cpu-features-sha256`, and migration and wake
-    destinations must match it.
-  - A worker is only selected, and only kept, while another ready worker
-    shares its CPU features.
-- The label is cleared when the worker stops being surplus or could serve
-  pending demand, so demand reopens it instead of buying a new worker.
-- Once idle, the worker uses `min(scale_down_idle_seconds, 60)` as its idle
-  grace, then takes the normal drain, detach and stop path.
+- **Selection.** Only in a cycle that plans no creates and has no resource
+  deficit, pending demand or pressure cooldown, above `min_nodes`, with at
+  least two busy ready workers. A worker qualifies when demand still fits
+  without it, counting the disk its parks hold. The one with the fewest
+  sandboxes wins; ties go to the newest.
+- **Marking.** The controller sets the heartbeat label
+  `ucloud-sandboxes/soft-drain`. Admission stays open: the worker keeps
+  serving execs and local wakes. Creates use it only when nothing else fits,
+  migrations never target it, and scale-up does not count its capacity.
+- **Moves.** Each cycle posts gateway migrations for up to
+  `drain_on_park_moves_per_cycle` (default 4) of its parks, with the stable id
+  `drain-<job>-<sandbox>-<generation>`. The move first asks the owner to
+  publish or reuse its snapshot. Running sandboxes move after they park. A
+  move without a destination is retried next cycle and records no demand; a
+  move that fails before route commit rolls back so the source can wake.
+- **CPU features.** Checkpoint import requires the same runtime fingerprint,
+  including CPU feature flags, which can differ between VMs of the same
+  model. Workers advertise `runtime-cpu-features-sha256:<hash>`, and a worker
+  is only soft-drained while another ready worker shares its features.
+- **Release.** The label clears when the worker is no longer surplus or could
+  serve pending demand, so new demand reopens it instead of buying a VM.
+- **Stop.** Once idle, a soft-drained worker uses
+  min(`scale_down_idle_seconds`, 60) as its grace, then takes the normal drain
+  and stop path.
 
-Measured on Hetzner (rc62, 2026-09-27): three CCX63 workers with the same CPU
-features, 60 parkable sandboxes (20 per worker), and an agent loop on every
-sandbox (an exec every 5-15 s). Then the capacity announcement was withdrawn:
-- The autoscaler soft-drained one worker within 30 s.
-- Its sandboxes moved as they parked: 20 -> 17 -> 14 -> 10 -> 6 -> 2 in
-  2.5 minutes. The last one was caught parked about 3 minutes later.
-- The worker was stopped after the 60 s grace, and a second worker was
-  soft-drained.
-- About 4,500 execs over roughly 15 minutes: none failed, p50 0.56-0.60 s.
-- When a real workload then announced 100 sandboxes, the drain was released
-  instead of buying a worker.
+In a 60-sandbox test with an exec every 5–15 s on every sandbox, a surplus
+worker emptied in about 2.5 minutes and was stopped, with no failed execs
+(p50 about 0.6 s).
 
-Publication also bounds the immutable snapshot chain. The prospective old
-remote layers plus new local sealed delta are compacted when they exceed eight
-layers or 4 GiB of accumulated delta data beyond the oldest base layer. Local
-sealed-layer sizes are estimated from allocated bytes, excluding sparse holes.
-An already large compacted base therefore does not force another full rewrite
-after each small delta. Compaction streams one flattened layer directly to the
-Registry; it does not allocate another virtual-disk-sized worker file. The old
-publication and local delta retain authority until the replacement manifest is
-durable, so a compaction failure blocks detachment and scale-down rather than
-discarding recoverable state.
+### Retiring workers
 
-Durable delete intents are also controller-owned cleanup work. The autoscaler
-replays pending deletes every cycle, least recently attempted first, within
-`autoscaler_max_pending_delete_retries_per_cycle`. If deletion meets an
-uncommitted storage-native migration, the gateway first aborts the destination
-import and restores the source registration, then reuses the existing
-generation-fenced delete operation. An activated import retains this migration
-identity as a storage-operation namespace, but can be deleted normally while
-preserving that fence. A successful route deletion terminalizes any remaining
-migration journal. This means a client timeout or disconnect cannot leave
-`moving_out` or `import_ready` inventory pinning a worker forever.
+A worker that serves what it holds but takes no new demand is *retiring*. It
+takes the soft-drain slot regardless of demand and stops through the normal
+handshake once empty:
 
-Legacy active migration journals whose canonical route is already absent are
-terminalized by the controller, bounded by
-`autoscaler_max_orphaned_migration_reconciles_per_cycle`. This is DB-only
-journal reconciliation; it neither contacts workers nor changes a live route.
-Delete retry, orphan reconciliation, and worker detachment therefore have
-separate limits. Results are recorded as `pending_delete_attempts`,
-`orphaned_migration_reconciles`, and `storage_detach_attempts` in autoscaler
-execution metrics. A node is not a
-stop candidate when any remaining route is running, has an incomplete identity,
-is absent from the worker's fresh complete inventory, or the worker lacks the
-publication/detach capability. A failed publication leaves the park attached
-and blocks the stop; only a descriptor durably stored by the gateway can
-authorize eviction.
+- **Repeated reboots.** The gateway records each proven guest boot change in
+  the label `ucloud-sandboxes/controller-epoch-retirements` (last four). Two
+  within 24 hours mark a failing host. One reboot loses the old guest's
+  processes, not the node: running routes from that boot are retired, and
+  published snapshots remain recoverable.
+- **Slow host.** With `max_cpu_check_ms` above 0, a worker whose boot CPU check
+  took longer than that limit retires. Off by default.
 
-## Initial operating stance
+### Unavailable and unreachable workers
 
-Until we have measurements, prefer:
+Silence is never proof of loss.
 
-- Scale-to-zero by default.
-- One VM create per cycle.
-- Two provisioning VMs max.
-- Prepared-capacity signals for known near-term bursts.
-- Standing warm resources only for a measured latency SLO that justifies the cost.
-- Physical node capacity with live-pressure admission instead of fixed CPU and
-  memory limit aggregation.
-- Hard disk reservations that never exceed daemon-reported capacity.
+- **UCloud continuity.** A UCloud job that is suspended after start, or has a
+  RUNNING → SUSPENDED → RUNNING history, is *unavailable*, not safe to
+  destroy. The controller quarantines it from new placement while keeping its
+  routes and inventory. Quarantine clears only on provider RUNNING plus a
+  fresh, authenticated direct heartbeat with the same guest boot and a
+  complete inventory matching the assigned routes. The label
+  `ucloud-sandboxes/controller-continuity-verified-through` records which
+  suspension was covered, so a historical suspension quarantines once. A
+  quarantined worker still wakes its own parks.
+- **Unreachable empty workers.** After `unreachable_stop_after_seconds`, a VM
+  may be stopped without a drain acknowledgment only if it has no routes and
+  either never heartbeated, or its last complete inventory was empty and a
+  direct probe in the same cycle failed in transport. UCloud never deletes an
+  occupied VM on silence.
+- Quarantined and powered-off VMs keep their provider slots and count as
+  unreachable; a persistently unavailable VM needs an operator.
 
-The controller records VM lifecycle events into the indexed SQLite metrics
-database:
-submission, observed UCloud state changes, init attempt durations, first
-heartbeat, and first sandbox placement. `GET /v1/metrics` exposes these under
-`vm_lifecycle`, including `submit_to_running_ms`,
-`ucloud_created_to_running_ms`, `running_to_first_init_attempt_ms`, separate
-successful package-stage and remote-init durations,
-`first_init_attempt_to_first_heartbeat_ms`, and
+For incident reproduction, stop the executing autoscaler.
+`max_stop_per_cycle: 0` is not a global kill switch for provider mutations.
+
+### Cleanup work
+
+Each executing cycle also replays recorded client deletes, least recently
+attempted first, at most `autoscaler_max_pending_delete_retries_per_cycle`
+(eight in parallel, 30-second timeout each). A delete that meets an
+uncommitted migration aborts the destination import first. Active migration
+journals whose route is already gone are closed in the database, at most
+`autoscaler_max_orphaned_migration_reconciles_per_cycle` per cycle. Results
+appear as `pending_delete_attempts`, `orphaned_migration_reconciles` and
+`storage_detach_attempts` in the autoscaler execution metrics.
+
+### Consolidation on wake
+
+`parked_wake_consolidation_enabled` (default off) lets a published park wake
+on a busier worker even when its own worker could run it, so sparse workers
+empty over successive park/wake cycles. It requires:
+
+- source CPU at or below half `target_cpu_utilization`, and a destination
+  with at least as many active sandboxes and a strictly lower job rank, so
+  sandboxes cannot bounce back;
+- fresh complete inventories and samples, open admission, and no concurrent
+  creates or storage errors on either worker;
+- a cached exact image on the destination, migration capability, disk
+  admission and room for the full waking shape under the utilization and
+  pressure targets (a larger fresh `memory_observation` replaces the declared
+  memory);
+- no active migration anywhere, and 60 seconds since the last consolidation
+  in this gateway process.
+
+The event `sandbox_wake_consolidation` records each move. Without a suitable
+target the wake stays local. It never moves running sandboxes.
+
+## Scaling the builder pool
+
+Builder demand is a count, not resources:
+
+- A pending image build records a one-shot scale-up signal; build callers
+  retry `POST /v1/images/build` once a builder is ready.
+- `POST /v1/builders/prepare` asks for `count` builders ahead of a known build
+  burst. It is consumed after an executing cycle and can be canceled with
+  `DELETE /v1/builders/prepare/<id>` before then.
+
+The pool targets max(1 if builds are pending, prepared builder count), capped
+by `builder.max_nodes` (default 1). Idle builders stop after
+`builder.scale_down_idle_seconds` (default 900) once no builds are pending and
+prepared signals are consumed. Keep that grace longer than the sandbox grace:
+builds arrive in bursts and builder startup is expensive.
+
+## Create placement
+
+`gateway_create_placement` selects how a create picks its worker. The code
+default is `ranked`; `power_of_k` is the alternative and is required for
+group creates.
+
+### Power of k
+
+Implemented in [`placement_choice.py`](../ucloud_sandboxes/placement_choice.py)
+and [`gateway/create.py`](../ucloud_sandboxes/gateway/create.py). The node's
+admission is the authority; the gateway only picks candidates.
+
+1. **Fleet view.** Candidates are fresh, admitting sandbox workers from the
+   shared heartbeats, filtered by required capabilities and by an exact
+   disk-and-memory fit that also counts in-flight migrations. There is no
+   fleet-wide scan or lock.
+2. **Sample and score.** Each API process samples k = 3 eligible workers
+   uniformly and orders them by score:
+
+   ```text
+   score = live pressure + in-flight creates / create_target_concurrency_per_node
+           - 0.25 × image residency
+   ```
+
+   Residency is the fraction of the image's startup bytes already on the
+   node; an image this process is already sending there counts as half
+   resident. In-flight creates are the node's reported creates plus this
+   process's unconfirmed creates times the number of API processes, which
+   estimates the other processes' traffic since the last heartbeat.
+   Soft-drained workers fill the list only when fewer than k others are
+   eligible.
+3. **In-process claims.** Each process keeps an in-memory overlay that
+   charges its own creates to their workers until a heartbeat reports the
+   exact sandbox, the worker reboots, or 60 seconds pass. A planning lock
+   makes concurrent creates in the same process see each other's choices.
+   Nothing is shared between processes: random sampling spreads processes
+   that look at the same stale view, and node rejection catches overbooking.
+4. **Dispatch.** The create tries the candidates in order, for up to two
+   rounds; the second round resamples without the workers already tried.
+   Every candidate except the last gets `X-UCloud-Admission-Wait: 1`, so a
+   busy node rejects after one second instead of holding the create for its
+   full admission wait (30 seconds); the last gets no header and the full
+   wait, so a busy fleet does not reject all k at once. The gateway strips
+   any client copy of the header, and nodes ignore a malformed value.
+5. **Outcomes.** Acceptance confirms the route. A definite rejection
+   (including at the image check) releases the overlay charge and retargets
+   the route to the next candidate as a fresh generation and operation id, so
+   a late answer from the rejecting node stays fenced. An ambiguous answer
+   keeps the route and the charge. If every candidate rejects, the route is
+   deleted, fenced pending demand is recorded and the client gets a 503 naming
+   the last rejection.
+
+In this mode the API processes run creates and groups themselves; the
+placement process only runs wakes.
+
+### Ranked
+
+`ranked` scans the fleet and reserves capacity transactionally under a
+placement lock. It ranks each candidate by a load of live pressure plus
+in-flight creates ÷ `create_target_concurrency_per_node`:
+
+1. Soft-drained workers last.
+2. Workers below a load of 0.6 before busy ones. Busy workers keep the older
+   order, assigned shapes then load, so a stale heartbeat cannot funnel a
+   burst onto one peer.
+3. Below that band: workers holding the image, then with the image in
+   flight, then neither; then fewest missing layer bytes.
+4. Assigned shapes, load, in-flight creates, slack and node id as tie
+   breakers.
+
+A same-image burst therefore stays on the worker holding the image until
+about five creates are in flight (at the default target of 8), then
+overflows.
+
+### Group create
+
+`POST /v1/sandboxes:batch` (power-of-k only) creates up to 512 sandboxes of
+one spec. The default `pack` policy fills the best sampled worker before the
+next, so each worker attaches the image once; `spread` caps each worker at an
+even share. Rejected members are re-planned for up to four rounds, and the
+rest become pending demand. See [API reference](api-reference.md).
+
+### Concurrency limits
+
+- New workers get `create_target_concurrency_per_node` as their startup
+  concurrency. Creates, restores and buffered reads use separate FIFO queues,
+  so a create burst cannot consume restore capacity. Waits are
+  deadline-bound; capacity rejections carry a retryable error code and
+  `Retry-After`, which the SDK retries with jitter.
+- `gateway_max_concurrent_sandbox_creates` optionally caps creates across the
+  fleet in FIFO order. `0` (default) disables it. Wakes, streamed reads and
+  small control operations bypass it.
+
+### Wake placement
+
+A parked sandbox wakes on its own worker when its shape fits and live pressure
+allows. Otherwise the gateway may migrate its verified storage-native snapshot
+to a fitting worker first. Workers apply the same pressure brake and reserve
+concurrent creates and wakes against physical CPU and RAM, so stale
+heartbeats cannot cause an unbounded activation burst. A wake that cannot be
+placed records pending demand like a create.
+
+## Measurements
+
+The controller records VM lifecycle events in `metrics.sqlite`. `GET
+/v1/metrics` reports them under `vm_lifecycle`, including
+`submit_to_running_ms`, `ucloud_created_to_running_ms`,
+`running_to_first_init_attempt_ms`, package-stage and remote-init durations,
+`first_init_attempt_to_first_heartbeat_ms` and
 `first_heartbeat_to_first_sandbox_ms`. The running-to-init interval includes
-the controller's polling delay because UCloud does not publish a distinct
-SSH-ready timestamp. Those measurements should drive later tuning more than
-fixed guesses. The default metrics endpoint is optimized for dashboard polling
-with a bounded recent event window and cached registry status; use `?full=true`
-when doing offline performance analysis that needs the larger event window and
-fresh registry metadata.
+the controller's polling delay. Use `?full=true` for a larger event window and
+fresh registry data. Tune the caps and graces from these numbers.
+
+## Configuration reference
+
+### `policy`
+
+Every key below must be present in `policy`, except the five marked
+*optional*, which take their default when omitted. Unknown keys are rejected.
+`heartbeat_ttl_seconds`, `builder_scale_down_idle_seconds` and
+`default_node_resources` are not policy keys: they come from
+`gateway_heartbeat_ttl_seconds`, `builder.scale_down_idle_seconds` and the
+`sandbox` block.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `min_nodes` | 0 | Sandbox pool floor. |
+| `max_nodes` | 10 | Sandbox pool cap, including booting and unreachable VMs. |
+| `warm_resources` | 0/0/0 | Standing `vcpu`, `memory_mb`, `disk_mb` buffer. |
+| `max_create_per_cycle` | 4 | VMs submitted per cycle. |
+| `max_stop_per_cycle` | 1 | VMs stopped per cycle. |
+| `max_provisioning_nodes` | 8 | Cap on queued or booting VMs. |
+| `provisioning_capacity_weight` | 1.0 | Credit for a booting VM (0–1). |
+| `stale_provisioning_after_seconds` | 300 | Pre-start age after which a VM is stale. |
+| `stale_provisioning_capacity_weight` | 0.0 | Credit for a stale VM (0–1). |
+| `max_cpu_check_ms` | 0 | *Optional.* Retire workers whose boot CPU check exceeds this; 0 is off. |
+| `unreachable_stop_after_seconds` | 1800 | Silence before an empty unreachable VM may be stopped. |
+| `scale_down_idle_seconds` | 600 | Idle grace before a sandbox node drains. |
+| `live_pressure_enabled` | true | Use live node pressure. |
+| `live_pressure_window_seconds` | 60 | Pressure sample window. |
+| `live_pressure_min_samples` | 3 | Samples in the window to act. |
+| `live_pressure_fresh_seconds` | 30 | Maximum age of the latest sample. |
+| `target_cpu_utilization` | 0.70 | CPU pressure threshold. |
+| `target_memory_utilization` | 0.80 | Memory pressure threshold and forecast divisor. |
+| `max_memory_psi_full_avg10` | 5.0 | Memory full-stall threshold. |
+| `max_io_psi_full_avg10` | 10.0 | *Optional.* I/O full-stall threshold (0–100). |
+| `target_storage_queue_utilization` | 0.75 | Storage and image-materialization queue threshold. |
+| `create_pressure_enabled` | true | Use gateway create pressure and startup backlog. |
+| `create_pressure_window_seconds` | 30 | Create pressure window; startup backlog age. |
+| `create_pressure_min_samples` | 2 | Samples to act. |
+| `create_pressure_fresh_seconds` | 15 | Maximum sample age. |
+| `create_target_concurrency_per_node` | 8 | Per-node create target: worker startup slots, placement load, backlog threshold. |
+| `create_pressure_max_headroom_nodes` | 1 | Nodes feedback may add above the baseline. |
+| `pressure_scale_down_cooldown_seconds` | 300 | Hold capacity after the last pressure sample. |
+| `provisioning_latency_lookback_seconds` | 604800 | Window for provisioning p95. |
+| `provisioning_scale_down_multiplier` | 2.0 | Idle grace floor = provisioning p95 × this. |
+| `parked_wake_consolidation_enabled` | false | *Optional.* Consolidation on wake. |
+| `drain_on_park_enabled` | true | *Optional.* Soft-drain surplus workers through parked moves. |
+| `drain_on_park_moves_per_cycle` | 4 | *Optional.* Parked moves per cycle. |
+
+### Other keys
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `autoscaler_interval_seconds` | 5.0 | Cycle interval. |
+| `autoscaler_max_init_per_cycle` | 4 | VM initializations started per cycle. |
+| `autoscaler_init_retry_seconds` | 30 | Delay between init attempts. |
+| `autoscaler_init_timeout_seconds` | 1800 | Init deadline per VM. |
+| `autoscaler_max_pending_delete_retries_per_cycle` | 16 | Client delete replays per cycle. |
+| `autoscaler_max_orphaned_migration_reconciles_per_cycle` | 128 | Orphaned migration journals closed per cycle. |
+| `autoscaler_max_storage_native_detaches_per_cycle` | 2 | Park detaches per cycle during drain. |
+| `gateway_create_placement` | `ranked` | `ranked` or `power_of_k`. |
+| `gateway_max_concurrent_sandbox_creates` | 0 | Fleet-wide create cap; 0 is off. |
+| `gateway_heartbeat_ttl_seconds` | 120 | Heartbeat freshness for placement and scaling. |
+| `sandbox.product_id` | `cpu-amd-zen5-32-vcpu` | Sandbox VM machine type. |
+| `sandbox.default_vcpu`, `sandbox.default_memory_mb`, `sandbox.disk_gb` | 32, 98304, 2000 | Planned node shape (disk before reservations). |
+| `builder.product_id` | `cpu-amd-zen5-16-vcpu` | Builder VM machine type. |
+| `builder.max_nodes` | 1 | Builder pool cap. |
+| `builder.scale_down_idle_seconds` | 900 | Builder idle grace. |

@@ -139,7 +139,7 @@ class EnvironmentBackend:
         self._referenced = referenced
         self._guard = RLock()
         # (digest, RafsEnvironmentComponent) -> verified RafsImage; None
-        # without a chunk index (docs/chunk-store-design.md §4).
+        # without a chunk index (docs/images.md).
         self._rafs = rafs
         self._attaching = {}  # Digest -> Future of the one attach in flight.
         if type(attach_concurrency) is not int or attach_concurrency < 1:
@@ -550,7 +550,7 @@ def serve_backend(registry, *, root, socket_path, cache_bytes=1024 ** 3, prefetc
                 digest, component, getter=access["getter"], meta_root=meta, origin=chunk_store_url)
         # S3 demand misses wait 30-100 ms, not the registry's 3 ms.
         cache_options = {"concurrent_misses": concurrent_misses}
-        # C2.1 (docs/benchmarks/nydusd-spike-2026-10-03): nydusd serves RAFS
+        # C2.1 (the 2026-10-03 nydusd-spike run): nydusd serves RAFS
         # images from the store node's virtual blobs; our cache, prefetch and
         # traces never see their reads.
         if nydusd is not None:

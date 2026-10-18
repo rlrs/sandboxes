@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the verifiers harness toolkit image (docs/toolkit-layers.md).
+# Build the verifiers harness toolkit image (docs/images.md).
 #   build.sh VERIFIERS_CHECKOUT IMAGE_REF [SCRIPT...]
 # SCRIPT defaults to "bash null". A bare name is a harness,
 # verifiers/v1/harnesses/<name>/program.py; a path with a slash is any other uv script
