@@ -6,8 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import time
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from hypothesis import given, settings, strategies as st
 
@@ -912,10 +914,14 @@ else:
             calls.append(tuple(command))
             return subprocess.CompletedProcess(command, next(returncodes))
 
+        # vm_init's own clock: patching time.sleep itself also counted other
+        # threads' sleeps (399 != 2 on a CI runner).
+        sleep = Mock()
+        clock = SimpleNamespace(**{name: getattr(time, name) for name in dir(time) if not name.startswith("_")})
+        clock.monotonic, clock.sleep = Mock(side_effect=(10.0, 10.1, 11.1)), sleep
         with (
             patch.object(vm_init.subprocess, "run", side_effect=fake_run),
-            patch.object(vm_init.time, "monotonic", side_effect=(10.0, 10.1, 11.1)),
-            patch.object(vm_init.time, "sleep") as sleep,
+            patch.object(vm_init, "time", clock),
             TemporaryDirectory() as raw_dir,
         ):
             package = Path(raw_dir) / "node-package.tar.gz"

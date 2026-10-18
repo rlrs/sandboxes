@@ -7,7 +7,9 @@ from io import BytesIO
 from tempfile import TemporaryDirectory
 from http.client import HTTPConnection
 from threading import Event, Thread
+import time
 from time import monotonic
+from types import SimpleNamespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import hashlib
@@ -2916,10 +2918,12 @@ class ControlPlaneTests(unittest.TestCase):
             handler._write_json = lambda *_args, **_kwargs: None
             pull_started = Event()
             release_pull = Event()
+            pull_finished = Event()
 
             def slow_prepare(_source, _destination):
                 pull_started.set()
-                release_pull.wait(timeout=2)
+                release_pull.wait(timeout=10)
+                pull_finished.set()
                 raise control_plane.WakePlacementStopped(control_plane.WakeUnavailable("test image preparation pending"))
 
             handler._prepare_migration_destination_image = slow_prepare
@@ -2934,7 +2938,6 @@ class ControlPlaneTests(unittest.TestCase):
             )
             wake_thread.start()
             self.assertTrue(pull_started.wait(timeout=1))
-            started = monotonic()
             placement = handler.services.placement.select_and_reserve(
                 "concurrent-create",
                 ResourceQuantity(vcpu=1, memory_mb=1024, disk_mb=1024),
@@ -2947,13 +2950,14 @@ class ControlPlaneTests(unittest.TestCase):
                 ),
                 lock_timeout=handler.admission_wait_seconds,
             )
-            elapsed = monotonic() - started
+            # Placed while the pull is still held: behind the pull's lock it
+            # could only have run once the pull had finished.
+            self.assertFalse(pull_finished.is_set())
             release_pull.set()
             wake_thread.join(timeout=2)
             migrations = routing.sandbox_migrations(active_only=True)
 
         self.assertIsNotNone(placement)
-        self.assertLess(elapsed, 0.25)
         self.assertEqual(len(migrations), 1)
         self.assertEqual(migrations[0].destination_node_id, "destination-node")
 
@@ -5331,7 +5335,12 @@ class ControlPlaneTests(unittest.TestCase):
             node_url="http://node-1:8090",
         )
 
-        with patch.object(control_plane.time, "sleep") as sleeper:
+        # control_plane's own clock: patching time.sleep itself would also
+        # record other threads' sleeps.
+        sleeper = Mock()
+        clock = SimpleNamespace(**{name: getattr(time, name) for name in dir(time) if not name.startswith("_")})
+        clock.sleep = sleeper
+        with patch.object(control_plane, "time", clock):
             response = handler._pull_image_on_node(heartbeat, "image")
 
         self.assertEqual(response.status, 200)

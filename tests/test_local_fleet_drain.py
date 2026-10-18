@@ -130,13 +130,20 @@ class DrainAdmissionTests(unittest.TestCase):
             def create(name):
                 return fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC}, token="sandbox")
 
+            def admission_wait(response) -> float:
+                # The node's own timing of the startup slot and capacity
+                # waits, without the runtime work after them.
+                phases = response.json()["timings"]["manager"]["phases"]
+                return (phases["startup_admission_ms"] + phases["active_capacity_ms"]) / 1000
+
             # CPU load is advice, not a veto: commands run and creates are
             # admitted without waiting for a lower sample.
             node.sample_metrics = lambda: replace(fixed_metrics(), cpu_percent=95.0, load_average_1m=16.0)
             self.assertEqual(fleet.exec("alpha", ["true"]).exit_code, 0)
-            response, elapsed = timed(lambda: create("busy"))
+            response = create("busy")
             self.assertEqual(response.status, 201, response.body)
-            self.assertLess(elapsed, WAIT)
+            # A create that waited for a lower sample would wait out its deadline.
+            self.assertLess(admission_wait(response), WAIT / 2)
 
             # No headroom: an exec is deferred at once, a create only after
             # waiting out its deadline, and neither runs later.
@@ -171,7 +178,7 @@ class DrainAdmissionTests(unittest.TestCase):
             response, elapsed = timed(lambda: create("patient"))
             self.assertEqual(response.status, 201, response.body)
             self.assertGreaterEqual(elapsed, 0.2)
-            self.assertLess(elapsed, WAIT + 1)
+            self.assertLess(admission_wait(response), WAIT)
 
             node.sample_metrics = fixed_metrics
             self.assertEqual(fleet.exec("alpha", ["true"]).exit_code, 0)
