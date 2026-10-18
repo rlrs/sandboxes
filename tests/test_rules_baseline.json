@@ -7,7 +7,7 @@
  "test_archive_upload.py": {
   "private": 2,
   "private_patch": 2,
-  "test_import": 3
+  "test_import": 2
  },
  "test_base_regeneration.py": {
   "private": 4,
@@ -79,10 +79,10 @@
   "sleep": 2
  },
  "test_chunk_store_node.py": {
-  "clock": 10,
+  "clock": 8,
   "private": 15,
   "private_patch": 1,
-  "sleep": 5,
+  "sleep": 4,
   "test_import": 4
  },
  "test_chunk_store_nydus.py": {
@@ -114,7 +114,7 @@
   "test_import": 1
  },
  "test_control_plane.py": {
-  "clock": 4,
+  "clock": 2,
   "new": 15,
   "private": 82,
   "private_patch": 13
@@ -343,12 +343,6 @@
   "private": 1,
   "private_patch": 3,
   "test_import": 1
- },
- "test_guest_agent.py": {
-  "clock": 14,
-  "private": 5,
-  "private_patch": 1,
-  "sleep": 6
  },
  "test_guest_continuity.py": {
   "private": 5,
