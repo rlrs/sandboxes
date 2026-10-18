@@ -579,11 +579,18 @@
   "private_patch": 1,
   "test_import": 1
  },
+ "test_postgres_gateway.py": {
+  "private": 2,
+  "test_import": 3
+ },
  "test_postgres_relay.py": {
   "clock": 4,
   "private": 77,
   "private_patch": 11,
   "sleep": 21
+ },
+ "test_postgres_routing.py": {
+  "test_import": 1
  },
  "test_postgres_routing_snapshot.py": {
   "private": 1,
