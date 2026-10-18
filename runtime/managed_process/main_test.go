@@ -28,8 +28,6 @@ func TestMain(m *testing.M) {
 				os.Exit(fileExitCode(err))
 			}
 			os.Exit(0)
-		case "agent":
-			err = runAgent(os.Args[2:])
 		case "supervise":
 			err = runSupervisor(os.Args[2:])
 		case "launch":

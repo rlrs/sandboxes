@@ -75,8 +75,6 @@ under [Open decisions](#open-decisions).
 - **Default the noded flags on** (`direct_node_front_door`, `direct_node_rust_create/exec/pause`,
   `direct_pause_tier`, `direct_local_model_waits`; production already runs them) and delete
   the Python create, exec and pause paths.
-- **Wire or delete the guest agent** (`agent_linux.go`, `guest_agent.py`): ~26 ms CPU per exec
-  saved versus ~800 lines removed.
 - **Retire relay-driven park and wake** once every trainer sets `guest_relay_url`.
 - **Registry disk guard on a shared drive:** replace `statvfs` percentages with a byte bound, or turn it off.
 - **One memory mode:** pick one of split, RAM or reflink-restore backing and delete the rest.

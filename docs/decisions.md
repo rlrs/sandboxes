@@ -72,8 +72,10 @@ phase at ~50% CPU. With `ucloud-noded`, 1,024 rollouts were ready in 27.6 s on t
 workers and exec reached ~1,250 starts/s per node. A one-step rewrite was rejected
 (the node code holds the crash and fencing invariants); Go lost to Rust for no GC
 pauses. Children use `posix_spawn`: a `pre_exec` hook cost 74 ms of CPU per exec.
-The in-guest exec agent was built but never wired in, since plain `runsc exec` met the
-target; if revived, the guest must dial out (`--host-uds=create` panics checkpoint).
+An in-guest exec agent (a mode of `ucloud-sandbox-init`, saving ~26 ms of CPU per exec)
+was built but never wired in, since plain `runsc exec` met the target, and was deleted on
+2026-10-18 (last present at a17eeb8). If revived, the guest must dial out
+(`--host-uds=create` panics checkpoint).
 
 Full record: `git show a04c1ad:docs/rust-node-daemon-plan.md`,
 `git show a04c1ad:docs/guest-agent-protocol.md`

@@ -7,6 +7,8 @@ from functools import lru_cache
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import sys
 import time
 from typing import Callable, TypeVar
@@ -123,3 +125,20 @@ def wait_until(condition: Callable[[], _T], timeout: float = 10.0, message: str 
             raise AssertionError(message or f"condition not met within {timeout} s")
         time.sleep(delay)
         delay = min(delay * 2, 0.05)
+
+
+def build_init_binary(directory: Path) -> Path:
+    """Build runtime/managed_process (ucloud-sandbox-init) into directory."""
+    go = shutil.which("go")
+    if go is None:
+        raise unittest.SkipTest("Go toolchain is unavailable")
+    binary = directory / "ucloud-sandbox-init"
+    build_env = {key: value for key, value in os.environ.items() if key not in {"GOARCH", "GOFLAGS", "GOOS"}}
+    build_env.update({"CGO_ENABLED": "0", "GOCACHE": str(directory / "go-build-cache"), "GOTOOLCHAIN": "local"})
+    build = subprocess.run(
+        [go, "build", "-trimpath", "-o", str(binary), "."],
+        cwd=REPO_ROOT / "runtime/managed_process", env=build_env, capture_output=True, timeout=300, check=False,
+    )
+    if build.returncode != 0:
+        raise AssertionError(build.stderr.decode(errors="replace"))
+    return binary
