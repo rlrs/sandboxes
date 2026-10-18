@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 publish = false
-description = "The UCloud sandbox node's front door (docs/node-admission-and-memory.md)"
+description = "The UCloud sandbox node's front door (docs/architecture.md)"
 
 [[bin]]
 name = "ucloud-noded"

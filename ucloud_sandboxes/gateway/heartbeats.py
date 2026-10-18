@@ -375,7 +375,7 @@ class HeartbeatIngest:
 
         A sandbox the worker parked by itself (idle, escalation) is known to
         the gateway only through inventory; its record keeps parked job reads
-        current (docs/node-admission-and-memory.md). One read finds the changed
+        current (docs/architecture.md). One read finds the changed
         records, so unchanged parks cost no writes and no per-sandbox reads.
         """
         parked = {}

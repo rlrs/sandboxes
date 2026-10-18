@@ -67,7 +67,7 @@ def build_direct_runtime_service(
 
     ``registry_foreign``: runtime/noded owns the registry file; this agent
     writes through SQLite's cross-process locking and caches its reads.
-    ``rust_creates``: noded runs creates (docs/node-admission-and-memory.md).
+    ``rust_creates``: noded runs creates (docs/architecture.md).
     """
     if rust_creates and not registry_foreign:
         raise ValueError("Rust creates require the registry owned by runtime/noded (--registry-foreign)")
@@ -272,7 +272,7 @@ def build_direct_runtime_service(
         warden=warden,
         network_manager=network_manager,
         checkpoint_store=checkpoint_store,
-        # docs/node-admission-and-memory.md: claims follow demonstrated usage. Reflink
+        # docs/architecture.md: claims follow demonstrated usage. Reflink
         # restore turns owners file-backed at their first park, so their
         # memory keeps the formula claim.
         disk_claim_policy=DiskClaimPolicy(

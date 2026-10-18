@@ -71,7 +71,7 @@ RELAY_POSTGRES_REQUIRED = (
     "For an existing SQLite journal, stop the relay and run "
     "python -m ucloud_sandboxes.shared_control import-idle-relay --sqlite-file PATH "
     "with the target --dsn-file and --deployment-id before restarting. "
-    "See docs/model-relay.md; do not delete or reset the old journal."
+    "See docs/architecture.md; do not delete or reset the old journal."
 )
 
 

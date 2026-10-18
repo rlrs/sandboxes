@@ -1,4 +1,4 @@
-"""Lifecycle of demonstrated disk claims (docs/node-admission-and-memory.md).
+"""Lifecycle of demonstrated disk claims (docs/architecture.md).
 
 A RAM-backed sandbox's memory claim is idle while it runs, is raised to its
 measured memory at park admission, settles to the checkpoint's allocated

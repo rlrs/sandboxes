@@ -1,4 +1,4 @@
-"""The agent's client for runtime/noded's internal socket (docs/node-admission-and-memory.md).
+"""The agent's client for runtime/noded's internal socket (docs/architecture.md).
 
 With ``--rust-admission`` noded serves ``<state_root>/noded/noded.sock``: mode
 0600, the node control bearer token, and only the agent's uid (SO_PEERCRED).

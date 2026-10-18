@@ -1,6 +1,6 @@
 """Managed-process job reads: held reads and the gateway's record cache.
 
-docs/node-admission-and-memory.md. Status and log reads pass ``wait_ms``,
+docs/architecture.md. Status and log reads pass ``wait_ms``,
 ``after``, ``offset`` and ``limit`` through to the worker unchanged. A read
 with ``wait_ms`` may be held there, so its worker deadline grows by the wait.
 The gateway caches the record carried by successful reads, and the exact

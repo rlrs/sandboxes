@@ -1,4 +1,4 @@
-"""Node-local model waits (pause-reclaim item 6; docs/node-admission-and-memory.md).
+"""Node-local model waits (pause-reclaim item 6; docs/architecture.md).
 
 The node sees a sandbox's plaintext HTTP/1.1 calls to a private relay
 endpoint (``sandbox.network_relays``: private IPv4 literals, or names for

@@ -1,4 +1,4 @@
-"""The agent's half of runtime/noded's pause tier (docs/node-admission-and-memory.md).
+"""The agent's half of runtime/noded's pause tier (docs/architecture.md).
 
 With ``--rust-pause-tier`` noded owns pause and thaw, idle pauses, local waits,
 paused reclaim and the escalation decision; the agent starts none of those
@@ -244,7 +244,7 @@ MANAGED_GROWTH_CALLS = {
 
 
 def parse_managed_growth_call(path: str, raw: object) -> tuple[Any, ...]:
-    """noded's managed-process growth calls (docs/node-admission-and-memory.md).
+    """noded's managed-process growth calls (docs/architecture.md).
 
     The body has exactly the route's keys; returns their values in order.
     """

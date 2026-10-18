@@ -1,4 +1,4 @@
-//! Node admission, ported from the Python agent (docs/node-admission-and-memory.md):
+//! Node admission, ported from the Python agent (docs/architecture.md):
 //! - [`ledger`]: `TransitionLedger`, the in-flight transition accounting;
 //! - [`fair`]: `FairCapacity`, the weighted FIFO slot pools on tokio;
 //! - [`growth`]: managed growth costs, intents, provisional claims and turns;

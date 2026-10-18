@@ -13,7 +13,7 @@ The driver owns everything else: sampling outside the lock, owner validation,
 requoting growth and refreshing aged forecasts before ``decide``, and waiting
 out a ``Wait`` on the admission condition with ``previous_error`` set to its
 reason. ``runtime/noded/src/admission/decide.rs`` is the Rust port, checked
-against goldens recorded from this module (docs/node-admission-and-memory.md, 3c.1).
+against goldens recorded from this module (docs/architecture.md, 3c.1).
 
 CPU is not part of node admission (decision G): existing sandboxes share CPU
 through their cgroups, and a sampled spike must not send a queued transition

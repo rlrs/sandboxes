@@ -781,7 +781,7 @@ class SandboxRecord:
     operation_id: str
     spec_hash: str
     # A parked managed-process sandbox's exact job record at park
-    # (docs/node-admission-and-memory.md); None otherwise.
+    # (docs/architecture.md); None otherwise.
     managed_process: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:

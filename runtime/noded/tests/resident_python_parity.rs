@@ -1,4 +1,4 @@
-//! Phase 3b's gate (docs/node-admission-and-memory.md): the daemon's
+//! Phase 3b's gate (docs/architecture.md): the daemon's
 //! resident sampler against the agent's own (`ucloud_sandboxes.resident_memory.
 //! ResidentMemorySampler`, the oracle) on the same fake cgroup trees, and the
 //! agent's reader of the daemon's `resident.json` (`PublishedResidentMemory`).

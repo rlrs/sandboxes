@@ -1,6 +1,6 @@
 """Gateway job reads: held reads, their deadline and the record cache.
 
-docs/node-admission-and-memory.md.
+docs/architecture.md.
 """
 
 from contextlib import ExitStack, contextmanager

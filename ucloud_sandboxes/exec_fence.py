@@ -1,6 +1,6 @@
 """The exec fence the agent shares with runtime/noded through the kernel (phase 2a).
 
-docs/node-admission-and-memory.md. With ``--rust-execs`` noded runs execs
+docs/architecture.md. With ``--rust-execs`` noded runs execs
 on running, unpaused sandboxes without asking the agent, so the agent's
 in-process lifecycle coordinator cannot see them. Two flock files per sandbox
 id (the coordinator is keyed by id, not generation), in the Warden's lock

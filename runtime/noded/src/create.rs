@@ -4,7 +4,7 @@
 //! epochs), and runs everything in between itself.
 //!
 //! Where the node runs its own admission (`--rust-admission`, step 3c.4 of
-//! docs/node-admission-and-memory.md), the daemon takes the startup slot and the
+//! docs/architecture.md), the daemon takes the startup slot and the
 //! capacity claim in process first and hands the agent its token
 //! (`"admitted"`): the agent then holds only the lifecycle lock and the
 //! layout. The claim is released after finish returns, so the heartbeat sees

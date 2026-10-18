@@ -47,7 +47,7 @@ def managed_state_mount(bundle: Path) -> dict[str, Any]:
     The source is the bundle's own ``rootfs/.ucloud-managed``, so guest writes
     land in the sandbox's host overlay upper, which park seals, moves ship,
     delete removes and commit drops, and the node reads them without entering
-    the guest (docs/node-admission-and-memory.md).
+    the guest (docs/architecture.md).
     """
     if not bundle.is_absolute() or "\0" in str(bundle):
         raise ValueError("managed-process state mount needs an absolute bundle")
@@ -401,7 +401,7 @@ def parse_control_response(payload: bytes) -> dict[str, Any]:
     return raw
 
 
-# Host-side readers of the bound state (docs/node-admission-and-memory.md).
+# Host-side readers of the bound state (docs/architecture.md).
 MAX_STATE_BYTES = 64 * 1024
 # The parked incarnation's exact record, beside the bundle's config.json.
 PARKED_RECORD_NAME = ".ucloud-managed-process.json"

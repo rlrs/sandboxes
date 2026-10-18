@@ -1,4 +1,4 @@
-"""Phase 3a of the Rust node daemon, the agent's half (docs/node-admission-and-memory.md).
+"""Phase 3a of the Rust node daemon, the agent's half (docs/architecture.md).
 
 runtime/noded owns the pause tier with --rust-pause-tier: the agent starts none
 of its loops, fences its own ops with A shared, marks its thaws on the marker's

@@ -251,7 +251,7 @@ class Placement:
                 load if busy else 0.0,
                 # Below the band, prefer a node that already holds the image,
                 # then the fewest missing layers: every avoided pull saves
-                # time and image-store space (docs/scaling-policy.md).
+                # time and image-store space (docs/architecture.md).
                 (0 if heartbeat.node_id in image_node_ids else
                  1 if heartbeat.node_id in inflight_image_node_ids else 2),
                 _cold_image_placement_cost_for_state(

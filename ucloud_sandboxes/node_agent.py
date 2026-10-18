@@ -709,7 +709,7 @@ class NodeAgentHandler(BuildContextHttpHandler):
             self._write_json({"state": record.state})
 
     def _internal_managed_route(self, path: str) -> None:
-        """runtime/noded's managed-process growth calls (docs/node-admission-and-memory.md).
+        """runtime/noded's managed-process growth calls (docs/architecture.md).
 
         noded starts, signals and reads managed processes itself; the growth
         ledger stays here. launch: 200 {"job_id"} (empty for an imported
@@ -2224,7 +2224,7 @@ def build_direct_node_agent_server(
     ``rust_pause_tier``: noded owns the pause tier and local waits; this
     agent runs neither (pause_handoff).
     ``rust_admission``: node admission moves to noded
-    (docs/node-admission-and-memory.md): this agent admits through noded's internal
+    (docs/architecture.md): this agent admits through noded's internal
     socket (admission_backend.NodedAdmission, step 3c.3), says hello there
     with the claims it holds, and reads noded's resident samples instead of
     sampling (3b).

@@ -1,6 +1,6 @@
 """Property traces for node admission's FIFO slots and transition ledger.
 
-docs/node-admission-and-memory.md: C5.3 carries FairCapacity and
+docs/architecture.md: C5.3 carries FairCapacity and
 TransitionLedger over to ucloud-noded unchanged, so their invariants are
 stated here as properties first. The harnesses below also record the Python
 goldens the Rust port replays (runtime/noded/src/admission/testdata/goldens.py).

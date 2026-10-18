@@ -187,7 +187,7 @@ class SandboxInventoryEntry:
     storage_dependency: dict[str, Any] | None = None
     memory_observation: SandboxMemoryObservation | None = None
     # A parked managed-process sandbox's exact job record, as the job status
-    # body (docs/node-admission-and-memory.md). The gateway validates and fences it.
+    # body (docs/architecture.md). The gateway validates and fences it.
     managed_process: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
@@ -531,7 +531,7 @@ class NodeRuntimeMetrics:
     storage_device_pool_new_acquires: int = 0
     storage_device_pool_releases: int = 0
     storage_device_pool_discards: int = 0
-    # Dynamic disk claims (docs/node-admission-and-memory.md). A zero grant means new
+    # Dynamic disk claims (docs/architecture.md). A zero grant means new
     # workspaces are full size; a zero idle claim means the formula applies.
     storage_workspace_grant_mb: int = 0
     storage_memory_idle_claim_mb: int = 0

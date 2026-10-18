@@ -1016,7 +1016,7 @@ pub const MEMORY_DIRECTORY_ANNOTATION: &str = "dev.gvisor.internal.application-m
 /// The managed supervisor's state directory in the guest (its `--state-dir`).
 pub const MANAGED_STATE_DESTINATION: &str = "/.ucloud-managed";
 /// The same directory's name below the bundle's rootfs on the host: the bind
-/// mount's source (docs/node-admission-and-memory.md).
+/// mount's source (docs/architecture.md).
 pub const MANAGED_STATE_NAME: &str = ".ucloud-managed";
 const MANAGED_STATE_OPTIONS: [&str; 5] = ["rbind", "rw", "nosuid", "nodev", "noexec"];
 

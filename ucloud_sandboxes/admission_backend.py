@@ -1,4 +1,4 @@
-"""Node admission behind one interface (docs/node-admission-and-memory.md
+"""Node admission behind one interface (docs/architecture.md
 
 ``DirectSandboxService`` admits through ``service.admission``:
 

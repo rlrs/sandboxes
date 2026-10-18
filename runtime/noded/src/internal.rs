@@ -1,5 +1,5 @@
 //! The agent's way in: noded's internal Unix socket (`--internal-unix`,
-//! docs/node-admission-and-memory.md), the reverse of [`crate::agent_rpc`].
+//! docs/architecture.md), the reverse of [`crate::agent_rpc`].
 //!
 //! The node's TCP port is reachable from outside, so these routes never live
 //! there. The socket is mode 0600 in a 0700 directory; a connection from

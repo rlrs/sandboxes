@@ -122,7 +122,7 @@ REPORT_STATUSES = frozenset({"running", "ok", "failed", "interrupted"})
 SUMMARY_KEYS = ("n", "p50", "p95", "p99", "max")
 TRANSIENT_STATUSES = frozenset({409, 429, 502, 503, 504})
 # Client-level SDK methods that would expose park/wake. SDK 0.4.x has none:
-# the gateway routes need the operator control token (docs/api-reference.md).
+# the gateway routes need the operator control token (docs/api.md).
 PARK_WAKE_METHOD_PAIRS = (
     ("park_sandbox", "wake_sandbox"),
     ("pause_sandbox", "resume_sandbox"),
@@ -2269,7 +2269,7 @@ def scenario_park(run: LiveRun) -> None:
         run.report["metrics"]["pause_resume"] = unsupported_section(
             f"ucloud_sandboxes_sdk {getattr(run.sdk, '__version__', '?')} exposes no "
             "park/wake (pause/resume) method; the gateway park/wake routes require the "
-            "operator control token (docs/api-reference.md) and are exercised by "
+            "operator control token (docs/api.md) and are exercised by "
             "scripts/live_park_resume_benchmark.py",
             sdk_methods_checked=[list(pair) for pair in PARK_WAKE_METHOD_PAIRS],
             bytes_written=None, bytes_written_source=PAUSE_BYTES_SOURCE)
@@ -2842,7 +2842,7 @@ def run_live(args: argparse.Namespace, *, sdk: Any = None, client: Any = None,
         operator = OperatorApi(url, read_secret(args.operator_token_file),
                                args.request_timeout_seconds)
     if getattr(args, "think_mode", None) == "relay":
-        # The Hetzner ingress publishes the relay under <gateway>/relay (docs/deployment.md).
+        # The Hetzner ingress publishes the relay under <gateway>/relay (docs/operations.md).
         args.relay_url = (args.relay_url or os.environ.get("UCLOUD_RELAY_URL", "").strip()
                           or gateway_origin(url) + "/relay")
         args.sandbox_relay_url = args.sandbox_relay_url or args.relay_url

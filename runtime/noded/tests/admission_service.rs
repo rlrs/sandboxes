@@ -1,4 +1,4 @@
-//! The node admission service on the internal socket (docs/node-admission-and-memory.md
+//! The node admission service on the internal socket (docs/architecture.md
 //! §3.3-§3.5, step 3c.2), against a real registry and scripted metrics:
 //! recovery, session churn and reassert, the drain gate, cancels, a client
 //! that goes away, the publication gate, the snapshot, managed growth, a

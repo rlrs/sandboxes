@@ -3,7 +3,7 @@
 
 Run as root with the production runsc and sandbox init (from a sandbox node package):
   sudo python3 managed_host_mount.py RUNSC UCLOUD_SANDBOX_INIT
-docs/node-admission-and-memory.md records the results. Questions:
+docs/architecture.md records the results. Questions:
   Q1 guest writes (state.json renames, log appends) are visible on the host at once, and inotify fires;
   Q2 host reads during `runsc pause` need nothing from the guest;
   Q3 checkpoint --hibernate / delete / restore with the mount (and control.sock in it, host-uds none);

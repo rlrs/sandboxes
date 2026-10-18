@@ -147,7 +147,7 @@ fn main() -> ExitCode {
         return usage("--listen and --upstream-unix are required");
     };
     // The agent's internal socket serves admission, which needs the node the
-    // create, exec and pause fronts own (docs/node-admission-and-memory.md).
+    // create, exec and pause fronts own (docs/architecture.md).
     if rust_admission && !(rust_create && rust_exec && rust_pause) {
         return usage("--rust-admission needs --rust-create, --rust-exec and --rust-pause");
     }

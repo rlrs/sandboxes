@@ -1,4 +1,4 @@
-//! The agent's internal socket (`--internal-unix`, docs/node-admission-and-memory.md
+//! The agent's internal socket (`--internal-unix`, docs/architecture.md
 //! §3.3, step 3c.0): the handshake, its refusals, the socket's permissions,
 //! and the agent's own client (ucloud_sandboxes/noded_client.py) against it.
 

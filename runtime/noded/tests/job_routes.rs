@@ -1,4 +1,4 @@
-//! The job routes (docs/node-admission-and-memory.md) through the front door,
+//! The job routes (docs/architecture.md) through the front door,
 //! against a fake agent on its Unix socket and a fake node: reads from the
 //! supervisor's files, held waits, refusals, forwarding, and start and signal
 //! through the agent's growth endpoints.

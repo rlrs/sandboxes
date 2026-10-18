@@ -4698,7 +4698,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         """Hand a waiting job read to the asynchronous response owner.
 
         The worker may hold it for up to wait_ms, so it must not hold a handler
-        thread (docs/node-admission-and-memory.md). Its record is cached off the
+        thread (docs/architecture.md). Its record is cached off the
         I/O loop before the reply, as the synchronous path does.
         """
         if self.async_responses is None or (

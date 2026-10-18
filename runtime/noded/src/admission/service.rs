@@ -1,4 +1,4 @@
-//! The node admission service (docs/node-admission-and-memory.md, step 3c.2):
+//! The node admission service (docs/architecture.md, step 3c.2):
 //! the 3c.1 core driven as `DirectSandboxService` drives it.
 //!
 //! One [`Ledger`] and the managed [`Growth`] beside it sit under one lock

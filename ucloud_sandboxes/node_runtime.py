@@ -380,7 +380,7 @@ class DirectNodeRuntime:
                 # Otherwise noded's own ledger is the reclaim demand.
                 self._demand_publisher = DemandPublisher(service, noded_directory(service) / AGENT_DEMAND_FILE)
             self._noded_status = NodedStatus(noded_directory(service) / STATUS_FILE)
-        # --rust-admission, phase 3b so far (docs/node-admission-and-memory.md): noded samples managed sandboxes; every resident reader here
+        # --rust-admission, phase 3b so far (docs/architecture.md): noded samples managed sandboxes; every resident reader here
         # and the growth forecasts read its resident.json instead.
         self.rust_admission = bool(rust_admission)
         if rust_admission:
@@ -461,7 +461,7 @@ class DirectNodeRuntime:
         self._idle_parking_thread.start()
 
     def _start_local_waits(self) -> None:
-        """Node-local model waits (docs/node-admission-and-memory.md): pause tier only."""
+        """Node-local model waits (docs/architecture.md): pause tier only."""
         if self._local_waits is not None or self._paused is None:
             return
         network = getattr(self.service.provisioner, "network_manager", None)
@@ -1474,7 +1474,7 @@ class DirectNodeRuntime:
         used = ResourceQuantity()
         reserved = ResourceQuantity()
         # The registry's per-registration claims are the admission authority:
-        # dynamic claims follow demonstrated usage (docs/node-admission-and-memory.md) and
+        # dynamic claims follow demonstrated usage (docs/architecture.md) and
         # already exclude a published workspace.
         claims = self._registry.disk_claims_mb()
         for item in inventory.items:

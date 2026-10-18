@@ -1,4 +1,4 @@
-"""Phase 2a of the Rust node daemon, the agent's half (docs/node-admission-and-memory.md).
+"""Phase 2a of the Rust node daemon, the agent's half (docs/architecture.md).
 
 runtime/noded runs execs on running sandboxes without asking the agent. The
 agent's lifecycle transitions fence them through two flock files per sandbox

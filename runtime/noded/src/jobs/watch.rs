@@ -1,5 +1,5 @@
 //! One inotify instance for the daemon's held job reads
-//! (docs/node-admission-and-memory.md). A state directory is watched
+//! (docs/architecture.md). A state directory is watched
 //! only while a read waits on it; every event for it wakes all its waiters,
 //! which re-read the files; its watch goes when its last waiter does.
 //!

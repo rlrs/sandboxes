@@ -1,4 +1,4 @@
-//! ucloud-noded: the sandbox node's front door (phase 0 of docs/node-admission-and-memory.md).
+//! ucloud-noded: the sandbox node's front door (phase 0 of docs/architecture.md).
 //!
 //! It owns the node's TCP port and forwards every request to the Python node
 //! agent on its Unix socket, streaming both bodies. Each client connection gets
@@ -73,7 +73,7 @@ impl Config {
     pub fn new(upstream: PathBuf) -> Self {
         Config {
             upstream,
-            // Held job reads (docs/node-admission-and-memory.md) are a few thousand.
+            // Held job reads (docs/architecture.md) are a few thousand.
             max_connections: 16 * 1024,
             header_read_timeout: Duration::from_secs(30),
             shutdown_grace: Duration::from_secs(20),
