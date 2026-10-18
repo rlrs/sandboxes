@@ -119,18 +119,22 @@ class ChunkStoreNodeTests(unittest.TestCase):
         for key in (hot, cold):
             store.get(key, 0, 4096)
         slow, preadv, faulted = cold.split("/")[-1].removesuffix(".pack"), chunk_store_node.os.preadv, []
+        reading, done = threading.Event(), threading.Event()
 
         def disk(fd, buffers, offset, *flags):
             if slow in chunk_store_node.os.readlink(f"/proc/self/fd/{fd}"):
                 faulted.append(threading.current_thread().name)
-                time.sleep(1.0)
+                reading.set()
+                done.wait(10)
             return preadv(fd, buffers, offset, *flags)
         with mock.patch.object(chunk_store_node.os, "preadv", disk), ThreadPoolExecutor(1) as pool:
             pending = pool.submit(store.get, cold, 0, 4096)
-            time.sleep(.2)
-            started = time.monotonic()
+            self.assertTrue(reading.wait(5))
+            # Served while the cold read is still held on its read thread.
             self.assertEqual(store.get(hot, 100, 4096), self.packs[hot][100:4196])
-            self.assertLess(time.monotonic() - started, .5)
+            self.assertFalse(pending.done())
+            time.sleep(1.0)  # A read slow enough to show in the metrics below.
+            done.set()
             self.assertEqual(pending.result(), self.packs[cold][:4096])
         self.assertTrue(faulted and all(name.startswith("chunk-store-read") for name in faulted), faulted)
         serve = store.metrics()["serve"]  # Where served reads wait: the slow one is a read, not a queue.
