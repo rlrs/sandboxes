@@ -214,10 +214,16 @@ capabilities. Line-count budgets were tried and dropped (2026-10-06).
 Full record: `git show a04c1ad:docs/greenfield-simplification-review.md`,
 `git show a04c1ad:docs/simplification-roadmap.md` ("Invariants")
 
-### Durable logic is tested with state machines and real dependencies
+### Tests check decisions, contracts and scenarios, not implementation or time
 
 Crash and fencing behaviour has state-machine tests against real PostgreSQL, HTTP,
-registry and S3 servers; exact SQL, call counts and timing are not asserted.
+registry and S3 servers; exact SQL, call counts and timing are not asserted. On
+2026-10-18 the suite (~3,100 Python tests, ~100k lines) was found to patch privates
+~1,000 times, test behaviours at up to five layers, and synchronize with sleeps;
+since CI was fixed, about one run in five failed on a timing race. Rather than
+inject a clock or drain hooks into production code, tests now test time-dependent
+logic through pure decision functions with an explicit `now`, and wait for end
+states (`tests.support.wait_until`). The rules are in AGENTS.md.
 
 Full record: `git show a04c1ad:docs/testing-review-and-remediation.md`,
 `git show a04c1ad:docs/reviews/relay-postgres-retirement-2026-09-23.md`

@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
+from typing import Callable, TypeVar
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -100,3 +102,24 @@ def skip_module(module: str, reason: str):
 
     return load_tests
 
+
+_T = TypeVar("_T")
+
+
+def wait_until(condition: Callable[[], _T], timeout: float = 10.0, message: str = "") -> _T:
+    """Return condition()'s first truthy value, polling until timeout seconds pass.
+
+    Wait for the end state a test asserts on, not for an intermediate signal:
+    background work may still be writing after an event fires. A passing test
+    returns as soon as the state holds; only a broken one waits the full timeout.
+    """
+    deadline = time.monotonic() + timeout
+    delay = 0.001
+    while True:
+        value = condition()
+        if value:
+            return value
+        if time.monotonic() >= deadline:
+            raise AssertionError(message or f"condition not met within {timeout} s")
+        time.sleep(delay)
+        delay = min(delay * 2, 0.05)

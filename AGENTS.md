@@ -37,10 +37,45 @@ Test modules declare `TEST_TIER` (`unit` by default, `contract`, `linux`, `live`
 PostgreSQL tests need `UCLOUD_TEST_POSTGRES_DSN`; `linux` tests need root and
 runsc; `live` tests need a deployment.
 
+## Tests
+
+Write tests of four kinds:
+
+- **Decisions.** Logic lives in functions that take state and `now` and return a
+  decision (`admission_decision.decide`, `placement_choice`). Test them with plain
+  inputs, and with hypothesis for invariants. Time-dependent behaviour is tested
+  here, by passing different `now` values, not by waiting.
+- **Contracts.** One suite per boundary with a real dependency (PostgreSQL routing
+  and relay, registry, S3, the node API), written once and run against each
+  implementation. Python and Rust agree through shared recorded traces, not copied
+  tests.
+- **Scenarios.** Behaviour through public routes on the LocalFleet harness
+  (`tests/harness/`), asserting what a client or operator would observe.
+- **Real runtime.** A few scenarios with real runsc, ublk and EROFS, run against a
+  staging deployment before a release.
+
+Rules:
+
+- Test a behaviour once, at the lowest layer that can show it.
+- Wait for end states with `tests.support.wait_until(condition)`. Don't sleep to
+  synchronize, and don't assert on elapsed time.
+- Don't patch, call or assign private members (`_name`), and don't build objects
+  with `object.__new__`. If logic is only reachable that way, move it into a
+  function that can be called directly.
+- Assert on results (responses, stored state, files), not on calls to mocks, log
+  lines, or error text that isn't part of an API.
+- Shared fixtures live in `tests/support.py` and `tests/harness/`; don't import
+  other test modules.
+- A flaky test is fixed or deleted, never retried.
+- Don't add tests for code that is about to be deleted, or for `scripts/bench/`.
+
+Much of the existing suite predates these rules. Bring a test in line when you
+change it; don't add more of the old kind.
+
 ## Changes
 
-- Tests come with behaviour changes. Rust ports of Python logic are pinned by golden
-  files; regenerate them with the script next to them.
+- Behaviour changes come with tests (see above). Rust ports of Python logic are
+  pinned by golden files; regenerate them with the script next to them.
 - Risky behaviour ships behind a config flag that defaults off. Once production runs
   it and there's no way back, make it the default and delete the old path.
 - Update the doc that describes what you changed; keep docs short. Open work goes in
