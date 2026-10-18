@@ -6,7 +6,7 @@ queues and remote wake placement. The evidence does not justify blaming
 Python execution speed or asyncio, or replacing the implementation language.
 No runtime/configuration change was made during this diagnosis.
 
-[Retained trace, heartbeat, migration and registry evidence](../benchmarks/prod-publication-bottleneck-2026-09-19.json).
+Retained trace, heartbeat, migration and registry evidence.
 
 ## Measured critical path
 

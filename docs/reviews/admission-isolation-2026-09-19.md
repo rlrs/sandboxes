@@ -40,7 +40,7 @@ Verifiers update is required for these server changes.
 
 ### 64 large resident agents
 
-[Raw qualification evidence](../benchmarks/admission-large-64-2026-09-19.json).
+Raw qualification evidence.
 Run `admission-large-64-b9fc7722` used 64 concurrently created sandboxes,
 512 MiB of random resident memory and a 128 MiB writable-disk file per agent,
 on two workers running 0.5.48. The released asynchronous SDK 0.4.23 used a

@@ -6,7 +6,7 @@ Docker-in-Docker, patched gVisor, and storage-native hibernation tests. The
 current CPX62 golden-image source independently passed the host suite on Ubuntu
 26.04 and kernel 7.0, including ublk, XFS project quotas, Docker-in-Docker, and
 gVisor systrap. The original performance evidence is recorded in
-[`benchmarks/hetzner-qualification-2026-08-12.json`](benchmarks/hetzner-qualification-2026-08-12.json).
+`benchmarks/hetzner-qualification-2026-08-12.json`.
 
 The repository now has a built-in `hetzner` compute provider for autoscaled
 sandbox and builder nodes. It supports system images or snapshot IDs, strict
@@ -442,7 +442,7 @@ it reported a running VM with a private address, and SSH readiness remained
 the dominant remainder. The canary completed a real registry-pushed image
 build in 9.349 seconds from a cold Docker cache and a following warm build in
 2.289 seconds. Evidence is in
-[`benchmarks/hetzner-builder-otlp-2026-08-13.json`](benchmarks/hetzner-builder-otlp-2026-08-13.json).
+`benchmarks/hetzner-builder-otlp-2026-08-13.json`.
 
 The promoted snapshot canary was confirmed through the Hetzner API to use
 image `419603017`. It completed two full SDK-driven park, S3 detach, and wake
@@ -467,7 +467,7 @@ volume, imported it only from its Registry descriptor in 0.334 seconds, and
 woke it in 0.272 seconds with the sentinel intact. Cleanup returned hard
 reservations, published local volumes, and active ublk devices to zero with no
 storage errors. Evidence is in
-[`benchmarks/hetzner-snapshot-release-v5-2026-08-12.json`](benchmarks/hetzner-snapshot-release-v5-2026-08-12.json).
+`benchmarks/hetzner-snapshot-release-v5-2026-08-12.json`.
 
 A clean-pool `0.4.1` canary confirmed through the Hetzner API that its new
 CPX62 used snapshot `419550929`. The initializer selected the snapshot-baked
@@ -479,7 +479,7 @@ managed process across park, durable S3 detach, and wake. A following
 three-cycle run had median park, detach, and wake times of 247 ms, 897 ms, and
 2.703 seconds, with exact counter/process checks and zero retries. Evidence is
 in
-[`benchmarks/hetzner-object-storage-snapshots-2026-08-13.json`](benchmarks/hetzner-object-storage-snapshots-2026-08-13.json).
+`benchmarks/hetzner-object-storage-snapshots-2026-08-13.json`.
 
 In the original public-network validation canary, SSH plus cloud-init readiness
 arrived about 35 seconds after the API create request. A production-shaped
@@ -554,7 +554,7 @@ are specified in
 [`object-storage-snapshots.md`](object-storage-snapshots.md). The production
 configuration now uses the `sandboxes` Object Storage bucket in `hel1`; the
 live park/detach/cold-wake and compaction evidence is recorded in
-[`benchmarks/hetzner-object-storage-snapshots-2026-08-13.json`](benchmarks/hetzner-object-storage-snapshots-2026-08-13.json).
+`benchmarks/hetzner-object-storage-snapshots-2026-08-13.json`.
 The daily collector records the first sweep at which an object has no durable
 route reference and requires that marker to remain continuously unreferenced
 for seven days. Object creation time is not the retention clock, and a route
@@ -616,7 +616,7 @@ but the compute provider does not choose the storage policy.
 The production OCI registry was migrated to the native S3 driver on 2026-08-13.
 The verified 16-object copy, presigned redirect read, offline GC, and read-only
 filesystem fallback evidence is recorded in
-[`benchmarks/hetzner-registry-s3-2026-08-13.json`](benchmarks/hetzner-registry-s3-2026-08-13.json).
+`benchmarks/hetzner-registry-s3-2026-08-13.json`.
 The old Volume tree remains unchanged as a rollback source; it is no longer on
 the live registry data path.
 
@@ -692,7 +692,7 @@ process identity, and advancing checksum-protected filesystem state. Snapshot
 chains grew by one real park delta per cycle instead of one real delta plus an
 empty import delta. Attached wake remained about 0.56 seconds. Evidence and
 the AgentEnv portability review are in
-[`benchmarks/hetzner-park-wake-optimization-2026-08-13.json`](benchmarks/hetzner-park-wake-optimization-2026-08-13.json).
+`benchmarks/hetzner-park-wake-optimization-2026-08-13.json`.
 
 AgentEnv main was also reviewed through commit
 `f8f725e2b962a0bae3eadcd426c7e1ecf243b34e`. The production v0.1.2 pin already
@@ -725,7 +725,7 @@ range requests and served 201.8 MB across the entire publication, remote-wake,
 compaction, and verification run. This proves the streaming mixed
 remote/local path and cleanup behavior; it does not predict cold multi-GiB
 compaction time or concurrent Registry-Volume throughput. Evidence is in
-[`benchmarks/hetzner-agentenv-compaction-2026-08-12.json`](benchmarks/hetzner-agentenv-compaction-2026-08-12.json).
+`benchmarks/hetzner-agentenv-compaction-2026-08-12.json`.
 
 The previous 57.2% ublk/native result is not a production verdict: that test
 used a buffered loop-device baseline and mismatched queue depth. Re-run the
@@ -778,12 +778,12 @@ first publication produced the 2.488-second detach maximum. Both workers ended
 with empty complete inventories, zero reservations, zero active ublk devices,
 and zero storage errors. The 747 MB registry blob tree included this soak and
 the preceding diagnostic canaries. Evidence is in
-[`benchmarks/hetzner-detached-wake-volume-2026-08-12.json`](benchmarks/hetzner-detached-wake-volume-2026-08-12.json).
+`benchmarks/hetzner-detached-wake-volume-2026-08-12.json`.
 
 After all runs, both workers reported zero sandboxes, zero resource
 reservations, zero active ublk devices, and zero storage errors. The complete
 machine-readable evidence is in
-[`benchmarks/hetzner-agentic-e2e-2026-08-12.json`](benchmarks/hetzner-agentic-e2e-2026-08-12.json).
+`benchmarks/hetzner-agentic-e2e-2026-08-12.json`.
 
 ## Chunk store node (C2.6)
 

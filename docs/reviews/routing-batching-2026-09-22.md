@@ -6,7 +6,7 @@ and benchmarks ran in the isolated Linux checkout on `rasmus-dev`.
 
 ## Problem and changes
 
-The saved [gateway profile](../benchmarks/relay-load-2026-09-22/gateway-profile23.json)
+The saved gateway profile
 recorded 4,375 program-transition transactions with 76.2 seconds of aggregate
 writer wait, versus 2.5 seconds holding the transaction body. Routing remains
 SQLite after the relay authority's PostgreSQL cutover.
@@ -32,7 +32,7 @@ optimization targets concurrent traffic.
 
 ## Linux measurements
 
-The [benchmark](../benchmarks/routing-batching-2026-09-22/linux-benchmark.json)
+The benchmark
 compares the prior one-commit-per-operation implementation against batching using
 512 actual RoutingStore exec-route writes and 32 submitting threads:
 
@@ -56,7 +56,7 @@ recovery, not physical power loss.
 
 A directory-fsync batching prototype for hibernation JSON journals was rejected.
 It reduced flush count but worsened elapsed time and p95 in both tested cases.
-The [trial results](../benchmarks/routing-batching-2026-09-22/rejected-directory-batching-trial.json)
+The trial results
 are retained for comparison; that implementation is not included. Hibernation
 journal format, fsync ordering and synchronous checkpoint cleanup are unchanged.
 
@@ -69,7 +69,7 @@ The new regressions cover shared writers across separate stores, committed-only
 reads during a pending batch, conflict isolation, durability acknowledgment,
 stale/missing sandbox generation checks, database replacement, and fork rejection.
 The existing batch suite covers failed commits and SQLite-level transaction aborts.
-Exact tested [source hashes](../benchmarks/routing-batching-2026-09-22/sources.json)
+Exact tested source hashes
 and the final Linux suite output are retained beside the benchmark.
 
 Reproduce without production access:

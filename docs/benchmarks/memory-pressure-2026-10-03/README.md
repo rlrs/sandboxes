@@ -68,8 +68,8 @@ happens when a node has more rollouts than memory, under each policy?
 | memory PSI full, highest avg10 | 0.00 | 0.65 |
 | agents lost | 0 | 0 |
 
-Raw evidence: [raw/today.json.gz](raw/today.json.gz) and
-[raw/pause.json.gz](raw/pause.json.gz).
+Raw evidence: raw/today.json.gz and
+raw/pause.json.gz.
 
 **Wake latency** (the answer arrives, until the node lets the sandbox run), by
 what the wait turned into. The values are p50 / p95 / max in seconds:

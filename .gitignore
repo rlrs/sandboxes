@@ -8,6 +8,9 @@ wheels/
 *.egg-info
 ucloud-sandboxes-sdk/
 
+# Rust build output (hatchling reads only this file, not runtime/noded/.gitignore)
+target/
+
 # Virtual environments
 .venv
 
@@ -16,3 +19,8 @@ ucloud-sandboxes-sdk/
 .hetzner/
 logs/
 inspect-logs/
+
+# Local agent and editor state
+.claude/
+.agents/
+.codex/

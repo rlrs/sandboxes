@@ -42,11 +42,11 @@ with no remote hosts.
 30 vCPUs, 78 GB RAM, Linux 5.15, CPython 3.10.13 (uv). Clients, servers and
 the S3 stand-in are separate processes on loopback, so these numbers bound the
 node's software, not a Hetzner NIC or the private network (not measured).
-[`bench_chunk_store_node.py`](bench_chunk_store_node.py) runs both parts;
-[`threaded_baseline.py`](threaded_baseline.py) is the first HTTP layer, kept
+`bench_chunk_store_node.py` runs both parts;
+`threaded_baseline.py` is the first HTTP layer, kept
 for comparison.
 
-### Serving ([`serve.json`](serve.json))
+### Serving (`serve.json`)
 
 - 64 objects of 64 MiB (4 GiB), filled through the warm API from a stand-in
   with no latency, then read once so they sit in page cache.
@@ -79,7 +79,7 @@ for comparison.
   `_thread.start_new_thread` halved it; a 1 ms GIL switch interval did not
   help and cost a third of the throughput.
 
-### Filling ([`fill.json`](fill.json), [`fill-r2.json`](fill-r2.json), [`fill-r3.json`](fill-r3.json); S3 slots: `fill-slots-r{1,2,3}.json`)
+### Filling (`fill.json`, `fill-r2.json`, `fill-r3.json`; S3 slots: `fill-slots-r{1,2,3}.json`)
 
 **Workload:** C2.6's budget case, 64 tasks × 8 rollouts on 3 workers. The 64
 images come in 8 foundation groups of 8; a foundation has 10 packs of 32 MiB
@@ -138,7 +138,7 @@ in ms):
 - With the foundations warmed, a window p50 of about 140 ms is mostly the
   benchmark: a hit takes milliseconds (see Serving), but 192 reader threads
   in one Python process, times the 5× unscaling, inflate it.
-- [`fill-elapsed-hedging.json`](fill-elapsed-hedging.json) is the first run,
+- `fill-elapsed-hedging.json` is the first run,
   with hedging on elapsed time (`3 × median TTFB + size / 32 MiB/s`).
 
 ## Reproduce

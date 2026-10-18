@@ -3,8 +3,8 @@
 Qualified on a disposable Hetzner CPX42 cloned from the saved sandbox snapshot,
 with no production workers or gateway running. Linux 7.0.0-30-generic,
 erofs-utils 1.9, Docker 29.8.1 (overlay2), Python 3.14.4. Exact runtime and source
-hashes are in [qualification.json](qualification.json) and
-[host-and-source.txt](host-and-source.txt).
+hashes are in qualification.json and
+host-and-source.txt.
 
 Run:
 
@@ -63,7 +63,7 @@ successful image-format qualification.
 
 Full Linux suite: **2,444 tests ran successfully, 348 skipped** (161.9 s).
 The focused environment/retention suite ran 81 tests successfully, one skipped.
-See [tests.json](tests.json) for commands and fixture setup. The macOS run had
+See tests.json for commands and fixture setup. The macOS run had
 two platform-specific failures (TCP_NODELAY value and sparse-file accounting);
 both pass on Linux. No PostgreSQL service or live fleet was used by this run;
 backend-gated tests retain their normal skips.

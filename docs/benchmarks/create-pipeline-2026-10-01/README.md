@@ -40,7 +40,7 @@ The host network was not touched.
 State was on ext4 (one fsync is about 10 ms here) or on tmpfs, where fsync is
 free and only CPU, subprocess and kernel work remain. Values are the medians,
 over three interleaved runs, of each run's p50 / p99 in ms.
-[`summary.json`](summary.json) has every phase.
+`summary.json` has every phase.
 
 ## Results
 

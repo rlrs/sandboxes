@@ -59,7 +59,7 @@ overlapping-query isolation and coalescing, error cleanup, deletion/generation
 reuse, inventory absence, quarantine, clock expiry, detached portability proof,
 corrupt lifecycle rejection, child restart and pre-IPC size validation.
 
-Artifacts: [SQLite 500](fleet-status-500-sqlite.json),
-[SQLite 1000](fleet-status-1000-sqlite.json),
-[PostgreSQL 500](fleet-status-500-postgres.json),
-[PostgreSQL 1000](fleet-status-1000-postgres.json).
+Artifacts: SQLite 500,
+SQLite 1000,
+PostgreSQL 500,
+PostgreSQL 1000.

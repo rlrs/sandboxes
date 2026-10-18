@@ -83,7 +83,7 @@ The verdict above is the driver's, unedited. What each miss means:
 
   Without traces (demand mode) the wall time was 19.0 s, with create medians of 9.1 s.
   Attach is serial by default (`attach_concurrency=1`, 0.8.4). A rerun on the same
-  worker with `--attach-concurrency 8` ([raw/bench-burst-attach8.json](raw/bench-burst-attach8.json))
+  worker with `--attach-concurrency 8` (raw/bench-burst-attach8.json)
   made creates a little faster, maximum 6.3 s. First commands got much slower, though
   (`import sys` median 3.3 s), and the wall time rose to 11.2 s. That is the 0.8.3
   regression again, so serial attach stays the default.
@@ -94,7 +94,7 @@ The verdict above is the driver's, unedited. What each miss means:
   that baseline before it counts as a regression. S11's other inputs still apply:
   concurrent attach without read contention, and a read path out of Python (C2.1).
 - **rollback_10 (not run in the verdict):** the rollback step ran, but it failed, so
-  the driver never recorded its results ([raw/rollback.jsonl](raw/rollback.jsonl)).
+  the driver never recorded its results (raw/rollback.jsonl).
   - 8 of 10 images were unpacked, tree-equal and rebuilt by today's builder.
   - Images 170 and 177 differ in 2,076 entries each, all conda terminfo symlinks.
     `nydus-image unpack` drops `.` components from link targets (`.././61/adm1178`

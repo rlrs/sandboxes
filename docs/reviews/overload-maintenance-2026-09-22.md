@@ -73,9 +73,9 @@ slow database commit.
 
 ## Validation and practical limits
 
-The final [Linux suite](../benchmarks/overload-maintenance-2026-09-22/linux-tests.txt)
+The final Linux suite
 ran 1,183 tests successfully, with 61 environment-dependent skips. The exact
-[source hashes](../benchmarks/overload-maintenance-2026-09-22/sources.json) identify
+source hashes identify
 the tested working tree, which includes earlier uncommitted work. Ruff and diff
 whitespace checks passed for the changed files.
 
@@ -85,7 +85,7 @@ cooperative pacing, live export progress versus stalled exports, savepoint
 isolation, batch visibility, failed commits, whole-transaction aborts, and delayed
 acknowledgment until commit.
 
-The [isolated journal benchmark](../benchmarks/overload-maintenance-2026-09-22/journal-batching.json)
+The isolated journal benchmark
 uses 512 writes and 32 submitting threads. On the test container's filesystem,
 the original one-commit-per-write pattern took 1.592 seconds and the batched pattern
 0.090 seconds, with 18 commits instead of 512. With an explicitly simulated 5 ms

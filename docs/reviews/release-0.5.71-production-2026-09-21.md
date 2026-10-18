@@ -70,7 +70,7 @@ Final inventory contained zero routes, pending creates and reservations. Worker
 Gateway, relay and autoscaler were active. Twenty public health requests all
 returned 200 with version 0.5.71: **16.4 ms median, 23.6 ms maximum**.
 
-[Raw deployment and canary results](../benchmarks/release-0.5.71-live-smoke-2026-09-21.json).
+Raw deployment and canary results.
 This is light-load correctness qualification, not evidence of loaded 256/512
 throughput or measured production I/O reduction. No SDK or Verifiers update is
 required. Filesystem trim and fixed parking delays remain disabled.

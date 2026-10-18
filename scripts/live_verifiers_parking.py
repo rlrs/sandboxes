@@ -8,6 +8,7 @@ import asyncio
 import contextlib
 import hashlib
 import json
+import os
 from pathlib import Path
 from pathlib import PurePosixPath
 import shlex
@@ -44,7 +45,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gateway-url", default="http://127.0.0.1:8090")
     parser.add_argument(
         "--relay-url",
-        default="https://relay.sandboxes.example.org",
+        default=os.environ.get("UCLOUD_RELAY_URL"),
+        required="UCLOUD_RELAY_URL" not in os.environ,
     )
     parser.add_argument(
         "--sandbox-relay-url",

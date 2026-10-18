@@ -6,7 +6,7 @@ deployed at **13:10:36 UTC**, with healthy gateway, relay and metrics checks.
 repeat took 98.594 seconds. All 48 repeat builds selected an exact-affinity cache.
 The controlled cache/invalidation proof, all three application smokes, and both
 cache-import diagnostics passed. The repeat pool was released at 13:55:36 UTC;
-the [final audit](final-state.json) passed at **13:58:21 UTC** with all ten owned
+the final audit passed at **13:58:21 UTC** with all ten owned
 nodes retired, 96 successful histories, three deleted smoke sandboxes, healthy
 services and no remaining work, reservations or active samplers. This release's
 measured policy imported at most eight caches. The later diagnostics support a
@@ -25,13 +25,13 @@ averaged roughly 0.3–1.1 seconds. Python's large dependency/native `RUN`-label
 durations were predominantly cached-layer materialization. These vertex timings
 can overlap and must not be added as wall-time shares.
 
-[Candidate source verification](candidate-source.json) records 163 packaged
+Candidate source verification records 163 packaged
 files matching wheel SHA-256
 `21c77e27c4a064c6a52e93d8af870611d7f56f0559adb609172d9558b5366054`.
-[Staging](staging-receipt.json) preserved dependency/native inventories in both
-future-node bundles. The [deployment receipt](deployment-receipt.json) records
+Staging preserved dependency/native inventories in both
+future-node bundles. The deployment receipt records
 only `node_package_root` changing, healthy HTTPS/metrics and the unchanged 64 GiB
-relay budget. The release's [controller](deployment-controller.py) retains paired
+relay budget. The release's controller retains paired
 gateway/configuration rollback under the release root. [Local verification](test-verification.md)
 is separate from the live load, correctness and cleanup gates below.
 
@@ -47,8 +47,8 @@ attributed to the combined selector unless a separate comparison isolates it.
 
 ## Measured results and remaining misses
 
-[The seed](affinity-seed/summary.json) ran from 13:16:05 to 13:18:11 UTC and
-[the repeat](affinity-repeat/summary.json) from 13:27:54 to 13:29:33 UTC. Each
+The seed ran from 13:16:05 to 13:18:11 UTC and
+the repeat from 13:27:54 to 13:29:33 UTC. Each
 completed 48/48 builds and retained 48 durable-history records. Their qualification
 receipts verify the same frozen contexts. The repeat used four new builders with
 empty local BuildKit stores: `167968139`, `167968141`, `167968156` and `167968157`.
@@ -74,14 +74,14 @@ changes runtime, placement and cache chronology. [The performance report](perfor
 preserves phase coverage and these distinctions rather than treating aggregate
 overlapping build durations as CPU time or batch-wall components.
 
-[Seed selection](affinity-seed-selection.json) and
-[repeat selection](affinity-repeat-selection.json) both cover all 48 logs and
+Seed selection and
+repeat selection both cover all 48 logs and
 record eight imports per build. Each export digest resolved uniquely to a `bc2`
 tag in its captured inventory. An exact-affinity selection does not guarantee
 that every application instruction is reused: several repeat builds still
 executed expensive work.
 
-[The retained cache-record comparison](cache-record-comparison.json) examines
+The retained cache-record comparison examines
 tools case `001`: the exact seed cache appears in its repeat import, yet progress
 shows a 3.7-second source `COPY` and 36.9-second application `RUN`. The two
 SHA-verified cache configurations contain the same 13 record keys and input
@@ -135,12 +135,12 @@ the new expected output. Its three owned drivers and ten cache manifests were
 removed with zero cleanup errors. These tiny-fixture timings do not predict
 representative application speedups.
 
-[All three repeat application smokes](smoke-affinity-repeat.json) verified the
+All three repeat application smokes verified the
 expected recipe output, exited successfully and were deleted by 13:33:21 UTC.
-The [seed reservation](pool-seed-release.json) was released at 13:22:43 UTC.
-The [repeat reservation](pool-repeat-release.json) was released at 13:55:36 UTC
-after the diagnostics. The [resource ledger](resource-ledger.json) is
-complete against the [13:58:21 final audit](final-state.json): its ten unique node
+The seed reservation was released at 13:22:43 UTC.
+The repeat reservation was released at 13:55:36 UTC
+after the diagnostics. The resource ledger is
+complete against the 13:58:21 final audit: its ten unique node
 IDs exactly match the audit's provider checks, and none remained. At audit time,
 the gateway had zero sandbox/build/heartbeat state and no pending reservations;
 relay/lifecycle work was idle, the sampler was inactive, and gateway/relay/metrics
@@ -172,7 +172,7 @@ on builders and 12.90 GiB on the gateway; no OOM or swap activity was observed
 in covered intervals. Invalid disk-busy counter jumps are explicitly excluded.
 These phase summaries do not justify broader running-sandbox capacity claims.
 
-The local [attribution postprocessor](host-attribution.py) applies the declared
+The local attribution postprocessor applies the declared
 measurement limitation only to `affinity-seed` and `affinity-repeat`. It changes
 derived driver fields, preserves other host metrics and leaves all raw telemetry
 untouched. Reproduce in this order after refreshing source artifacts:
@@ -234,7 +234,7 @@ receipts must identify the affinity implementation explicitly.
 6. Run normal cache pruning with the unchanged policy, release owned reservations,
    stop samplers and wait for owned nodes to retire. Preserve the exact resource
    ledger, including any canary or smoke worker absent from phase snapshots.
-   Run the read-only [final audit](final-audit.py) against both phase receipts.
+   Run the read-only final audit against both phase receipts.
 
 Seed versus repeat measures the effect of newly populated affinity entries and
 changed cache state, not an isolated runtime A/B. The historical execution-model
@@ -273,7 +273,7 @@ miss and choose a still-valid controlled case; do not call a stale reference a
 correctness failure. Deleting manifests is not proof of physical disk reclamation,
 and this qualification does not invoke global registry garbage collection.
 
-The read-only [selection report](selection-report.py) reads only the exact 48
+The read-only selection report reads only the exact 48
 owned phase summaries/logs and makes bounded registry GET/HEAD requests. It
 records selector observations, recognized cache import tags and logged immutable
 export digests, then snapshots validated owned tag/digest metadata. A digest can

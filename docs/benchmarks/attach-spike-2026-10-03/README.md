@@ -32,11 +32,11 @@ attach be made cheaper?
   involved. Each burst runs `import sys` and `pip --version`. Every mode
   starts cold: fresh backend, empty chunk cache, dropped page cache. The
   demand mode also clears traces; the traced mode replays them.
-- **Scripts:** the runs are [attach_spike_run.sh](attach_spike_run.sh) and
-  [attach_spike_misses.sh](attach_spike_misses.sh). The second patches only
+- **Scripts:** the runs are attach_spike_run.sh and
+  attach_spike_misses.sh. The second patches only
   the spike VM, so that environment-io takes its concurrent-miss limit from
   an environment variable. The raw read probe is
-  [registry_probe.py](registry_probe.py). Results are in [raw/](raw/).
+  registry_probe.py. Results are in raw/.
 
 ## Results
 
@@ -54,11 +54,11 @@ first-command p50 in seconds):
 | 8 | 64 | demand | 33.7 | 3.8 / 9.9 | 10.3 | 15.5 | 38 |
 
 Every 64-image burst downloaded the same **1.27 GB**. The 20-image runs show
-the same shape: [raw/a1-20.json](raw/a1-20.json) and
-[raw/a8-20.json](raw/a8-20.json).
+the same shape: raw/a1-20.json and
+raw/a8-20.json.
 
 **Attach phases** (64 images, serial attach, p50 / p95 ms, from
-[raw/timing-a1-64.jsonl](raw/timing-a1-64.jsonl)):
+raw/timing-a1-64.jsonl):
 
 | slot wait | load | receipt | NBD bind | prefetch start | mount | total |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -108,8 +108,8 @@ of production component blobs; MB/s with p50 latency):
 **What was tried.** Commit `65738e8` read up to N contiguous uncached chunks
 per miss in one range, then installed the verified siblings. It was measured
 on a fresh CCX63 with the same image set and bursts. The size sweep is
-[window_sweep.sh](window_sweep.sh), which patches the spike VM only. Data is
-in [raw-coalesced/](raw-coalesced/).
+window_sweep.sh, which patches the spike VM only. Data is
+in raw-coalesced/.
 
 **64 images, serial attach** (demand mode first, traced second):
 
@@ -161,12 +161,12 @@ record into the managed registry (`environment-traces`, tag
 `trace-<component>`, trace inline as an annotation). A worker with no local
 trace fetches the shared one: one bounded GET, validated like its own. The
 measurement used a fresh CCX63 with the production config, `--shared-traces`
-added by a drop-in ([traces_run.sh](traces_run.sh)), the same 64 images and
+added by a drop-in (traces_run.sh), the same 64 images and
 serial attach.
 - **Round 1** records and shares.
 - **Round 2** starts each mode with no local traces or cache, like a new node.
 
-Data is in [raw-shared-traces/](raw-shared-traces/).
+Data is in raw-shared-traces/.
 
 | 64 images, serial attach | wall, s | create p50 / max, s | `import sys` p50 / p95, s | `pip` p50, s | demand misses |
 | --- | ---: | ---: | ---: | ---: | ---: |

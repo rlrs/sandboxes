@@ -151,7 +151,7 @@ patched `20260817.0` upgrade enabled those ACL operations. The
 passed ACL enforcement/inheritance, file locks and identities across ten
 hibernation cycles. The new distribution was
 [deployed in release 0.5.28](reviews/gvisor-deployment-2026-09-05.md).
-A [fresh original-oracle run](reviews/prime-acl-oracle-2026-09-07.json) on the
+A fresh original-oracle run on the
 isolated August-runtime node completed the solution but failed three of nine
 grader tests: inherited ACLs did not permit the expected cross-user writes.
 The focused runtime probe did not expose this umask/inheritance boundary.

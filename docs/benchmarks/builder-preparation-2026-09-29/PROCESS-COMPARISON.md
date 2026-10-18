@@ -80,7 +80,7 @@ completion gates pass.
 
 ## Local completed comparison
 
-[The 2,000-module ABBA receipt](local-thread-process-2000.json) passed exact
+The 2,000-module ABBA receipt passed exact
 source and output comparison across all 16 publications. It used the deployed
 candidate module fingerprints `174d8cb8…` and `fd7c7a91…`. Every worker exited and
 removed its temporary tree. Local trusted-opacity support was unavailable
@@ -104,7 +104,7 @@ still requires separate runtime and representative-load qualification.
 
 ## Linux root comparison
 
-[The completed Linux receipt](execution-model-linux.json) used Python 3.14.4,
+The completed Linux receipt used Python 3.14.4,
 Linux 7.0.0-30, UID/GID 0, and the same candidate fingerprints as the local run.
 The four ABBA trials produced 16 equivalent publication outputs, with no source
 mismatches, no capability skips, and every child reaped and temporary tree

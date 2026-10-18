@@ -162,7 +162,7 @@ class PrimeQualificationTests(unittest.TestCase):
     def test_saved_qualification_verdicts_remain_unchanged(self):
         evidence = json.loads(
             (
-                MANIFEST.parent / "reviews/sandbox-qualification-2026-09-05.json"
+                Path(__file__).parent / "fixtures/prime-qualification-2026-09-05.json"
             ).read_text()
         )
         modes = {

@@ -1,6 +1,6 @@
 # Portfolio preparation accounting and next batch
 
-Image receipts: October 1, 2026, 09:27 CEST. Foundation receipts are the saved 08:28 CEST October 1 measurement, matched by exact keys against the portable input bundle. A fresh production read was unavailable because the forwarded SSH agent disconnected. These are upstream pool counts, not a verified training or heldout selection. The [machine-readable accounting](portfolio-readiness-20261001.json) records input hashes and separates each coverage level.
+Image receipts: October 1, 2026, 09:27 CEST. Foundation receipts are the saved 08:28 CEST October 1 measurement, matched by exact keys against the portable input bundle. A fresh production read was unavailable because the forwarded SSH agent disconnected. These are upstream pool counts, not a verified training or heldout selection. The machine-readable accounting records input hashes and separates each coverage level.
 
 “Prepared” means the task's upstream image or exact enriched preparation is retained in the catalog. It does not certify arbitrary agent setup or grading steps. “Base candidate” additionally counts pending tasks with an eligible prepared example from the same project within the same environment family. It requires a faithful original or a fully source-scanned flat delta, at most eight components and at most 2 GiB of EROFS data. Candidate differences have not all been measured. Larger bases and cross-environment matches may provide additional reuse, but are excluded from this bounded count. Small metadata differences do not qualify an arbitrary RUN/COPY step as cheap.
 
@@ -57,4 +57,4 @@ PYTHONPATH=scripts .venv/bin/python scripts/report_image_readiness.py \
   --output /tmp/portfolio-readiness-new.json
 ```
 
-The [full proposed source list](next-prep-20261001.json) is also saved locally in `build/portfolio-accounting-20261001/next-prep.json`, with selected source pins where available and unresolved-pin flags otherwise. The actual training recipe index remains unavailable; no sampler or training split has been changed.
+The full proposed source list is also saved locally in `build/portfolio-accounting-20261001/next-prep.json`, with selected source pins where available and unresolved-pin flags otherwise. The actual training recipe index remains unavailable; no sampler or training split has been changed.

@@ -8,15 +8,15 @@ batch, while its individual build/push p95 increased; see
 Input drift is not supported by the retained evidence. A local two-extraction
 audit preserved file contents, modes, ownership, sizes and file mtimes across
 2,017 entries; only directory times and ctimes changed
-([receipt](context-materialization-audit.json)). More decisively, the exact
+(receipt). More decisively, the exact
 seed/repeat case001 cache metadata had identical record digests, input links and
 selectors across all 13 graph records, including the final COPY and RUN
-([comparison](cache-record-comparison.json)). Different result blobs or result
+(comparison). Different result blobs or result
 creation times do not by themselves mean the build graph changed.
 
 ## First diagnostic: one versus eight versus 64 imports
 
-The [first diagnostic receipt](cache-concurrency-diagnostic-r1.json) completed
+The first diagnostic receipt completed
 from 13:41:26.812 to 13:45:04.040 UTC on 2026-09-29. It used the same frozen
 latest-64 tag/digest inventory for all arms, pinned every cache import by manifest
 digest, and checked the copied contexts against the original seed content hashes.
@@ -58,7 +58,7 @@ that frozen manifests remain available; and cleans only its own drivers.
 
 ## Second diagnostic results
 
-The [second receipt](cache-isolation-diagnostic-r2.json) passed from
+The second receipt passed from
 13:53:44.497 to 13:55:10.519 UTC. Its recorded R1 input SHA-256 matches the
 archived R1 receipt byte for byte; all 64 frozen inventory entries and all twelve
 case/import plans are unchanged. Configuration and pinned BuildKit image also
@@ -87,7 +87,7 @@ can contain the same keys as a tools cache while omitting the final tools result
 layers. BuildKit's combined-cache lookup may retain one manager's version of a
 duplicate key and consult only that manager's results, allowing an incomplete
 record to obscure a complete result elsewhere. The retained
-[source references and graph comparison](cache-record-comparison.json) support
+source references and graph comparison support
 that explanation. The diagnostics demonstrate the importer-policy effect;
 they do not establish a specific upstream issue as the cause or claim that an
 upstream BuildKit bug has been patched.
@@ -133,8 +133,8 @@ SDK image/sandbox semantic qualification.
 
 ## Final resource audit
 
-The [final audit](final-state.json) passed at 13:58:21 UTC after the repeat pool's
-13:55:36 release. All ten unique IDs in the [resource ledger](resource-ledger.json)
+The final audit passed at 13:58:21 UTC after the repeat pool's
+13:55:36 release. All ten unique IDs in the resource ledger
 were absent at the provider; fleet, sandbox and active-build counts were zero;
 reservations were absent; the sampler was inactive; and gateway, relay and metrics
 health passed with idle relay/lifecycle queues. All 96 exact build-history records

@@ -1,4 +1,0 @@
-#!/bin/sh
-# scp to/from the gateway: gscp <src...> root@203.0.113.10:<dst>
-d=$(cd "$(dirname "$0")" && pwd)
-exec scp -q -i "$d/../../.hetzner/ssh/gateway-init" -o UserKnownHostsFile="$d/../../build/hetzner-prod/known_hosts" -o StrictHostKeyChecking=accept-new "$@"

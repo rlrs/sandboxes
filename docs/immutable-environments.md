@@ -351,7 +351,7 @@ with the traces replayed. The 2026-10-02
 [qualification](benchmarks/rl-scale-qualification-2026-10-02/README.md) found
 zero demand misses on that replay.
 
-The recorded [Linux result](benchmarks/immutable-environment-2026-09-23/qualification.json)
+The recorded Linux result
 passed with 69,312,512 artifact bytes and 2,391,363 HTTP blob bytes read (3.45%).
 Cold materialization, including a new Python frontend process, took 386 ms;
 frontend replacement took 201 ms and downloaded zero additional blob bytes.
@@ -446,7 +446,7 @@ must include those artifacts explicitly before enabling the optional feature;
 shipping the source with both booleans disabled needs no new OS modules. The
 local 5.15-kernel fixture is not qualification for a different production kernel.
 
-The follow-up [production-kernel qualification](benchmarks/immutable-environment-2026-09-23/qualification-kernel7.json)
+The follow-up production-kernel qualification
 also passes on Linux `7.0.0-30-generic`, `erofs-utils` 1.9, and the final qualified
 runsc SHA `a005058b5a097a9ec6c28d0d3e14ea7d2992fc0cf2c11a0eb62d7553e7068613`.
 It found and fixed a kernel-dependent NBD startup race: the adapter now waits for
@@ -469,7 +469,7 @@ canonical immutable Docker mount view and metadata-preserving copy require it.
 
 ### Heterogeneous first-use qualification
 
-The [four-image result](benchmarks/immutable-environment-2026-09-23/heterogeneous-images.json)
+The four-image result
 uses an isolated four-vCPU, 12 GiB Linux 7.0 worker, the same exact qualified
 six-patch runsc, and freshly published Python/Node slim and tool images. Each
 contains the same pinned Verifiers repository. Python exercises TLS setup,

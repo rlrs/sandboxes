@@ -2,7 +2,7 @@
 
 The controlled proof **passed** on owned seed builder `167966880` after the
 48-build seed phase and telemetry tail, from 13:20:40.102 to 13:21:24.955 UTC on
-2026-09-29. The [receipt](controlled-proof.json) reports all four semantic arms
+2026-09-29. The receipt reports all four semantic arms
 passed, three owned drivers removed, ten owned cache manifests deleted, and zero
 cleanup errors. It is a semantic/selection proof, not a batch latency benchmark.
 
@@ -38,7 +38,7 @@ PYTHONPATH=/var/cache/ucloud-sandboxes/init-packages/82a8fd3da97b8a5ff0d4d5f9eff
 ```
 
 The base pin is the smallest existing frozen fixture base from
-[`../build-load-2026-09-29/base-pins.json`](../build-load-2026-09-29/base-pins.json).
+`../build-load-2026-09-29/base-pins.json`.
 The helper uses the candidate's pinned BuildKit image and existing configuration,
 checking solver concurrency and registry concurrency are both four. It needs
 Python 3.11 or newer; the qualified builders run 3.14. It does not change the

@@ -54,7 +54,7 @@ the latest prior 256-sandbox result was approximately 1.4 seconds.
 
 ## Public endpoint smoke test
 
-[Native Linux smoke result](prod-cutover-smoke.json): four sandboxes, three
+Native Linux smoke result: four sandboxes, three
 model/park/wake/tool cycles each, all 12 cycles correct. After excluding the
 first warmup cycle, commit-and-wake p95 was 0.630 seconds and verified tool
 execution p95 was 1.256 seconds. The strict end-to-end 0.8-second SLO still

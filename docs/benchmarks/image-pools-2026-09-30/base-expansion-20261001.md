@@ -45,6 +45,6 @@ PYTHONPATH=scripts .venv/bin/python scripts/plan_base_expansion.py \
   --output /tmp/new-base-expansion
 ```
 
-The output contains normal/shared source plans and validated prefix build contexts. Existing output directories cannot be overwritten. Source pins, size gaps, fanout and required preflight are recorded in [the selected source plan](base-expansion-sources-20261001.json). [The expansion receipt](base-expansion-20261001.json) records input hashes and selected prefix keys. Original inputs and recipe contexts remain in the existing recovery bundle; package repositories remain external dependencies.
+The output contains normal/shared source plans and validated prefix build contexts. Existing output directories cannot be overwritten. Source pins, size gaps, fanout and required preflight are recorded in the selected source plan. The expansion receipt records input hashes and selected prefix keys. Original inputs and recipe contexts remain in the existing recovery bundle; package repositories remain external dependencies.
 
 Validation: 66 tests across base selection, project campaigns, readiness accounting, shared preparation and image pools; lint passed. All 64 selected prefix contexts also passed their content-hash validation during materialization.

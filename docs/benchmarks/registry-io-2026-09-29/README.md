@@ -52,8 +52,8 @@ experiment.
 | Client median | 84.219 s | 76.800 s |
 | Client p95 | 118.652 s | 132.432 s |
 
-Registry event totals come from [baseline](baseline-repeat-registry.json) and
-[candidate](candidate-registry.json) aggregates. Committed descriptor bytes
+Registry event totals come from baseline and
+candidate aggregates. Committed descriptor bytes
 associate successful upload commits with immutable blob sizes; they are not
 HTTP wire bytes or physical disk writes. The earlier run uploaded one 313 MB
 blob ten times; the candidate had no corresponding large repeated commits.
@@ -83,38 +83,38 @@ including 30 seconds of writeback preserves the approximately 88% write reductio
 
 ## Deployment and verification
 
-The [deployment receipt](deployment-receipt.json) records the healthy activation
+The deployment receipt records the healthy activation
 at 10:34:03 UTC. Wheel SHA256:
 `59229802be015443b0dd61f2c0c1b8a1eb9cd4460fc35eaf003a601c72b7009b`.
-The pinned [staging receipt](staging-receipt.json) covers the new builder and
+The pinned staging receipt covers the new builder and
 sandbox bundles. Native and dependency bytes were preserved. The gateway
 configuration changed only `node_package_root`; the new controller retained
 a paired configuration and gateway-venv rollback under this release root.
 Use this release's controller for rollback, not the previous release's backup.
 
 [Focused test verification](test-verification.md) records the exact suites and
-platform skips. The [live API canary](mount-canary.json) exercised successful
+platform skips. The live API canary exercised successful
 mounts, readback, declined-mount cleanup, and ordinary upload fallback.
-[Three application smoke sandboxes](smoke-io-repeat.json) executed the built
+Three application smoke sandboxes executed the built
 fixtures successfully and were deleted. All 48 builds retained durable history.
-The [final audit](final-state.json), captured at 10:51:40 UTC, confirms all five
+The final audit, captured at 10:51:40 UTC, confirms all five
 temporary VMs retired, no sandboxes or builds remained active, reservations and
 samplers were cleared, all 48 exact history identities matched, and gateway,
 relay, and metrics health passed. This local receipt is the unchanged server
 `final-state-complete.json`; earlier observations are retained separately.
 All 162 packaged source/resource files match the candidate wheel byte for byte.
 The earlier `pool-ready.json` is an interim three-builder observation; the
-measured run's [before receipt](io-repeat/before.json) records all four builders.
+measured run's before receipt records all four builders.
 
 Normal cache pruning removed 48 old cache manifests and retained 64 entries
 referencing 963,629,116 unique blob bytes. Registry storage was 15.6% used with
 845.7 GB available. This was ordinary retention, without forced physical GC.
-[Image inventory](image-inventory.json) preserves OCI/EROFS sharing accounting.
+Image inventory preserves OCI/EROFS sharing accounting.
 Managed test image aliases and tiny manifest-free mount-canary blobs remain
 subject to ordinary lifecycle/GC policy; no temporary VM remains.
 
 The [prepared protocol](QUALIFICATION.md) and frozen
-[qualification receipt](io-repeat.qualification.json) preserve execution inputs.
+qualification receipt preserve execution inputs.
 Raw customer logs and credentials are not included. The telemetry, infrastructure
 IDs, benchmark results, and deployment receipts are production-derived data;
 publication of commits `da5c8ee` and `48f30bd` was explicitly approved by the

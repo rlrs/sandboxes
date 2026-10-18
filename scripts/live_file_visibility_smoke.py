@@ -49,7 +49,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--gateway-url",
-        default="https://sandboxes.example.org",
+        default=os.environ.get("UCLOUD_SANDBOX_URL"),
+        required="UCLOUD_SANDBOX_URL" not in os.environ,
     )
     parser.add_argument("--token-file", type=Path)
     parser.add_argument(

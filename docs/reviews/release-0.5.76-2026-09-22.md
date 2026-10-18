@@ -69,5 +69,5 @@ for parking, instead of interpreting expiry of its own held lease as a productio
 inference failure. Both need regression coverage and another load run.
 
 Raw results and telemetry are in
-[`release-0.5.76-2026-09-22/`](../benchmarks/release-0.5.76-2026-09-22/).
+`release-0.5.76-2026-09-22/`.
 The service rollout is complete; **the 256-way latency/forced-parking target is not**.

@@ -86,7 +86,7 @@ Persistent preparation owners require explicit retirement when a pool is no long
 
 ## Rebuilding after volume loss
 
-The [portable campaign and recovery procedure](../image-campaigns/2026-09-30/README.md) stores source inventory, known digest pins and dependency contexts in Git, independently of the registry. Materialize a fresh recovery generation to avoid reusing stale successful build records. Rebuild and qualify new artifacts, then rewrite the actual task index; this does not automatically repair old aliases or guarantee identical unpinned package versions.
+The portable campaign and recovery procedure stores source inventory, known digest pins and dependency contexts in Git, independently of the registry. Materialize a fresh recovery generation to avoid reusing stale successful build records. Rebuild and qualify new artifacts, then rewrite the actual task index; this does not automatically repair old aliases or guarantee identical unpinned package versions.
 
 ## Avoiding duplicate upstream pulls
 

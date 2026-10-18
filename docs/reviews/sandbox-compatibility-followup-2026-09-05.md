@@ -128,4 +128,4 @@ The rebuilt image was ephemeral to the reference VM; its recipe and verification
 evidence remain available. The peer SDK and adapter checkouts were not edited.
 
 Exact runtime/image/helper identities, probe results, source hashes and remaining
-limitations are in [the evidence JSON](sandbox-compatibility-followup-2026-09-05.json).
+limitations are in the evidence JSON.

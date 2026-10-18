@@ -2,7 +2,7 @@
 
 The retained concurrency-16 and concurrency-8 runs do **not** measure explicit-wake restore-slot waiting. They support keeping the restore limit at eight until direct queue timing is available. Raising it to sixteen cannot yet be attributed to a measured bottleneck.
 
-Sources: [C16 benchmark](sandbox-density-128-acl-c16-hot-2026-09-07.json), [C8 benchmark](sandbox-density-128-acl-c8-deep-2026-09-07.json), [C16 host analysis](sandbox-density-128-acl-c16-analysis-2026-09-07.json), [C8 host analysis](sandbox-density-128-acl-c8-analysis-2026-09-07.json). Both runs use 128 sandboxes, 256 MiB randomly initialized resident memory, a rotating 16 MiB dirty subset, 100 ms requested CPU work, and a one-CPU sandbox quota. Both predate deployment of the bounded CPU admission wait and both failed some wake admissions.
+Sources: C16 benchmark, C8 benchmark, C16 host analysis, C8 host analysis. Both runs use 128 sandboxes, 256 MiB randomly initialized resident memory, a rotating 16 MiB dirty subset, 100 ms requested CPU work, and a one-CPU sandbox quota. Both predate deployment of the bounded CPU admission wait and both failed some wake admissions.
 
 ## Timing boundaries
 

@@ -11,7 +11,7 @@ with equivalent filesystem outputs and all privileged semantic probes exercised.
 139.054 seconds versus 135.561 seconds previously. This run therefore does not
 show an end-to-end build latency improvement. All three application smoke
 sandboxes passed and were deleted. The builder reservation was released, and
-[the combined final audit](../builder-execution-2026-09-29/final-state.json)
+the combined final audit
 passed at 12:24:13 UTC, verifying both releases' cleanup and exact build history.
 
 ## Change and baseline
@@ -40,14 +40,14 @@ The baseline source is commit
 `59229802be015443b0dd61f2c0c1b8a1eb9cd4460fc35eaf003a601c72b7009b`.
 The candidate wheel is
 `7b00954ae39cae9c552c238769dea193df0f5388b4ef8de6155670aeba5a947a`.
-[Source verification](candidate-source.json) confirms that all 162 packaged
+Source verification confirms that all 162 packaged
 source/resource files match the candidate and records the four changed module
 hashes. EROFS layout, compression, signing, and component identities are not
 intentionally changed.
 
 ## Linux preparation qualification
 
-[The retained Linux result](linux-four-thread.json) compares baseline and
+The retained Linux result compares baseline and
 candidate in ABBA order on the same temporary builder, with Python 3.14.4,
 Linux 7.0.0-30, and UID 0. Each arm starts a fresh process and runs four threads
 against fresh private output trees. The fixture contains 2,000 application
@@ -78,7 +78,7 @@ must not be presented as a 42% reduction in complete image-build latency.
 
 ## Exact EROFS and root semantic gates
 
-[The real tools-image ABBA canary](tools-erofs-equivalence.json) used a pinned
+The real tools-image ABBA canary used a pinned
 existing OCI manifest, forced only the final component to be treated as missing,
 and compared the existing Docker extraction path with the candidate selective
 path. All four trials reproduced all five published components, including the
@@ -90,8 +90,8 @@ publication output was captured locally for verification. The first Docker arm
 warmed its local cache, so these four canary timings are correctness evidence,
 not a fair end-to-end speed comparison.
 
-[The root-only read-only-directory canary](readonly-diff-canary.json), whose
-[source is retained](readonly-diff-canary.py), also passed. It compares copied
+The root-only read-only-directory canary, whose
+source is retained, also passed. It compares copied
 and consumed trees containing read-only directories, non-root uid/gid ownership,
 setuid modes, directory/file xattrs, hardlinks, overwritten linked files, and
 relative, absolute, and dangling symlinks. It verifies that borrowed source trees
@@ -105,15 +105,15 @@ not summed. Linux live canary evidence is separate from tests skipped locally.
 
 ## Deployment and rollback
 
-The [staging receipt](staging-receipt.json) pins the builder and sandbox bundles
+The staging receipt pins the builder and sandbox bundles
 and confirms unchanged native and dependency inventories. The
-[deployment receipt](deployment-receipt.json) records activation and health.
+deployment receipt records activation and health.
 The release controller changes only `node_package_root` and retains paired
 gateway-venv/configuration rollback under
 `/work/ucloud-sandboxes/builder-preparation-20260929-r1/rollback`.
-Use [this release's controller](deployment-controller.py) for rollback rather
+Use this release's controller for rollback rather
 than an earlier release's backup. The temporary profiling reservation was
-[released](profile-pool-release.json); provider retirement remains part of the
+released; provider retirement remains part of the
 final audit.
 
 ## Full production build qualification
@@ -150,20 +150,20 @@ resource; raising concurrency is not justified by the gateway's low mean CPU.
 All 48 builds used selective materialization and skipped a full Docker pull,
 reusing 160 groups and building 48 new groups from 96,993,279 selected OCI bytes.
 
-[The application smoke receipt](smoke-prep-repeat.json) covers one measured image
+The application smoke receipt covers one measured image
 from each recipe. All three executed successfully and were deleted by 11:51:13
-UTC. [Registry request aggregation](candidate-registry.json) records 852
+UTC. Registry request aggregation records 852
 successful cross-repository mounts, no declined mount responses, and 68,382,405
 managed-image committed blob bytes, close to the preceding run's 68,380,565 bytes.
 These are completed HTTP events joined to immutable blob sizes, not physical
 write savings or upload-body measurements. The separate physical-write counters
 remain the relevant storage evidence.
 
-[Cache pruning](cache-prune.json) removed 48 cache manifests from 112 inventoried
+Cache pruning removed 48 cache manifests from 112 inventoried
 tags, retaining 64 entries and 960,211,467 referenced bytes under the existing
 policy. Manifest deletion does not establish physical byte reclamation; normal
 registry garbage collection remains responsible for unreferenced blobs. The
-candidate builder reservation has since been [released](pool-release.json),
+candidate builder reservation has since been released,
 and the subsequent qualification used fresh builders. Final provider retirement
 was verified separately; the pruning receipt does not claim fleet cleanup.
 
@@ -241,15 +241,15 @@ python3 docs/benchmarks/build-optimization-2026-09-29/analyze-qualification.py \
 python3 docs/benchmarks/builder-preparation-2026-09-29/analyze-preparation.py
 ```
 
-[The completed combined audit](../builder-execution-2026-09-29/final-state.json)
+The completed combined audit
 verified all 96 exact successful build identities across R1/R2 and all six
 successful/deleted smoke sandboxes. All 11 known temporary nodes, including
 profiling VM `167955324`, were absent from provider inventory. Fleet, sandbox,
 active-build and reservation counts were zero; both samplers were stopped and
 gateway/relay HTTPS, metrics and idle checks passed.
 
-The original [R1 audit script](final-audit.py) is retained for provenance and was
-superseded by the [combined R2 audit](../builder-execution-2026-09-29/final-audit.py),
+The original R1 audit script is retained for provenance and was
+superseded by the combined R2 audit,
 which performs a direct read-only heartbeat count and binds each smoke recipe
 to its distinct measured image. Use the combined audit for repeat verification,
 with a new output path. Final idle health does not repair the invalid in-burst R1

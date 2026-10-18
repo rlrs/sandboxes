@@ -122,10 +122,10 @@ Local proof before any VM:
 - **Arms.** On `w1`, every arm starts from a cold node: the backend restarted,
   the cache emptied and the page cache dropped. A warm-up run filled the store
   node first, so every arm reads a warm store node.
-  - Scripts: [nydusd_spike_run.sh](nydusd_spike_run.sh) and
-    [nydusd_spike_worker.py](nydusd_spike_worker.py) (`arm`, `kill`, `split`).
-  - `b1` ran [baseline_run.sh](baseline_run.sh).
-  - Raw results are in [raw/](raw/).
+  - Scripts: nydusd_spike_run.sh and
+    nydusd_spike_worker.py (`arm`, `kill`, `split`).
+  - `b1` ran baseline_run.sh.
+  - Raw results are in raw/.
   - nydusd keeps no traces, so its "traced" row is a second cold run.
 
 ## Results
@@ -188,7 +188,7 @@ The environment-io figure includes the CPU of reaped nydusd children.
   trace replay (C2.7) has nothing left to win in this burst; whether traces
   help nydusd's own prefetch was not tested.
 
-## kill -9 mid-read ([raw/kill.json](raw/kill.json))
+## kill -9 mid-read (raw/kill.json)
 
 **Method:**
 - 64 images were attached serially, one nydusd each.
@@ -208,7 +208,7 @@ anything but its image's bytes or EIO. As with today's Python export, there is
 no recovery for a mount whose daemon died: the sandbox is drained. nydusd's
 NBD mode has no takeover; only FUSE and fscache do.
 
-## Where first-command time goes ([raw/split.json](raw/split.json))
+## Where first-command time goes (raw/split.json)
 
 Six images with Python. Each command ran cold (the Python RAFS path, with a
 warm store node), then three times warm in the same sandbox (timed inside it with `date +%s%N`), then warm natively with
@@ -246,7 +246,7 @@ all runs.
   instead of EBUSY, so attach stopped probing other devices. The first
   64-image nydusd run failed on this; the numbers above are its rerun.
 
-## Run 2: one shared nydusd cache (2026-10-03, [raw-shared/](raw-shared/))
+## Run 2: one shared nydusd cache (2026-10-03, raw-shared/)
 
 **Change (`31040c3`).** `UCLOUD_ENVIRONMENT_NYDUSD_SHARED_CACHE` gives every
 daemon one filecache work dir, so images that share a layer share its cache
@@ -265,7 +265,7 @@ files.
 
 **Setup.** A second gate stack: run `20261003t1355`, the same 64 images, bundle
 `ce4d5a36`, no baseline worker. Today's path had just repeated within 1%.
-Script: [shared_cache_run.sh](shared_cache_run.sh).
+Script: shared_cache_run.sh.
 
 **64 images:**
 
@@ -285,7 +285,7 @@ and 0.44 GB with a cache per image.
   readahead (`readaround`, default `read_ahead_kb`). Lowering readahead or
   `amplify_io` is the next knob, and it trades bytes for requests.
 - **kill -9 with the shared cache**
-  ([raw-shared/kill-shared.json](raw-shared/kill-shared.json)) gave the same
+  (raw-shared/kill-shared.json) gave the same
   result as run 1:
   - 8 of 64 daemons were killed 3.05 s into the read;
   - exactly their 8 sandboxes saw EIO;

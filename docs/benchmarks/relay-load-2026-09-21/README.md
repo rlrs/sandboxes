@@ -23,19 +23,19 @@ health probes and cleanup passing.
 
 | Report | Agents / cycles | Wake p95 | Usable exec p95 | Result |
 | --- | ---: | ---: | ---: | --- |
-| [64-agent baseline](baseline-64.json) | 64 / 5 | 4.48 s | 6.99 s | Correct; SLO failed |
-| [256-agent baseline](baseline-256.json) | 256 / 8 | 23.02 s | 28.27 s | All 2,048 cycles passed; one health timeout; SLO failed |
-| [Worker registry changes](registry-candidate-256.json) | 256 / 8 | 17.35 s | 18.15 s | Correct; SLO failed |
-| [Plus asynchronous relay wakes](async-candidate-256.json) | 256 / 4 | 17.88 s | 18.59 s | Correct; SLO failed |
-| [Plus gateway admission changes](gateway-256.json) | 256 / 4 | 6.04 s | 8.05 s | Correct; SLO failed |
-| [Plus connection reuse, replacement workers](pool-256.json) | 256 / 4 | 12.66 s | 14.93 s | Correct; slower; SLO failed |
-| [Same-three-worker control](controlled-nopool-256.json) | 256 / 4 | 4.39 s | 5.55 s | Correct; SLO failed |
-| [Same-three-worker connection reuse](controlled-pool-256.json) | 256 / 4 | 5.24 s | 7.16 s | Correct; no tail improvement; rejected |
-| [16-slot experiment](slots16-confounded-256.json) | 256 / 4 | 5.87 s | 8.07 s | Correct; confounded; SLO failed |
-| [Shadow observation reuse](shadow-confounded-256.json) | 256 / 8 | 5.23 s | 6.22 s | Correct; fourth worker joined unpatched; confounded |
-| [Plus local writer coordination, verified fleet](writer-256.json) | 256 / 8 | 3.58 s | 4.56 s | All 2,048 cycles, health and cleanup passed; SLO failed |
+| 64-agent baseline | 64 / 5 | 4.48 s | 6.99 s | Correct; SLO failed |
+| 256-agent baseline | 256 / 8 | 23.02 s | 28.27 s | All 2,048 cycles passed; one health timeout; SLO failed |
+| Worker registry changes | 256 / 8 | 17.35 s | 18.15 s | Correct; SLO failed |
+| Plus asynchronous relay wakes | 256 / 4 | 17.88 s | 18.59 s | Correct; SLO failed |
+| Plus gateway admission changes | 256 / 4 | 6.04 s | 8.05 s | Correct; SLO failed |
+| Plus connection reuse, replacement workers | 256 / 4 | 12.66 s | 14.93 s | Correct; slower; SLO failed |
+| Same-three-worker control | 256 / 4 | 4.39 s | 5.55 s | Correct; SLO failed |
+| Same-three-worker connection reuse | 256 / 4 | 5.24 s | 7.16 s | Correct; no tail improvement; rejected |
+| 16-slot experiment | 256 / 4 | 5.87 s | 8.07 s | Correct; confounded; SLO failed |
+| Shadow observation reuse | 256 / 8 | 5.23 s | 6.22 s | Correct; fourth worker joined unpatched; confounded |
+| Plus local writer coordination, verified fleet | 256 / 8 | 3.58 s | 4.56 s | All 2,048 cycles, health and cleanup passed; SLO failed |
 
-The initial [four-agent smoke test](baseline-4c.json) predates the explicit parked
+The initial four-agent smoke test predates the explicit parked
 inventory observation and does not qualify loaded behavior.
 
 These are sequential live runs, not randomized trials. The initial 256-agent

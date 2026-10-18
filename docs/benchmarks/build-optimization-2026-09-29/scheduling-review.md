@@ -8,7 +8,7 @@ claim that the candidate has passed the live 48-request qualification.
 At the time this review was saved, the frozen wheel and node bundles were
 staged, the read-only EROFS canary was using one builder, and the candidate node
 package had not been activated. No production changes were performed as part
-of this review. See [wheel-comparison.json](wheel-comparison.json) for the
+of this review. See wheel-comparison.json for the
 staged release digest and five changed Python modules; the scheduling runtime
 changes themselves are limited to `control_plane.py` and `node_agent.py`.
 

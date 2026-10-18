@@ -12,6 +12,7 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -294,7 +295,7 @@ def main():
     parser.add_argument("--cases", nargs="+", choices=CASES)
     parser.add_argument("--sdk-wheel", type=Path, default=Path(SDK_WHEEL))
     parser.add_argument("--deployment-config", type=Path, default=Path("/etc/ucloud-sandboxes/deployment.json"))
-    parser.add_argument("--gateway-url", default="https://203.0.113.10")
+    parser.add_argument("--gateway-url", default=os.environ.get("UCLOUD_SANDBOX_URL"), required="UCLOUD_SANDBOX_URL" not in os.environ)
     run(parser.parse_args())
 
 

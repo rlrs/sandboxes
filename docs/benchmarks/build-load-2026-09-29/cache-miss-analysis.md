@@ -5,9 +5,9 @@ dependency-cache hits followed by application rebuilds, and waits for concurrent
 build work. Its client p50 was 14.466 s and p95 was 61.650 s. A `CACHED` line for
 one compile vertex does not establish that the request avoided compilation.
 
-This analysis uses [warm results](warm/summary.json),
-[cold results](cold/summary.json),
-[the image inventory](image-inventory-after-warm.json), and sanitized remote
+This analysis uses warm results,
+cold results,
+the image inventory, and sanitized remote
 analysis of the owned benchmark's retained logs and small OCI layers. Remote
 inspection returned only step categories, timings, cache correlations, aggregate
 metadata comparisons and hashes. No raw logs, source contents or credentials

@@ -24,7 +24,7 @@ Its main executable SHA256 is
 The gzip archive SHA256 is
 `1580606042d13eb9dc56a24fae8324e44a1085bf82b23354f7857216b62e9a99`.
 The full build manifest, companion identities and qualification outputs are in
-[gvisor-integration-2026-09-05.json](gvisor-integration-2026-09-05.json).
+gvisor-integration-2026-09-05.json.
 
 | Qualification on UCloud | Result |
 | --- | --- |

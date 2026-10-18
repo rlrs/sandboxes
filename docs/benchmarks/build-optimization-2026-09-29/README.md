@@ -8,7 +8,7 @@ already retries the existing admission responses.
 
 The deployed wheel SHA256 is
 `f38db1aae25b0ddb14401fce61d80e299a2d8740b2586998e521b21ef0a26a2f`.
-The [deployment receipt](deployment-receipt.json) records healthy gateway/relay
+The deployment receipt records healthy gateway/relay
 HTTPS, unchanged dependency/native bytes, and paired configuration/venv rollback.
 Only `node_package_root` changed in production configuration. Source hashes were
 verified on all four newly provisioned builders before qualification; their
@@ -47,7 +47,7 @@ The fresh burst also benefited from the first burst warming local BuildKit.
 Fresh fixtures were generated on the gateway during the first burst; that small
 extra filesystem/CPU workload is another confound. All fresh inputs changed
 only their revision source file, verified by the
-[preparation receipt](fresh-preparation-receipt.json) and retained checksums.
+preparation receipt and retained checksums.
 
 All 96 builds used selective materialization and skipped Docker pulls during
 EROFS publication. Across both bursts they reused 320 groups, built 96 groups
@@ -68,7 +68,7 @@ selective trials took 0.85–0.89 seconds and fetched 790,906 bytes for a 5.35 M
 EROFS group. The final Docker trial, with its local image cache warm, took
 0.75 seconds. This demonstrates avoiding cold Docker materialization, not a
 general 40-fold build speedup. The Node comparisons are retained in
-[selective-summary.json](selective-summary.json); those two fixtures ran in
+selective-summary.json; those two fixtures ran in
 parallel, so their timing is not an isolated throughput comparison.
 
 Explicit filesystem canaries matched exact EROFS bytes for ownership, modes,
@@ -82,7 +82,7 @@ sandboxes also verified the actual mounted filesystem and were deleted. The
 first semantic attempt used SDK default UID 1000 and correctly could not enter
 the fixture's UID-23123 mode-0750 directory. Its sandbox was deleted; the helper
 was corrected to use UID/GID 23123:23124, retaining dropped capabilities and
-no-new-privileges. The successful [runtime receipt](semantic-runtime.json)
+no-new-privileges. The successful runtime receipt
 records the checked identity. No deployed code or fixture bytes changed.
 
 Selective extraction is conservative: at most 128 MiB compressed and 1 GiB
@@ -121,9 +121,9 @@ Qualification image aliases, owned semantic source tags, contexts and locks
 remain available under normal retention. Raw build logs and credentials stay
 on production hosts; local artifacts contain sanitized receipts and telemetry.
 The test reservation was released at 09:53:50 UTC and all telemetry units were
-stopped. The final [provider/health/history audit](final-state.json) confirms all
+stopped. The final provider/health/history audit confirms all
 seven temporary VMs retired, no active builds or sandboxes, healthy production
 services, and 100/100 durable build records (96 measured builds plus four
 semantic managed-image builds, including the first test-identity attempt).
-The local [artifact validation](validation.json) also verifies the deployed
+The local artifact validation also verifies the deployed
 wheel against the five changed runtime source files.

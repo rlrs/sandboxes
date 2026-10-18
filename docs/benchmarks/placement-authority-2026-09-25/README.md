@@ -9,14 +9,14 @@ The implementation is described in [placement authority](../../placement-authori
 The initial rc32 deployment imported and hash-verified 691,963 rows across 14
 tables. Routing, generations, migrations, program state, exec routes, demand and
 snapshot liveness moved together. The SQLite backup is retained, not an active
-fallback. [Deployment receipt](deployment.json).
+fallback. Deployment receipt.
 
 ## Qualification boundaries
 
 The canonical repository benchmark uses 512 admissions over eight simulated
 worker records. On the Linux gateway it completed in 2.145 seconds, p95 201 ms,
 without overbooking or transaction retries. These are database admission timings,
-not guest wake timings. [Raw result](canonical-linux-512.json).
+not guest wake timings. Raw result.
 
 The native workload runs from a separate Linux driver through the public gateway
 and relay using SDK 0.4.30. Each sandbox runs a managed Python agent, retains
@@ -39,13 +39,13 @@ thresholds have not been relaxed.
 
 | Workload | Completed cycles | Correctness | Continuation p95 | Usable execution p95 |
 | --- | ---: | --- | ---: | ---: |
-| [Natural 16, 3 cycles](native/native16.json.gz) | 48 | Pass | 0.224 s | 0.437 s |
-| [Forced parking 64, 4 cycles](native/forced64.json.gz) | 256 | Pass | 3.956 s | 5.131 s |
-| [Rolling natural 256, 5 cycles](native/rolling256.json.gz) | 1,280 | Pass | 0.841 s | 1.233 s |
-| [Rolling natural 512, 5 cycles, scale-up](native/rolling512-before.json.gz) | 2,560 | Pass | 6.149 s | 7.233 s |
-| [Rolling natural 512, second run](native/rolling512-warm-before.json.gz) | 2,560 | Pass | 7.907 s | 10.011 s |
+| Natural 16, 3 cycles | 48 | Pass | 0.224 s | 0.437 s |
+| Forced parking 64, 4 cycles | 256 | Pass | 3.956 s | 5.131 s |
+| Rolling natural 256, 5 cycles | 1,280 | Pass | 0.841 s | 1.233 s |
+| Rolling natural 512, 5 cycles, scale-up | 2,560 | Pass | 6.149 s | 7.233 s |
+| Rolling natural 512, second run | 2,560 | Pass | 7.907 s | 10.011 s |
 
-Full reports are retained as compressed JSON in [native](native/); decompress with `gzip -dc FILE.json.gz`. The 256 and both 512 rolling runs passed
+Full reports are retained as compressed JSON in native; decompress with `gzip -dc FILE.json.gz`. The 256 and both 512 rolling runs passed
 fleet-health checks with no workload or cleanup errors. The forced-64 run had one
 failed resource probe that recovered; its separate fleet-health gate failed.
 Only the natural-16 run passed the full latency gate.
@@ -59,7 +59,7 @@ the first run's six workers. No production worker sizing or spending cap changed
 
 ### Separate startup barrier failure
 
-[Barrier 256](native/barrier256.json.gz) failed before model traffic: only 237
+Barrier 256 failed before model traffic: only 237
 primaries started. Three workers retained approximately 67–68 GiB of future
 growth reservations and another 1 GiB pending each, while the barrier prevented
 started agents from reaching their first safe model wait. Physical memory and CPU
@@ -77,7 +77,7 @@ worker memory/backing safety would reintroduce SIGBUS risk.
 
 ### Separate forced-parking bottleneck
 
-[Curated attribution](native/forced64.analysis.json) has partial trace coverage,
+Curated attribution has partial trace coverage,
 explicitly reported. The worker used a median 4.9 of 32 cores with about 83 GiB
 available RAM, but median I/O pressure was 60%. Two measured wakes spent
 719–790 ms syncing retained memory backing. Sampled commit-to-worker-start
@@ -102,17 +102,17 @@ Rc33 code commit `94f5537` passed 327 selected Linux tests against a separate
 PostgreSQL 17 instance before deployment. The gateway HTTP qualification fixture
 now reuses one pool per path, matching production; its 48-concurrent-lookup test
 prevents regression. The temporary test database was stopped before load testing.
-[Deployment receipt](deployment-rc33.json). SDK and worker native binaries did not
+Deployment receipt. SDK and worker native binaries did not
 change. Existing routing authority remained in place during this code upgrade.
 
-[Rc33's cold repeat](native/rolling512-after.json.gz) completed all 2,560 cycles correctly on seven workers. The
+Rc33's cold repeat completed all 2,560 cycles correctly on seven workers. The
 measured continuation p95 was 5.726 seconds and usable-exec p95 7.367 seconds.
 An exact join of all wake command and relay request identities attributed p95
 1.450 seconds before queue creation, 1.281 seconds inside the queue, and
 3.031 seconds after queue completion before relay acknowledgment. These stage
 percentiles must not be added together.
 
-The [subsequent warm repeat](native/rolling512-warm-after-profiled.json.gz) also passed correctness but was instrumented with
+The subsequent warm repeat also passed correctness but was instrumented with
 15-second gateway and relay CPU profiles. The gateway profiler reported sampling
 lag; treat this run as attribution evidence, not an uninstrumented performance
 comparison. Its measured usable-exec p95 was 14.227 seconds. Public gateway work
@@ -143,9 +143,9 @@ continuation under the natural parking policy. Continuation p95 was 5.705 second
 usable execution p95 was 7.321 seconds. These miss the unchanged latency gate.
 Ten workers were observed during this run; fleet composition differs from prior
 runs, so this is not a controlled estimate of the isolated pool change's benefit.
-[Deployment receipt](deployment-rc34.json),
-[full workload](native/rolling512-rc34.json.gz),
-[paired attribution](native/rc34-handoff-attribution.json).
+Deployment receipt,
+full workload,
+paired attribution.
 
 All 2,560 wake identities matched. Before-queue p95 was 2.229 seconds, queue
 execution 1.064 seconds, and completed-command to relay acknowledgment 3.231
@@ -169,10 +169,10 @@ Rc35 (`42b6b78`) passed 413 selected Linux tests using isolated PostgreSQL 17
 before its idle production deployment at 09:28:45 UTC. Gateway, placement, relay
 and autoscaler health checks passed. The routing authority did not change again;
 SDK remains 0.4.30, and native/OS/storage artifacts retain their prior byte-level
-closure. [Deployment receipt](deployment-rc35.json). The isolated qualification
+closure. Deployment receipt. The isolated qualification
 database was stopped before the native test.
 
-The final [rc35 rolling 512 run](native/rolling512-rc35.json.gz) completed all
+The final rc35 rolling 512 run completed all
 2,560 cycles correctly, with no workload or cleanup errors and healthy workers.
 It used four workers after a cold scale-up (173/157/92/90 sandboxes), versus ten
 observed during rc34. The temporary capacity reservation did not preserve the
@@ -181,7 +181,7 @@ Continuation p95 was 6.480 seconds and usable execution p95 8.603 seconds, missi
 the unchanged latency gate. No measured cycle fully parked. The system passes
 this workload's correctness checks; subsecond high-load performance is not qualified.
 
-[Exact paired attribution](native/rc35-handoff-attribution.json) covers all 2,560
+Exact paired attribution covers all 2,560
 wakes: before-queue p95 1.357 seconds, placement 2.189 seconds, and completed-command
 to relay acknowledgment 2.724 seconds. Peak enqueue and result pool wait p95 were
 below 1 ms; worker-specific placement contention was observed during concurrent
@@ -214,7 +214,7 @@ and in-flight create ranking plus reuse of unchanged placement data. All 475
 selected Linux tests passed. All four services are active; a missing-sandbox wake
 traversed the durable queue and returned its expected 404 in 70 ms, leaving no
 queued work. This is an idle functional smoke test, not a new load-performance
-result. SDK remains 0.4.30. [Deployment receipt](deployment-rc36.json).
+result. SDK remains 0.4.30. Deployment receipt.
 
 ## Opus follow-up: rc37
 
@@ -226,7 +226,7 @@ the covered-growth check and wake fence ordered against per-sandbox safe waits.
 All 577 selected Linux tests passed, including the new race regression. Production
 health and a queued-wake smoke check passed; the relay delivery pool is active.
 There were no live workers to upgrade; new workers use the rc37 bundle. No native
-load benchmark was repeated. [Deployment receipt](deployment-rc37.json).
+load benchmark was repeated. Deployment receipt.
 
 ## Opus follow-up: rc38
 
@@ -240,4 +240,4 @@ closure is byte-identical to rc37. Production health and a queued-wake smoke che
 (404 in 65 ms) passed. The three new indexes were created concurrently on the live
 database. There were no live workers to upgrade; new workers use the rc38 bundle,
 whose first start upgrades the worker registry to schema v8. No native load
-benchmark was repeated. [Deployment receipt](deployment-rc38.json).
+benchmark was repeated. Deployment receipt.

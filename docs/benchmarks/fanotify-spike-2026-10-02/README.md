@@ -107,7 +107,7 @@ owners are kept.
     the NBD death control.
   - **Rebuilt `erofs.ko`:** from then on, an out-of-tree build with
     `CONFIG_EROFS_FS_PAGE_CACHE_SHARE=y` (the S11/S12 recipe,
-    [`scripts/build_erofs_ishare.sh`](scripts/build_erofs_ishare.sh)). That covers gate 4, the
+    `scripts/build_erofs_ishare.sh`). That covers gate 4, the
     shared-blob burst reruns (`-fix`), gate 5 and the owner-aware tree check. It differs from stock
     only by that option, which acts only with `-o inode_share`.
 - **Tools:**
@@ -123,9 +123,9 @@ owners are kept.
   store node: **623 packs, 16.86 GB, 874,989 unique chunks**, identical to S12. S12's 64-image
   page-cache set was re-selected with S12's `select_pc.py` (same seed; the same 64 images, 147
   layers, 6.28 GB) and packed into the same index: 714 packs, 17.49 GB
-  ([`raw/packer-main.json`](raw/packer-main.json), [`raw/packer-pc.json`](raw/packer-pc.json),
-  [`raw/pc-selection.json`](raw/pc-selection.json)).
-- **The fill daemon** ([`scripts/fand.py`](scripts/fand.py), Python, like S12's NBD backend): one
+  (`raw/packer-main.json`, `raw/packer-pc.json`,
+  `raw/pc-selection.json`).
+- **The fill daemon** (`scripts/fand.py`, Python, like S12's NBD backend): one
   `FAN_CLASS_PRE_CONTENT` group per node; per backing file an inode mark (`FAN_PRE_ACCESS`) placed
   before the mount; per event it maps the range to chunk-map entries, fetches the missing 256 KiB
   chunks from the packs (misses on one pack merged into ≤ 1 MiB windows, gaps < 64 KiB, as S12's
@@ -145,18 +145,18 @@ owners are kept.
     the fix as the `-fix` files.
   - **Attach bug.** A follow-up `fand.py` change broke every attach (a property without a setter),
     and the first pass of gates 4 and 5 failed at once. Both gates were rerun complete by
-    [`scripts/run_rest3.sh`](scripts/run_rest3.sh).
+    `scripts/run_rest3.sh`.
 
 ## Gate 1: pre-content events from EROFS's own reads
 
 **Pass.** EROFS's data reads of its backing file, issued from inside the kernel, raise
 `FAN_PRE_ACCESS` on that file, both for `read()` and for page faults on files mmapped inside the
-mount ([`raw/gate1.json`](raw/gate1.json), [`scripts/gate1.py`](scripts/gate1.py),
-[`scripts/fanl.py`](scripts/fanl.py)).
+mount (`raw/gate1.json`, `scripts/gate1.py`,
+`scripts/fanl.py`).
 
 - **Image:** S10's Terminal-Lego 004302 (sample index 130): 9,844 files and 266 MB of file data.
 - **RAFS layout:** one 292 MB sparse file, with the 2.3 MB bootstrap at offset 0 and the 5 blobs,
-  uncompressed, at `mapped_blkaddr × 4096` ([`scripts/flatten.py`](scripts/flatten.py)).
+  uncompressed, at `mapped_blkaddr × 4096` (`scripts/flatten.py`).
 - **The listener** copies each requested range from a complete copy of the same file, then answers
   `FAN_ALLOW`.
 
@@ -182,7 +182,7 @@ mount ([`raw/gate1.json`](raw/gate1.json), [`scripts/gate1.py`](scripts/gate1.py
   in bytes of the backing file. It is always present on pre-content events; no init flag is needed.
   Offsets were always 4 KiB-aligned.
 
-**What the kernel does** (7.0.0-30; the passages are in [`raw/kernel-source-notes.txt`](raw/kernel-source-notes.txt)):
+**What the kernel does** (7.0.0-30; the passages are in `raw/kernel-source-notes.txt`):
 - **Data reads raise events.** File-backed data I/O goes `erofs_fileio_rq_submit` →
   `vfs_iocb_iter_read` → `rw_verify_area` → `fsnotify_file_area_perm` → `fsnotify_pre_content`,
   buffered or with `-o directio`. Page faults inside the mount take the same path through
@@ -216,7 +216,7 @@ only if `map->m_pa + ofs == io->dev.m_pa`.
   128 KiB.
 - This looks like an upstream bug. S13 avoids it with per-blob files (`multidev`, gates 3–5).
 
-**Kernel facts** ([`raw/kernel-facts.txt`](raw/kernel-facts.txt)):
+**Kernel facts** (`raw/kernel-facts.txt`):
 - **Build:** `7.0.0-30-generic #30-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 31 2026` (source 7.0.12).
 - **Config:** `CONFIG_FANOTIFY=y`, `CONFIG_FANOTIFY_ACCESS_PERMISSIONS=y`, `CONFIG_EROFS_FS=m`,
   `CONFIG_EROFS_FS_BACKED_BY_FILE=y`, `CONFIG_FS_STACK=y`; `CONFIG_EROFS_FS_ONDEMAND` and
@@ -231,8 +231,8 @@ only if `map->m_pa + ofs == io->dev.m_pa`.
 **The kernel fails open.** A pre-content group can be released by the listener being killed, by it
 exiting, or by it closing the fd. In every case `fanotify_release` answers each pending and queued
 permission event with `FAN_ALLOW` and removes the group's marks. EROFS then reads the unfilled holes
-and gets zeros, with no error and no log line ([`raw/gate2.json`](raw/gate2.json),
-[`scripts/gate2.py`](scripts/gate2.py), [`scripts/fdholder.py`](scripts/fdholder.py)).
+and gets zeros, with no error and no log line (`raw/gate2.json`,
+`scripts/gate2.py`, `scripts/fdholder.py`).
 
 | Case (a 24 MB `.so`, unfilled) | Result |
 | --- | --- |
@@ -245,9 +245,9 @@ and gets zeros, with no error and no log line ([`raw/gate2.json`](raw/gate2.json
 | Event never answered, group alive | the reader waits in `fanotify_get_response` (`TASK_KILLABLE`); `kill -9` ends it at once. The watchdog sysctl only logs |
 | **Takeover.** A holder process keeps the group fd and the daemon's pre-mark write fds, as systemd's fd store would. Daemon A is SIGKILLed while holding an event; B takes the fds | the pending read waits (D state) until B, after filling, answers A's journaled event **by its fd number**. The read then completes **correctly**; answering EIO gives EIO. Events queued while no daemon ran are read and served by B |
 | Takeover without answering A's event | that read stays blocked until killed; later reads are served |
-| Takeover where B opens the backing file itself | **deadlock**: B's `pwrite` raises a pre-content event on its own group and waits for itself ([`raw/gate2-takeover-deadlock.txt`](raw/gate2-takeover-deadlock.txt)) |
+| Takeover where B opens the backing file itself | **deadlock**: B's `pwrite` raises a pre-content event on its own group and waits for itself (`raw/gate2-takeover-deadlock.txt`) |
 | The holder dies too (group released) | the pending read returns **zeros** |
-| **Control: today's NBD backend SIGKILLed during a read** ([`raw/nbd-death.json`](raw/nbd-death.json)) | the read fails with **EIO** within 45 ms ("shutting down sockets", "I/O error, dev nbd900"), and later reads fail with EIO too. NBD fails closed |
+| **Control: today's NBD backend SIGKILLed during a read** (`raw/nbd-death.json`) | the read fails with **EIO** within 45 ms ("shutting down sockets", "I/O error, dev nbd900"), and later reads fail with EIO too. NBD fails closed |
 
 **What the kernel guarantees** (`fs/notify/fanotify/fanotify_user.c`, `fanotify.c`):
 - **Release allows.** `fanotify_release` says "Process all permission events on access_list and
@@ -277,10 +277,10 @@ and gets zeros, with no error and no log line ([`raw/gate2.json`](raw/gate2.json
 ## Gate 3: correctness and speed under gVisor
 
 **Correct, and as fast as NBD in the multi-device layout, but the Python daemon does not keep up
-with the unified layout's 4 KiB events under a burst** ([`scripts/coldfan.py`](scripts/coldfan.py),
-[`raw/summary.json`](raw/summary.json)).
+with the unified layout's 4 KiB events under a burst** (`scripts/coldfan.py`,
+`raw/summary.json`).
 
-### Correctness: full trees of S10's 7 images ([`raw/tree.json`](raw/tree.json), [`raw/tree-owners.json`](raw/tree-owners.json))
+### Correctness: full trees of S10's 7 images (`raw/tree.json`, `raw/tree-owners.json`)
 
 Each image was mounted cold through `fan:demand` and through S12's NBD backend, and every entry was
 read. The comparison covers names, types, modes, owners, sizes, the sha256 of every file, symlink
@@ -304,7 +304,7 @@ layers with whiteouts applied (M1's `chunk_convert.expected_tree` semantics, str
   4 KiB page miss: 45k–197k events at 50–65 µs each. This is the cost of a mark that stays in place.
   With `--unmark-when-full`, the daemon removes the mark once every entry is filled, and a re-read
   raised **0 events** (3.7 s against 8.9 s with the mark kept, image 130 with `-o directio`,
-  [`raw/mdsmoke.json`](raw/mdsmoke.json)).
+  `raw/mdsmoke.json`).
   Only then do reads stay in the kernel.
 
 ### Sequential cold commands under runsc
@@ -375,7 +375,7 @@ second command on every path (1 of 20, 7 of 100).
   `fan:multidev+f` gets within 1.4× of the wall time and matches the CPU and `pip`. Its first
   command lags (3.2 s) because of the Python attach.
 - **The first multi-device burst served zeros.** The first `fan:multidev` runs
-  ([`raw/burst-20-fan-multidev.json`](raw/burst-20-fan-multidev.json) and the `-100-` files)
+  (`raw/burst-20-fan-multidev.json` and the `-100-` files)
   had 1 of 20 and 3–5 of 100 sandboxes fail beyond NBD's, with "source code string cannot contain
   null bytes". A shared blob file had been given only
   its first image's chunk entries. A later image used a chunk of the same blob that the first image
@@ -388,9 +388,9 @@ second command on every path (1 of 20, 7 of 100).
 ## Gate 4: disk sharing across images
 
 **Both work.** Reflink from a shared chunk cache brings disk use per extra image down to about a
-tenth of per-image copies. Per-blob files share whole layers. ([`scripts/gate4.py`](scripts/gate4.py),
-[`raw/gate4-copy.json`](raw/gate4-copy.json), [`raw/gate4-reflink.json`](raw/gate4-reflink.json),
-[`raw/gate4-multidev.json`](raw/gate4-multidev.json), [`raw/gate4-align.json`](raw/gate4-align.json))
+tenth of per-image copies. Per-blob files share whole layers. (`scripts/gate4.py`,
+`raw/gate4-copy.json`, `raw/gate4-reflink.json`,
+`raw/gate4-multidev.json`, `raw/gate4-align.json`)
 
 The first 24 images of S12's page-cache set (11 TMax and 13 Terminal-Lego on 4 shared bases) were
 hydrated one after another on a fresh 400 GB XFS (`reflink=1`, `rmapbt=1`), with every file read
@@ -440,8 +440,8 @@ All 24 images in every mode matched the copy run's sha256 for every file.
 
 **`inode_share` works on file-backed mounts and is the clear winner: 3.1 MB of page cache per extra
 distinct image, against 21 MB for per-image mounts and 12 MB for per-layer stacks, all with
-`-o directio`** ([`scripts/pcfan.py`](scripts/pcfan.py), [`raw/pagecache-*.json`](raw/),
-[`raw/pc-prep.json`](raw/pc-prep.json)).
+`-o directio`** (`scripts/pcfan.py`, `raw/pagecache-*.json`,
+`raw/pc-prep.json`).
 
 **Set and method** (S12's harness, ported to file-backed mounts):
 - **Images:** the 25 of S12's 64 page-cache images that have `python3` (11 TMax and 14
@@ -537,8 +537,8 @@ has no prefix table, and its inodes have no room for a per-file xattr without a 
 ## Side finding: `nydus-image --repeatable` drops file owners
 
 The full-tree check of gate 3 found that every non-root owner in all 7 images reads back as 0:0,
-through NBD and fanotify alike. A one-layer test ([`scripts/uidcheck.sh`](scripts/uidcheck.sh),
-[`raw/uidcheck.txt`](raw/uidcheck.txt)) isolates it: nydus-image v2.4.5 `create -t targz-rafs`
+through NBD and fanotify alike. A one-layer test (`scripts/uidcheck.sh`,
+`raw/uidcheck.txt`) isolates it: nydus-image v2.4.5 `create -t targz-rafs`
 keeps `1000:42` and `0:101` without `--repeatable` and writes `0:0` with it; mkfs.erofs 1.9 `--tar`
 keeps them. The design (§3 step 2) and `chunk_convert.py` pass `--repeatable` for C2.14's "same
 task, same root". M1's full-tree gate (which compares owners) would fail every image with a
@@ -549,7 +549,7 @@ see this.
 
 ## Files
 
-- **[`raw/`](raw/)**, copied from the VM during the run:
+- **`raw/`**, copied from the VM during the run:
   - **Kernel:** `kernel-facts.txt` (uname, config, sysctls, header) and `kernel-source-notes.txt`
     (the cited source passages).
   - **Corpus:** `packer-main.json`, `packer-pc.json`, `pc-selection.json`, and the prep logs
@@ -570,7 +570,7 @@ see this.
     `pagecache-<variant>.json`, `build-ishare.log`.
   - **Side finding:** `uidcheck.txt`.
   - **Summary:** `summary.json`, produced by `scripts/summarize.py`.
-- **[`scripts/`](scripts/)**, run on the VM unless marked. S10's `fetch.py`, `convert.py` and
+- **`scripts/`**, run on the VM unless marked. S10's `fetch.py`, `convert.py` and
   `rafs.py`, and S12's `packer.py`, `packfmt.py`, `s3nbd.py`, `coldrun.py` and `select_pc.py`, were
   used unchanged from their spike directories (S12's `s3nbd.py` imports `s3lib.py`, which made no
   S3 calls here).

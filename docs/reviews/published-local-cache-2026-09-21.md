@@ -76,7 +76,7 @@ unreachable remote URL and matched restacking the dense exports byte for byte
 at the logical-image level. Overwrites, explicit zero writes, discards and holes
 were preserved. Cache retention copied zero data bytes.
 
-[Raw results](../benchmarks/published-local-cache-2026-09-21.json) and
+Raw results and
 [qualification script](../../runtime/storage_native/qualify_published_local_cache.py).
 This verifies file-format and lifecycle behavior, not a production hit rate,
 physical disk benchmark, or 256/512-sandbox throughput qualification.

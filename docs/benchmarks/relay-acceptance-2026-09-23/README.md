@@ -8,8 +8,8 @@ The JSON files retain source hashes and per-operation database timings.
 
 | Run | Accepted / verified caller bodies | Acceptance p95 | Actual caller HTTP response p95 |
 | --- | --- | --- | --- |
-| [64, kill one relay](http64-kill.json) | 64 / 64 | 61.5 ms | 1.870 s |
-| [512, concurrent burst](http512.json) | 512 / 512 | 442.7 ms | 1.264 s |
+| 64, kill one relay | 64 / 64 | 61.5 ms | 1.870 s |
+| 512, concurrent burst | 512 / 512 | 442.7 ms | 1.264 s |
 
 The killed-relay run recovered 32 caller connections and retained every accepted
 result. No response submission needed retry in that run: all acceptance receipts

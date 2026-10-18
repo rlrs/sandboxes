@@ -26,7 +26,7 @@ The qualification environment used Verifiers
 “Setup passed” means only the sampled setup/no-op check passed. It does not
 establish tool use, correct grading, all languages/images, or performance at
 128 concurrent sandboxes. Existing family results come from the
-[original qualification](sandbox-qualification-2026-09-05.json), with the
+original qualification, with the
 later qualifications identified explicitly below.
 
 | Article family | Sample evidence | Current qualification gap |
@@ -77,13 +77,13 @@ passed with the real ublk/XFS backend.
 The August distribution was [deployed as 0.5.28](gvisor-deployment-2026-09-05.md),
 with ten further park/resume cycles. It is incorrect to describe POSIX ACLs as
 entirely unsupported by the currently pinned runtime. However, the
-[fresh OpenThoughts oracle](prime-acl-oracle-2026-09-07.json), using the same
+fresh OpenThoughts oracle, using the same
 immutable rebuilt image and original solution/grader, returned reward **0** on
 the isolated 32-vCPU node. The solution succeeded; pytest reported **6 passed,
 3 failed**. Alice and Bob could not append to each other's newly created files,
 and Bob could not write into Alice's inherited subdirectory. Package installation,
 ACL entry inspection and the other six assertions succeeded. The
-[native comparison](prime-acl-native-2026-09-07.json) passed **9/9** and returned
+native comparison passed **9/9** and returned
 reward **1**, using the same image, unchanged public solution and test scripts,
 and the same **1 CPU / 2 GiB memory / 10 GiB writable quota**. Both ran on the
 same isolated worker and cleaned up their owned sandboxes/containers. The native
@@ -104,10 +104,10 @@ runtime; changing a fingerprint cannot make their formats compatible.
 The second August patch now carries the requested mode and umask separately
 through VFS and overlay, allowing tmpfs to apply the default ACL before deciding
 whether umask applies. The complete corrected distribution was
-[installed on the isolated node](gvisor-acl-installation-2026-09-07.json), with
+installed on the isolated node, with
 fresh runtime state and runsc SHA256
 `9ebdf83ec7bf37f8be26660a915ccef7d67c9a9f0342896c41364be81a05d3c1`.
-The [Linux build attestation](gvisor-acl-build-2026-09-07.json) records the
+The Linux build attestation records the
 optimized build, all five passing test targets (including the complete tmpfs
 suite), and the full companion-binary manifest. The retained distribution
 archive under `dist/gvisor-acl-20260907/` is 149,120,650 bytes with SHA256
@@ -117,22 +117,22 @@ Its patch-series SHA256 is
 The build attestation's pending-installation status describes build completion;
 the separate installation and live qualification attestations record the later
 steps.
-The [unchanged original oracle](prime-acl-patched-2026-09-07.json) then returned
+The unchanged original oracle then returned
 reward **1**, with **9/9 tests passing**, in 42.22 seconds. The immutable image,
 original solution and grader, and **1 CPU / 2 GiB memory / 10 GiB writable
 quota** were retained. Its owned sandbox was deleted. This proves the sampled
 ACL task passes on the corrected candidate; it does not establish a production
 deployment or all OpenThoughts tasks.
 
-The [expanded functional qualification](gvisor-acl-qualification-2026-09-07.json)
+The expanded functional qualification
 also passed its initial checks, capture rollback, and **ten complete
 park/wake cycles**. It tests cross-user ACL writes under umasks 0022/0077,
 nested directories, FIFOs, Linux's separate socket-bind umask rule, explicit
 private modes, setgid ownership and parents without default ACLs on `/tmp` and
 `/srv`. Identity, open-file locks, paused handoff and restored CPU quota passed
 every cycle. The fixture retained a **0.25-CPU quota and 512-MiB limit**.
-The [raw cycle results](gvisor-acl-hibernation-2026-09-07.json) and
-[exact input archive](prime-acl-qualification-inputs-2026-09-07.tar.gz) are retained.
+The raw cycle results and
+exact input archive are retained.
 The input archive's SHA256 is
 `ee2c8a5ccb6c08fd020ba34dfa8654d8d7c69014708acf25f5f729f25d3bd3a7`;
 the qualification attestation also records each final input file's hash.
@@ -150,7 +150,7 @@ record the test outcomes.
 Its first attempt exposed a fixture setup error: root lacked `CAP_FSETID`,
 so setting group 42's setgid directory cleared the setgid bit. The resulting
 child group was 0, failing the existing group-42 assertion. A
-[native Linux control](gvisor-acl-native-fsetid-control-2026-09-07.json) confirmed
+native Linux control confirmed
 the same behavior. The final qualifier explicitly grants that capability to
 root setup and reports detached guest errors through the verification socket.
 It preserves every permission assertion, resource limit, and unprivileged
@@ -163,11 +163,11 @@ commit. Preserve the complete old executable distribution for existing owners;
 the runsc and companion hashes in the runtime fingerprint must remain enforced.
 
 The September 8 mount-retention candidate was separately installed in a fresh
-dev-node runtime generation. Its [unchanged original ACL oracle](prime-acl-mountfix-2026-09-08.json)
+dev-node runtime generation. Its unchanged original ACL oracle
 again passes **9/9** with reward **1** and cleanup verified. Its
-[ten-cycle hibernation repeat](gvisor-mountfix-hibernation-2026-09-08.json) also
+ten-cycle hibernation repeat also
 passes all existing ACL, identity, lock, paused-handoff and CPU-quota checks.
-The [installation manifest](gvisor-mountfix-installation-2026-09-08.json) records
+The installation manifest records
 runsc SHA256 `be491ee25a10a9036b46037dbd21343cc3bf4a4eee90ca21885e7848124bd9e5`
 and every companion hash. These repeat passes cover the sampled ACL task and
 functional fixture; they do not add family-wide or production qualifications.
@@ -189,8 +189,8 @@ warning handling, timeouts and reward parser.
 
 | Runtime | Original test result | Gold reward | Evidence |
 | --- | --- | --- | --- |
-| August gVisor, candidate v3 | 13 failed, 83 passed; 3 failed suites | 0 | [Result](prime-rebench-gvisor-2026-09-07.json), [test output](prime-rebench-gvisor-2026-09-07.tests.txt) |
-| Native Docker/runc | 30 failed, 66 passed; 11 failed suites | 0 | [Result](prime-rebench-native-2026-09-07.json), [test output](prime-rebench-native-2026-09-07.tests.txt) |
+| August gVisor, candidate v3 | 13 failed, 83 passed; 3 failed suites | 0 | Result, test output |
+| Native Docker/runc | 30 failed, 66 passed; 11 failed suites | 0 | Result, test output |
 
 Every named gVisor test failure also appears in the native output. Both hit
 Node's `DEP0147` warning, which the sampled CLI tests treat as a failure when
@@ -205,7 +205,7 @@ actual pinned task before execution and matched. This isolates native behavior
 without claiming a second full Verifiers integration. The two runs had different
 cache/bootstrap costs and do not constitute a general performance comparison.
 Both cleaned up their owned runtime resources; the
-[comparison cleanup inventory](prime-compatibility-cleanup-2026-09-07.json) verified no sandboxes,
+comparison cleanup inventory verified no sandboxes,
 active creates, active ublk devices, storage errors, hard reservations or owned
 native containers/networks remained.
 

@@ -21,10 +21,10 @@ The exported registry cache uses `mode=min` and flat OCI manifests.
 | Empty replacement store, no import | 4.522 s | 3.462 s | 1.009 s | 0 |
 | Empty replacement store, shared import | 1.758 s | 1.521 s | 0.184 s | 2 |
 
-Sources: [population receipt](populate.json),
-[replacement without cache](replacement-no-cache.json),
-[replacement with cache](replacement-cache.json), and
-[canary implementation](qualify_builder.py). Receipts include the wheel digest,
+Sources: population receipt,
+replacement without cache,
+replacement with cache, and
+canary implementation. Receipts include the wheel digest,
 payload digest, pinned BuildKit image, exact build command and image manifest
 digest.
 
@@ -71,7 +71,7 @@ do not measure the cache's incremental physical disk footprint: cache metadata,
 otherwise-unreferenced layers, uploads and storage awaiting GC still consume
 space.
 
-The later [live descriptor accounting](state-after-builder-retirement.json)
+The later live descriptor accounting
 finds three cache tags still referencing 35,777,593 unique blob bytes.
 35,776,579 bytes also occur in the three controlled final-image repositories;
 only 1,014 blob bytes are cache-only in that comparison. This verifies shared
@@ -97,7 +97,7 @@ The supporting keys are `buildx_cache_max_bytes`, `buildx_cache_max_entries` and
 configuration. Changing gateway configuration alone does not retrofit the
 driver into an existing VM; new builder provisioning must be verified.
 
-The [deployment controller](deployment-controller.py) coordinates the gateway
+The deployment controller coordinates the gateway
 package, deployment configuration and node-package selection. Rollback must
 restore the compatible previous configuration together with the previous
 gateway environment: older configuration parsers reject the new builder keys.
@@ -110,17 +110,17 @@ New builder image records have additive timing fields. An older strict image
 record decoder cannot read those new records: replace the ephemeral candidate
 builders or restore their pre-change image database as part of a rollback.
 
-The [test log](tests.log) records 212 passing tests. The
-[wheel comparison](wheel-comparison.json) lists changed wheel members; it is
-not a deployment receipt. The gateway [qualification script](qualify_gateway.py)
+The test log records 212 passing tests. The
+wheel comparison lists changed wheel members; it is
+not a deployment receipt. The gateway qualification script
 defines public SDK build, history and sandbox-content checks; the script alone
 is not evidence that those checks completed.
 
 ## Production deployment qualification
 
 The final package was deployed at **2026-09-29 07:30:36 UTC**. See the
-[staging receipt](staging-receipt.json) and
-[deployment receipt](deployment-receipt.json). Its SHA-256 is
+staging receipt and
+deployment receipt. Its SHA-256 is
 `1e771767b7ed21c0a447f141c26fde0b298aae2fd83f40de2f328efc945f877f`.
 Native bundle contents and dependency files were unchanged. Gateway and relay
 HTTPS, metrics and PostgreSQL pool checks passed. The configured package root
@@ -130,14 +130,14 @@ The earlier R2 attempt automatically restored its old package/configuration
 after its verifier retained an imported old configuration parser and rejected
 the newly added settings. The services had started successfully. The final
 controller verifies installed-package health in a fresh interpreter, including
-after rollback; [rollback health verification](r2-automatic-rollback-receipt.json)
+after rollback; rollback health verification
 passed. The measured controlled canary used an earlier wheel; the
 final wheel additionally fixes Buildx instance inspection for idempotent setup.
-The [restart check](restart.log) confirms the stopped daemon restarted and
+The restart check confirms the stopped daemon restarted and
 retained its 107.4 MB local cache.
 
 Fresh builder VM **167925517** provisioned the final bundle and pinned BuildKit
-without manual setup. [Initial inspection](fresh-builder-before.log) shows a
+without manual setup. Initial inspection shows a
 running `docker-container` driver, the intended concurrency/GC settings and
 **0 B** local cache. A build through released SDK **0.4.33** then reused the
 earlier VM's registry cache:
@@ -151,27 +151,27 @@ earlier VM's registry cache:
 | Context preparation / queue wait | 36 ms / 2 ms |
 | Reused EROFS groups / Docker pulls | 1 / 0 |
 
-The [build receipt](public-build-receipt.json) records successful build
+The build receipt records successful build
 `e88ee9b7-8a3d-48df-93cd-5458a85e3d77` and its gateway SQLite summary.
-[Step details](production-checks.json) identify both `COPY payload /payload`
-and the `RUN` command as cached. [Subsequent local usage](fresh-builder-after.log)
+Step details identify both `COPY payload /payload`
+and the `RUN` command as cached. Subsequent local usage
 was 33.56 MB. This is still one small-fixture sample, not a general production
 speedup or concurrent-build throughput qualification.
 
 A fresh sandbox worker **167925809** ran that image through the public SDK.
-The [sandbox receipt](public-sandbox-receipt.json) verifies the payload SHA-256,
+The sandbox receipt verifies the payload SHA-256,
 all 32 build-time hash outputs, exit code zero and deletion of the test sandbox.
 The gateway, fresh builder and fresh worker retained all five unattended APT
-upgrade unit/timer masks (also see the [worker check](fresh-worker.log)).
-The temporary builder reservation was [released](public-release-receipt.json).
-At 07:38:37 UTC, [state after builder retirement](state-after-builder-retirement.json)
+upgrade unit/timer masks (also see the worker check).
+The temporary builder reservation was released.
+At 07:38:37 UTC, state after builder retirement
 confirms the terminal summary remains readable while builder 167925517 is
 absent from control state. There were no sandboxes, prepared reservations or
 active builds. The empty sandbox worker was awaiting normal idle scale-down.
 
-At **07:40:04 UTC**, [final state](final-state.json) confirms both temporary
+At **07:40:04 UTC**, final state confirms both temporary
 VMs have left control state, with no sandboxes, active builds or prepared
-reservations. The [autoscaler log](cleanup.log) records their stop requests.
+reservations. The autoscaler log records their stop requests.
 Gateway/relay health remained good and the durable build summary was still
 readable. Small published canary image/cache artifacts remain subject to normal
 registry retention; no temporary compute remains reserved for qualification.

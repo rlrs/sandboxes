@@ -85,7 +85,7 @@ includes guest tool work and an HTTP observation tunnel; it is not all relay
 scheduling. These are the next targets, rather than the now-submillisecond
 source-input write.
 
-Evidence: [reports, attribution and Linux test output](../benchmarks/wake-attribution-2026-09-24/).
+Evidence: reports, attribution and Linux test output.
 Full trace payloads remain under `/work/ucloud-sandboxes/release/0.5.114rc25/` on
 the gateway (`attributed16.traces.json`, `metadata16.traces.json`, and
 `optimized16.traces.json`).

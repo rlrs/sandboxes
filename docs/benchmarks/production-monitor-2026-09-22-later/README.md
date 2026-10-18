@@ -64,7 +64,7 @@ implemented fixes have not been deployed by this task. Worker maintenance pacing
 progress-aware export timeout and journal batching target the observed contention;
 gateway batching alone will not resolve worker I/O pressure.
 
-Artifacts: [first snapshot](monitor.txt), [second snapshot](monitor-2.txt),
-[OS sample](os.json), [first storage counters](storage.json),
-[second storage counters](storage-2.json), [routing and package details](details.txt),
-[worker log](worker-12398499.log).
+Artifacts: first snapshot, second snapshot,
+OS sample, first storage counters,
+second storage counters, routing and package details,
+worker log.

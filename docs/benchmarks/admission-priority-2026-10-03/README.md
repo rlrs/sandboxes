@@ -46,7 +46,7 @@ hibernates.
     place.
   - Every run ended on its own: 140 of 140 rollouts finished, with no lost
     agent and no manual step.
-- **Raw evidence:** [raw/](raw/) (`base-*` and `item5-*`). The counters below
+- **Raw evidence:** raw/ (`base-*` and `item5-*`). The counters below
   are deltas within each run.
 
 ## Results

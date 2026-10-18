@@ -17,15 +17,15 @@ The change keeps four preparation/build/push permits and adds two finishing
 permits, allowing another Docker build to start while a completed build finishes
 immutable filesystem publication.
 
-The [deployment receipt](deployment-receipt.json) records the final runtime
+The deployment receipt records the final runtime
 deployment at **20:54:30 UTC on 2026-09-29**, with
 `builder.max_finishing_builds=0` retained for qualification. Gateway HTTPS, relay
 HTTPS and metrics checks passed; the relay storage budget remained 64 GiB.
-The [activation receipt](activation-receipt.json) records the two-finisher
+The activation receipt records the two-finisher
 future-builder policy enabled at **21:17:02 UTC**, after both candidate gates
 passed. It binds their exact summary hashes and the same wheel; gateway HTTPS,
-relay HTTPS and metrics checks passed. All three [guest execution checks](image-smokes/summary.json)
-passed and their owned sandboxes were deleted. The [fresh worker audit](smoke-worker-identity.json)
+relay HTTPS and metrics checks passed. All three guest execution checks
+passed and their owned sandboxes were deleted. The fresh worker audit
 verified its packaged Python files against the released wheel and confirmed that
 automatic upgrades remain masked and inactive.
 
@@ -99,10 +99,10 @@ does not have an observed context-upload-cache advantage for the candidate.
 
 | Arm | Success / cases | Batch wall s | Arrival-to-completion p95 / max s | Submission p95 s | Deadline misses |
 |---|---:|---:|---:|---:|---:|
-| [Warm baseline](slotq-a-warm/summary.json) | 48/48 | 17.578 | 17.196 / 17.578 | 14.100 | 0 |
-| [Warm pipeline](slotq-b-warm/summary.json) | 48/48 | 17.195 | 15.795 / 17.194 | 12.633 | 0 |
-| [Dependency-invalidated baseline](slotq-a-cold/summary.json) | 48/48 | 305.181 | 290.089 / 305.179 | 175.463 | 0 |
-| [Dependency-invalidated pipeline](slotq-b-cold/summary.json) | 48/48 | 291.264 | 276.900 / 291.263 | 153.285 | 0 |
+| Warm baseline | 48/48 | 17.578 | 17.196 / 17.578 | 14.100 | 0 |
+| Warm pipeline | 48/48 | 17.195 | 15.795 / 17.194 | 12.633 | 0 |
+| Dependency-invalidated baseline | 48/48 | 305.181 | 290.089 / 305.179 | 175.463 | 0 |
+| Dependency-invalidated pipeline | 48/48 | 291.264 | 276.900 / 291.263 | 153.285 | 0 |
 
 All four arms had zero client errors and drained their admitted builds. Cold
 submission p95 improved 12.64%, while context-preparation p95 increased from
@@ -113,11 +113,11 @@ the amount of dependency work required by the fixtures.
 
 | Release gate | Status |
 |---|---|
-| Future-builder policy activation, health and exact wheel/bundle identity | Passed, [receipt](activation-receipt.json) |
-| Owned build drain, capacity reservation release and sampler cleanup | Passed, [release receipt](owned-resource-release.json) |
-| Installed runtime/bundles, empty fleet, healthy services and masked upgrades | Passed, [post-cleanup audit](final-post-cleanup-audit.json) |
-| Exact owned test-image cleanup | Passed, [cleanup status](image-cleanup-status.json) |
-| All nine owned VMs absent at the provider | Passed, [provider receipt](provider-absence.json) |
+| Future-builder policy activation, health and exact wheel/bundle identity | Passed, receipt |
+| Owned build drain, capacity reservation release and sampler cleanup | Passed, release receipt |
+| Installed runtime/bundles, empty fleet, healthy services and masked upgrades | Passed, post-cleanup audit |
+| Exact owned test-image cleanup | Passed, cleanup status |
+| All nine owned VMs absent at the provider | Passed, provider receipt |
 
 These short image-build arms do not qualify a multi-hour training run or builds
 mixed with 500–1,000 running agent sandboxes.
@@ -172,8 +172,8 @@ than another gateway CPU increase.
 
 ## Maintenance overlap
 
-The sanitized [baseline](maintenance-baseline.json) and
-[candidate](maintenance-candidate.json) journal receipts show no pruning or
+The sanitized baseline and
+candidate journal receipts show no pruning or
 registry GC during either measured cold burst. Hourly pruning ran at
 21:04:00.883–21:04:22.681 UTC, after the baseline's completion tail and 123 seconds
 before candidate warm submission. It inventoried 208 cache tags and deleted no
@@ -187,7 +187,7 @@ registry restart; orderly application-level pool closure was not proven.
 
 ## Tests and local overhead
 
-The [affected-suite log](service-tests.log) records **278 passing tests in
+The affected-suite log records **278 passing tests in
 14.440 seconds**, with no skips. After the owner-retry correction, the selection,
 phase-admission and polling subset passed **51 tests in 1.941 seconds**. These
 suites overlap; they are not 329 distinct tests. Coverage includes four-plus-two
@@ -215,11 +215,11 @@ The qualification and upgrade helpers also passed 17 focused tests; the indexed
 admission sampler passed two. The cleanup and exact-lease-release helpers passed
 six tests covering scoped aliases, identity checks and read-only lease inspection.
 Changed files passed Ruff. The production template was executed
-with its output intercepted and [validated](provisioning-template-check.json),
+with its output intercepted and validated,
 preserving the existing local build configuration.
 
 A partial index limits admission snapshots and phase-wait queries to owned
-records instead of decoding retained log tails. The [local query measurement](admission-query-benchmark.json)
+records instead of decoding retained log tails. The local query measurement
 used 256 terminal records with 64-KiB log tails and 200 calls: snapshot median/p95
 **0.182/0.203 ms**, blocked phase-transfer median/p95 **0.232/0.255 ms**. This is
 local query overhead, not production build-throughput evidence.
@@ -229,16 +229,16 @@ local query overhead, not production build-throughput evidence.
 The runtime changes are commits `c66317aabccd6438e1f079191716f0fd91b21b1a` and
 `3cdae92b546d634c804035e3c6a9efd00ed2441e`. The release root is
 `/work/ucloud-sandboxes/build-pipeline-20260929-r2`. The
-[activation helper](enable-pipeline.py) pins wheel SHA256
+activation helper pins wheel SHA256
 `405516727b99eed510a0bcfcee39203cb69f67a4b56ad7c68bc5d3eaa672e628`.
 The reviewed `images.py` SHA256 is
 `d04d15b635ab68058725c7d76157a81a053e113995353965312d671d48a35c85`.
-The [staging receipt](staging-receipt.json), whose SHA256 matches the deployment
+The staging receipt, whose SHA256 matches the deployment
 receipt, binds this wheel and the exact builder/sandbox bundle hashes. It records
 unchanged dependency and native-file inventories for both bundles; the deployment
 receipt also confirms those components remained unchanged during installation.
 
-The [deployment controller](deployment-controller.py) preserves dependencies,
+The deployment controller preserves dependencies,
 native artifacts, the relay storage budget and an exact config/runtime rollback.
 The [owned-builder upgrade helper](../../../scripts/upgrade_owned_builder.py)
 clones the existing dependency tree, verifies the candidate wheel, and changes

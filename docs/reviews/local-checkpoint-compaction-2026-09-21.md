@@ -69,7 +69,7 @@ replaced, no device or mount was created, and no remote checkpoint was published
 The fixture has an 8 MiB base inside a 9 MiB virtual image. Its first delta merge
 read an estimated 688,128 allocated bytes and produced 159,744 bytes while
 retaining the base. Reference-image comparison verified the resulting stack on
-every cycle. [Raw results](../benchmarks/local-checkpoint-compaction-2026-09-21.json)
+every cycle. Raw results
 and [reproduction script](../../runtime/storage_native/qualify_local_compaction.py).
 
 ## Limits and rollout measurements

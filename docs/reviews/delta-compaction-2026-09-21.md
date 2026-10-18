@@ -67,7 +67,7 @@ factor. Larger or heavily overwritten delta chains may select a full merge.
 
 The native test used binary SHA-256
 `75a20bd1ab96e2dff63ff877d0abe63383092e34c8fabdba927128eae062a7f7`.
-Raw results: [delta compaction benchmark](../benchmarks/delta-compaction-2026-09-21.json).
+Raw results: delta compaction benchmark.
 Reproduce with `runtime/storage_native/benchmark_delta_compaction.py`; its README
 documents the invocation. Two initial harness attempts failed before validation
 because of a remote quoting error and an output filename collision; both were
@@ -122,4 +122,4 @@ were no remaining routes, pending creates or capacity reservations. The normal
 autoscaler owns idle-worker cleanup. Worker publication counters (24 publications,
 two compactions) include both the eight-cycle and sixteen-cycle smokes.
 
-Raw release evidence: [16-cycle smoke](../benchmarks/release-0.5.70-live-smoke-2026-09-21.json).
+Raw release evidence: 16-cycle smoke.

@@ -6,9 +6,9 @@ export are already small. Python's larger apparent `RUN` durations are cached
 layer download/extraction, not repeated dependency installation.
 
 Source receipts are
-[`../builder-execution-2026-09-29/exec-repeat/summary.json`](../builder-execution-2026-09-29/exec-repeat/summary.json).
+`../builder-execution-2026-09-29/exec-repeat/summary.json`.
 The raw retained logs remain outside the repository. The
-[sanitized report](baseline-buildkit-progress.json) contains only known fixture
+sanitized report contains only known fixture
 labels, numeric timings/counts, vertex IDs/statuses, and input SHA-256 hashes.
 
 | Recipe, 16 builds each | Actual RUN seconds per build, mean | Layer materialization seconds per build, mean | Image export mean | Cache export mean |

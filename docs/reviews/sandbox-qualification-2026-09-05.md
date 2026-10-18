@@ -2,7 +2,7 @@
 
 Branch: `codex/sandbox-linux-compatibility`. Real UCloud gVisor nodes and an isolated UCloud builder were used. Production gateway/autoscaler installations were not replaced.
 
-This is a one-task sample per family, not full-dataset certification. Image provisioning and setup alone do not establish grading or kernel-feature compatibility. Exact versions, artifact hashes, task keys and rebuilt image context hashes are in [the evidence JSON](sandbox-qualification-2026-09-05.json).
+This is a one-task sample per family, not full-dataset certification. Image provisioning and setup alone do not establish grading or kernel-feature compatibility. Exact versions, artifact hashes, task keys and rebuilt image context hashes are in the evidence JSON.
 
 | Family | Setup | Gold / oracle |
 | --- | --- | --- |

@@ -232,7 +232,7 @@ correctness but cannot establish Hetzner tail latency or throttling behavior.
 The production path was exercised between a CPX62 worker and the `sandboxes`
 bucket in `hel1`. These are individual qualification observations rather than
 p95 claims; the machine-readable record is
-[`hetzner-object-storage-snapshots-2026-08-13.json`](benchmarks/hetzner-object-storage-snapshots-2026-08-13.json).
+`hetzner-object-storage-snapshots-2026-08-13.json`.
 
 | Operation | Result |
 | --- | --- |

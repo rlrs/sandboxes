@@ -70,9 +70,9 @@ helper SHA-256 is
 `9311328c077554ca455f090aee9ab571bf913e2f7b939cfdc67d4e9e1cf54d02`;
 R2 is
 `cd046d289ad849381db870b4b3deb8571e7e21de95239cc88fac26ca18e826ae`.
-Their [live receipts](cache-concurrency-diagnostic-r1.json) and
-[R2 receipt](cache-isolation-diagnostic-r2.json) provide the separate BuildKit
-outcomes and owned-driver cleanup. The [final audit](final-state.json) passed at
+Their live receipts and
+R2 receipt provide the separate BuildKit
+outcomes and owned-driver cleanup. The final audit passed at
 13:58:21 UTC and supplies fleet cleanup, history, health and idle-state evidence.
 
 The audit check was run locally:

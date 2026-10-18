@@ -10,7 +10,7 @@ import subprocess
 import uuid
 
 
-MANIFEST = Path(__file__).resolve().parents[1] / "docs/prime-public-builds.json"
+MANIFEST = Path(__file__).resolve().parents[1] / "scripts/data/prime-public-builds.json"
 
 
 def image_alias(row: dict, result: dict) -> dict:

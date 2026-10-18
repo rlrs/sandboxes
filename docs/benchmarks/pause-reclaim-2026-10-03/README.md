@@ -17,7 +17,7 @@ pool at almost 1:1, and that pool is charged to the same cgroup. So
 
 ## Probe
 
-[reclaim_probe.py](reclaim_probe.py) ran on one disposable, unregistered CCX63:
+reclaim_probe.py ran on one disposable, unregistered CCX63:
 kernel 7.0.0-30, the 0.8.4 bundle and the pause-tier config. zswap was on
 (zstd, `max_pool_percent` 20, `accept_threshold_percent` 90) over a 128 GiB
 NVMe swap file.
@@ -30,7 +30,7 @@ Each of four managed sandboxes:
 - is then woken, and works once more with its heap verified. The same
   process came back intact in every case.
 
-Raw results: [raw/reclaim.json](raw/reclaim.json).
+Raw results: raw/reclaim.json.
 
 | variant | writes | time | net freed (`memory.current`) | moved to swap/zswap | zswap pool after | wake | work after wake (first work 2.1 s) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -123,8 +123,8 @@ remains.
   as the relay does:
   - random heaps on one node;
   - about 4:1 compressible heaps (`--compressible`) on the other.
-- **Raw evidence:** [raw/pass2-random.json.gz](raw/pass2-random.json.gz) and
-  [raw/pass2-compress.json.gz](raw/pass2-compress.json.gz).
+- **Raw evidence:** raw/pass2-random.json.gz and
+  raw/pass2-compress.json.gz.
 
 | 140 rollouts, one CCX63 | pass 1 (random) | **pass 2, random** | **pass 2, compressible** | today's policy |
 | --- | ---: | ---: | ---: | ---: |

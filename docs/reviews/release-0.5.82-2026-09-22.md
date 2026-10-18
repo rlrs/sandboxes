@@ -80,7 +80,7 @@ checks reported active/running with zero further restarts. Future operational
 provider calls should run as the service user to avoid repeating this issue.
 
 Sanitized evidence is in
-[`docs/benchmarks/release-0.5.82-2026-09-22`](../benchmarks/release-0.5.82-2026-09-22).
+`docs/benchmarks/release-0.5.82-2026-09-22`.
 The benchmark files retain configurations and aggregate results; per-cycle
 records remain in `/work/ucloud-sandboxes/release/0.5.82` on the gateway. The
 fleet records are time-stamped snapshots, not promises of a fixed fleet size.

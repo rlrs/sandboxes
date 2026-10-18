@@ -8,7 +8,7 @@ This is an offline preparation tool, not an automatic rewrite in the request pat
 
 ## Measured pilot
 
-[Evidence](benchmarks/image-pools-2026-09-30/shared-task-preparation.json) records 48/48 successful preparations over 12 project anchors. Their compressed deltas total 59,254,673 bytes; their original compressed layers total 26,474,609,014 bytes. Observed total registry growth was 159,645,696 bytes. This excludes already-retained anchor costs and includes concurrent registry activity. Some original images already share EROFS blobs, so avoiding their full OCI layers is a separate saving from filesystem-component sharing. No original images were deleted.
+Evidence records 48/48 successful preparations over 12 project anchors. Their compressed deltas total 59,254,673 bytes; their original compressed layers total 26,474,609,014 bytes. Observed total registry growth was 159,645,696 bytes. This excludes already-retained anchor costs and includes concurrent registry activity. Some original images already share EROFS blobs, so avoiding their full OCI layers is a separate saving from filesystem-component sharing. No original images were deleted.
 
 There were 36 full source filesystem scans and 12 checks using a prior exact-filesystem certificate plus a fresh sandbox mount/exec. One initial verification failure involved Helm files under `/tmp`; the deployed sandbox always replaces `/tmp` with tmpfs. The verifier now follows that runtime contract, and the image passed on retry. Failed verification did not register its source aliases.
 
@@ -46,7 +46,7 @@ Run under a durable supervisor with the resource limits above. Resume with the s
 
 ## Recovery
 
-The [portable inputs](../image-campaigns/2026-09-30/README.md) preserve 743 public source pins and all 8,602 foundation contexts independently of the registry volume. `shared-anchors.json` contains the 118 original public anchor inputs without private references or completed-build state.
+The portable inputs preserve 743 public source pins and all 8,602 foundation contexts independently of the registry volume. `shared-anchors.json` contains the 118 original public anchor inputs without private references or completed-build state.
 
 After volume loss, use a fresh recovery generation. Restore the required anchors from that public plan with the normal source preparer, adding a fresh `rebuild_generation` to its plan. Materialize the portable bundle for pinned source inventory, then regenerate the shared-task plan from the **new** anchor catalog. This derives new private references and preparation identities. Never reuse stale successful catalogs, old private anchors or a previous shared-task work directory after losing their registry contents. Existing aliases are insert-only; use explicit restored references and rewrite/audit the task index as described in the campaign guide.
 
@@ -65,7 +65,7 @@ A larger expanded-queue delta was profiled separately: 253,924,323 changed logic
 
 ## Qualified multi-layer preparation (October 1)
 
-The [measured results](benchmarks/image-pools-2026-09-30/layered-task-preparation-20261001.json) include 14 ordinary imports across seven families, an existing-image sharing proof, and two fresh R2E-Gym preparations. The fresh sources required **37.7 MB and 42.1 MB** compressed deltas, plus **68.4 MB and 77.9 MB** of new EROFS data; each reused seven existing components. Their original compressed sources were about 448.6 MB each. Existing anchor costs are excluded. The earlier 507.4 MB source / 168.2 MB delta proof used an already imported target and did **not** reclaim its original blobs.
+The measured results include 14 ordinary imports across seven families, an existing-image sharing proof, and two fresh R2E-Gym preparations. The fresh sources required **37.7 MB and 42.1 MB** compressed deltas, plus **68.4 MB and 77.9 MB** of new EROFS data; each reused seven existing components. Their original compressed sources were about 448.6 MB each. Existing anchor costs are excluded. The earlier 507.4 MB source / 168.2 MB delta proof used an already imported target and did **not** reclaim its original blobs.
 
 The existing-target proof and three fresh layered preparations passed independent full sandbox filesystem scans. The third fresh source also exercised the final disk-bounded unpacker: a 171.4 MB delta replaced a 510.6 MB source, and its temporary filesystem was removed. Fresh-source requests through the ordinary public names created sandboxes in 1.34 and 1.47 seconds without an import build. These are small canaries, not a workload latency guarantee. The full-source checker now accounts explicitly for the runtime-created `/workspace` directory only when absent from the source; existing workspace contents, ownership, mode and timestamps remain checked. This advances the certificate contract to version 3 and forces old certificates to be requalified when using the new package.
 
@@ -279,6 +279,6 @@ filesystem qualification, using an 86,386,245-byte delta in place of a
 started. Public-name requests for this image and the larger fakeredis seed both
 passed, creating sandboxes in **1.80 and 1.03 seconds** respectively with no new
 import builds. These two checks validate cache routing, not high-concurrency
-latency. The [request results](benchmarks/image-pools-2026-09-30/cache-path-qualification-20261001.json)
+latency. The request results
 are retained. The updated path passed 76 targeted tests; all five deployed
 preparation/planning helper hashes matched commit `f1e3ce3`.

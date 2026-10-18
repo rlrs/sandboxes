@@ -53,4 +53,4 @@ The repeat still executes application instructions despite selecting matching af
 
 The standalone controlled proof tests an old exact result outside the eight recency-selected imports on independent empty BuildKit stores, and verifies source/ARG invalidation. That establishes the mechanism separately from these sequential fleet observations. Placement, cache history, volume state and scheduling can also change batch time; one repeat is not a confidence interval or a universal customer-workload forecast.
 
-See [numeric report](performance-comparison.json), [baseline progress analysis](baseline-buildkit-progress.md), and [controlled proof protocol](CONTROLLED-PROOF.md). Reproduce with `python3 docs/benchmarks/build-cache-affinity-2026-09-29/performance-report.py`; it reads only local receipts and rewrites these two derived report files.
+See numeric report, [baseline progress analysis](baseline-buildkit-progress.md), and [controlled proof protocol](CONTROLLED-PROOF.md). Reproduce with `python3 docs/benchmarks/build-cache-affinity-2026-09-29/performance-report.py`; it reads only local receipts and rewrites these two derived report files.

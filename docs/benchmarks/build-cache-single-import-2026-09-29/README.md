@@ -7,16 +7,16 @@ eight imports, an observed **44.56% reduction**. Client p95 fell from 97.275 to
 21.683 seconds. These are results for the same 48 frozen contexts, not a
 guarantee for uncached builds or every workload.
 
-It was [deployed](deployment-receipt.json) at **14:00:19 UTC**, with healthy
-gateway, relay and metrics checks. [Three application smokes](smoke-single-import-repeat.json)
-passed and their sandboxes were deleted. The [owned reservation was released](pool-release.json)
-at 14:08:47 UTC. The [final audit passed](final-state.json) at **14:13:56 UTC**:
+It was deployed at **14:00:19 UTC**, with healthy
+gateway, relay and metrics checks. Three application smokes
+passed and their sandboxes were deleted. The owned reservation was released
+at 14:08:47 UTC. The final audit passed at **14:13:56 UTC**:
 all five owned nodes were absent from the provider, all 48 durable histories
 matched, the gateway was healthy and idle, and driver/sampler units were stopped.
-[Candidate source verification](candidate-source.json)
+Candidate source verification
 records all 163 packaged files matching wheel SHA-256
 `33c89ef609c5f7fc014d0a8e1c1e7b698566b524cbba46cebcc73d3a90bb76df`
-at runtime commit `6f8a569`. [Staging](staging-receipt.json) preserved dependencies
+at runtime commit `6f8a569`. Staging preserved dependencies
 and native files in both future-node bundles. Helper preparation and local
 self-tests made no production calls.
 
@@ -47,12 +47,12 @@ base pins, dependency locks, BuildKit version, four slots per builder and the
 | Environment publication p95 seconds | 4.249 | 0.940 |
 | Submit HTTP 503 observations | 309 | 55 |
 
-[Selection evidence](single-import-repeat-selection.json) covers all 48 logs:
+Selection evidence covers all 48 logs:
 all selected an exact affinity match and **one import**. All 48 exported one
 immutable cache manifest digest. Forty-three can be joined to a unique cache
 tag; five have digest aliases, retained explicitly in the report. Selection is
 separate from actual BuildKit execution evidence. In the retained
-[progress](candidate-buildkit-progress.json), only one request has an executed
+progress, only one request has an executed
 application vertex, versus 28 such observations in the previous repeat.
 Progress can contain shared/replayed vertices; these counts are not independent
 CPU executions or a proof about omitted log lines.
@@ -112,17 +112,17 @@ This is an image-build qualification, not a 500/1,000-running-agent test.
 
 [Verification](test-verification.md) records 80 passing focused tests, helper
 self-tests and independent reviews. All three recipe-bound application smokes
-verified output, exited zero and were deleted. [Normal cache maintenance](cache-prune.json)
+verified output, exited zero and were deleted. Normal cache maintenance
 retained 64 entries totaling 928,227,640 referenced bytes and removed 48 cache
 manifests; physical reclamation still follows registry GC policy. The
-[48-image inventory](image-inventory.json) finds 927,947,641 unique compressed
+48-image inventory finds 927,947,641 unique compressed
 OCI-layer bytes shared with the cache and only 279,999 additional cache-config
 bytes in this metadata view. Referenced descriptors exclude filesystem metadata,
 pending uploads and unreclaimed blobs; they are not physical volume consumption.
 The
-[resource ledger](resource-ledger.json) confirms retirement of the four builders
+resource ledger confirms retirement of the four builders
 and smoke worker and binds the completed final-audit receipt. The bounded
-[publication review](artifact-audit.json) covers these structured receipts,
+publication review covers these structured receipts,
 telemetry, reports and helpers; it found no credential-pattern matches or raw
 customer workload payloads.
 
@@ -149,7 +149,7 @@ fixture bytes, dependency locks, base-image pins and SDK wheel.
 
 ## Helpers and execution order
 
-1. [deployment-controller.py](deployment-controller.py) is the previously reviewed
+1. deployment-controller.py is the previously reviewed
    affinity controller with only its fixed release root changed. Stage the new
    wheel, this controller and the unchanged `scripts/repack_node_bundle.py` in the
    release directory. `stage` takes exact wheel, repacker and currently configured
@@ -158,7 +158,7 @@ fixture bytes, dependency locks, base-image pins and SDK wheel.
    requires idle work, backs up the venv/config and verifies automatic rollback
    health on failure. It updates only `node_package_root`. The 64 GiB relay
    budget, service policy and native components remain guarded.
-2. [qualification-control.py](qualification-control.py) has `prepare`, `hold`,
+2. qualification-control.py has `prepare`, `hold`,
    `state` and `release` actions for this reservation only. `prepare` requires an
    empty fleet and requests four builders with a 3,600-second demand expiry.
    This is a one-shot creation signal, consumed when the provider accepts the
@@ -167,7 +167,7 @@ fixture bytes, dependency locks, base-image pins and SDK wheel.
    no further creation was needed. Use a new `--output` path for repeated holds.
    Receipt names are reserved before API mutations. Heartbeat inspection uses
    SQLite read-only mode, and SDK credentials stay on the gateway.
-3. Use [initial-builder-check.py](initial-builder-check.py) on each fresh builder
+3. Use initial-builder-check.py on each fresh builder
    with its candidate bundle digest and expected module hashes. Save its output
    as `LOAD/builder-NODE_ID-initial.json`. The final audit requires four such
    receipts, active node agents, initially empty BuildKit caches and candidate
@@ -175,7 +175,7 @@ fixture bytes, dependency locks, base-image pins and SDK wheel.
    `environment_builder.py`. BuildKit version/configuration are fixed to the
    preceding qualification.
 4. Stage the unchanged `scripts/qualify_build_optimization.py` in the release
-   directory. [run-qualification.py](run-qualification.py) validates the candidate
+   directory. run-qualification.py validates the candidate
    deployment receipt, wheel, frozen wrapper/harness/SDK and all context bytes.
    Its default prints a plan. `--run` launches the same 48-request harness through
    the exact SDK driver unit above and records `LOAD/run-launch.json`. This unit
@@ -185,7 +185,7 @@ fixture bytes, dependency locks, base-image pins and SDK wheel.
    wait to 1,500 seconds. A failed/timed-out client still requires checking
    outstanding server builds before cleanup.
 5. Sample gateway/builders through the measured phase and a bounded writeback
-   tail, using public `/healthz`. Run [selection-report.py](selection-report.py)
+   tail, using public `/healthz`. Run selection-report.py
    afterward with `--phase single-import-repeat --output LOAD/selection.json`.
    It reads only the owned 48 summaries/logs plus bounded registry GET/HEAD
    metadata. Require complete selector coverage and verify that exact matches
@@ -195,7 +195,7 @@ fixture bytes, dependency locks, base-image pins and SDK wheel.
    Run normal cache maintenance separately from the measurement, release the
    owned reservation and wait for all owned nodes to retire. Keep a ledger for
    automatically provisioned workers and any extra canary VM.
-7. [final-audit.py](final-audit.py) checks 48 exact successful durable-history
+7. final-audit.py checks 48 exact successful durable-history
    identities, three distinct recipe-bound/deleted smokes, frozen context
    verification, the successful named driver launch, four initial builder
    receipts, the installed candidate wheel and both future bundles. It also

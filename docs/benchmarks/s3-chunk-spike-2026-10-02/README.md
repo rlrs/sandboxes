@@ -73,7 +73,7 @@ not in the checkout: `.hetzner/ssh/gateway-init` was missing, and the first `gw`
 banner, no ping). When it came back at 16:43Z, public-key authentication failed again, through 6 tries
 over 15 minutes. The VM's raw files could not be retrieved, so the VM was deleted through the Hetzner
 API as the rules require. The numbers below are the ones printed to the session, transcribed into
-[`raw/`](raw/). The per-request latency lists and per-cycle backend counters are gone.
+`raw/`. The per-request latency lists and per-cycle backend counters are gone.
 
 **Cleanup.**
 - The VM is deleted: `GET /servers/168399354` returns 404, and no server named
@@ -101,10 +101,10 @@ API as the rules require. The numbers below are the ones printed to the session,
     `filesystem`/`registry`);
   - so the bucket is the design's `example-chunk-bucket` at
     `https://hel1.your-objectstorage.com`, region `hel1`, virtual-hosted style
-    ([`scripts/make_config.py`](../../../scripts/hetzner_prod/make_config.py)). It holds `prod/`;
+    (`scripts/make_config.py`). It holds `prod/`;
   - the VM used its public IPv4, as the brief asked ("as workers would"). Production workers would
     go through the gateway's NAT instead (finding 1).
-- **(a) Packs** ([`scripts/packer.py`](scripts/packer.py), [`scripts/packfmt.py`](scripts/packfmt.py)).
+- **(a) Packs** (`scripts/packer.py`, `scripts/packfmt.py`).
   S10's `fetch.py` and `convert.py` (unchanged) fetched the 181-image sample and converted each
   unique layer: `--chunk-size 0x40000 --digester sha256 --compressor zstd --repeatable`, with no
   dictionary, 40 in parallel. Each image was then merged with `--original-blob-ids`. The packer then
@@ -119,7 +119,7 @@ API as the rules require. The numbers below are the ones printed to the session,
 
   Each image's chunk map and locator (57 B per entry, sorted by device offset), and its zstd
   bootstrap, went to `spike-s12/meta/`.
-- **(b) GETs** ([`scripts/s3bench.py`](scripts/s3bench.py), [`scripts/s3lib.py`](scripts/s3lib.py)):
+- **(b) GETs** (`scripts/s3bench.py`, `scripts/s3lib.py`):
   - SigV4 is stdlib-only and checked against four AWS reference vectors;
   - requests use presigned 24 h URLs, as workers would (Decision 2); the backend holds no key;
   - each request is a `Range` read at a random 4 KiB-aligned offset in a random pack of 8–64 MiB
@@ -129,10 +129,10 @@ API as the rules require. The numbers below are the ones printed to the session,
   - TTFB runs from send to the status line; total runs to the last body byte.
 
   Req/s and MiB/s count the whole cell, including overrun by stalled requests, so they are lower
-  bounds. [`scripts/probe_conn.py`](scripts/probe_conn.py) and
-  [`scripts/probe_cache.py`](scripts/probe_cache.py) separate connection reuse from server-side
+  bounds. `scripts/probe_conn.py` and
+  `scripts/probe_cache.py` separate connection reuse from server-side
   caching.
-- **(c) Cold workloads** ([`scripts/s3nbd.py`](scripts/s3nbd.py), [`scripts/coldrun.py`](scripts/coldrun.py)).
+- **(c) Cold workloads** (`scripts/s3nbd.py`, `scripts/coldrun.py`).
   This extends S10's NBD harness.
   - **Backend:** one process serves every device, with one chunk cache keyed by chunk id (memory,
     then disk, verified again on every disk hit) and single-flight fetches. The fetch pool has
@@ -151,7 +151,7 @@ API as the rules require. The numbers below are the ones printed to the session,
   - **Each cycle** is a new backend, an empty cache and `drop_caches`.
   - **Commands:** S10's `import sys` and `git status` (in `/testbed`), plus `python3 -m pip --version`.
   - **Images:** S10's 7.
-- **(d) Index** ([`scripts/indexbench.py`](scripts/indexbench.py)).
+- **(d) Index** (`scripts/indexbench.py`).
   - **Table:** the §1.3 `chunks` table (`WITHOUT ROWID`, 32 B id key), on the CCX63's local disk.
   - **Build:** 500M uniform ids, inserted in key order.
   - **Fill factor:** a 20M-row build in both key and random order.
@@ -160,15 +160,15 @@ API as the rules require. The numbers below are the ones printed to the session,
     the file fully in page cache.
   - **Inserts:** 1M new random ids in 7.5k-row transactions (one pack commit each), with WAL,
     `synchronous=NORMAL` and a 4 GB cache.
-- **(e) Page cache** ([`scripts/select_pc.py`](scripts/select_pc.py), [`scripts/pagecache.py`](scripts/pagecache.py),
+- **(e) Page cache** (`scripts/select_pc.py`, `scripts/pagecache.py`,
   prepared but not run).
   - **Candidates:** all 3,546 distinct TMax, Terminal-Lego and OpenSWE foundation references in the
-    training selection ([`scripts/make_pc_candidates.py`](scripts/make_pc_candidates.py)).
+    training selection (`scripts/make_pc_candidates.py`).
   - **Why bases, not foundation keys:** a `foundation_key` maps to exactly one prepared image, so
     "distinct images on few foundations" here means distinct prepared images that share base layers.
     The images were grouped by their first layer, and 16 were drawn from each of the 4 largest groups.
   - **Result:** 64 images (11 TMax, 53 Terminal-Lego) with 147 unique layers, 6.3 GB unique against
-    10.4 GB summed ([`raw/pc-selection.json`](raw/pc-selection.json)).
+    10.4 GB summed (`raw/pc-selection.json`).
   - **Harness:** it runs one import-heavy command per image, one image after another. After each, it
     records `/proc/meminfo` (MemAvailable, Cached, Buffers, SReclaimable) and attach time, and it
     reports the slope per extra image. The NBD backend reads local packs with `POSIX_FADV_DONTNEED`
@@ -176,7 +176,7 @@ API as the rules require. The numbers below are the ones printed to the session,
 
 ## Results
 
-### (a) Corpus and packs (181 images, [`raw/packer-main.json`](raw/packer-main.json))
+### (a) Corpus and packs (181 images, `raw/packer-main.json`)
 
 | Measure | Value |
 | --- | ---: |
@@ -209,7 +209,7 @@ API as the rules require. The numbers below are the ones printed to the session,
   `pip --version` into 36–45, so a cold start touches at most that many packs.
 - **The page-cache set** (64 images packed into the same index) has a median fan-out of 31.
 
-### (b) S3 ranged GETs, one client ([`raw/s3bench-1client.json`](raw/s3bench-1client.json))
+### (b) S3 ranged GETs, one client (`raw/s3bench-1client.json`)
 
 Latencies are in ms. "Errors" are 30 s client read timeouts.
 
@@ -240,7 +240,7 @@ Latencies are in ms. "Errors" are 30 s client read timeouts.
   5.1 s, p99 21.8 s, with 11 timeouts.
 - **Client CPU was not the limit:** at most 48 CPU-s over a 15 s cell on 48 vCPUs.
 
-**Probes** ([`raw/s3-probes.json`](raw/s3-probes.json)):
+**Probes** (`raw/s3-probes.json`):
 - **Sequential reads still stall.** 40 sequential 64 KiB GETs: fresh connections p50 47–84 ms,
   p90 0.3–4.3 s, max 3.4–23 s; keep-alive p50 49 ms, p90 152 ms, max 5.0 s, with 2 timeouts.
   Connection reuse is not the cause.
@@ -272,7 +272,7 @@ concurrency 1.
 - **Demand rate:** at the design's 1 GB/s burst target in 1 MiB windows, about 1,000 GET/s. The
   best observed was 131 GET/s from one client.
 
-### (c) Cold first commands through S3 ([`raw/coldseq-captured.json`](raw/coldseq-captured.json))
+### (c) Cold first commands through S3 (`raw/coldseq-captured.json`)
 
 Cold wall time in seconds. S10's loopback numbers are in brackets for `import sys` and `git status`.
 For `pip --version`, `local:demand` on this VM is the baseline; S10 did not run `pip`.
@@ -325,7 +325,7 @@ For `pip --version`, `local:demand` on this VM is the baseline; S10 did not run 
 
 The 20- and 100-way bursts were not measured.
 
-### (d) Index at 500M rows ([`raw/index.json`](raw/index.json))
+### (d) Index at 500M rows (`raw/index.json`)
 
 | Measure | Value |
 | --- | ---: |
@@ -360,7 +360,7 @@ The 64-image set, its packs, the chunk maps of every layer and image, and the ha
 (`pagecache.py prep` builds the fingerprinted images; then `run --variant image|layer|ishare|erofs`,
 where `erofs` is the same images without `inode_share`, the control for iii).
 
-**Variant iii: what was established** ([`raw/erofs-ishare.json`](raw/erofs-ishare.json)):
+**Variant iii: what was established** (`raw/erofs-ishare.json`):
 
 1. **A module rebuild is enough.** The kernel has `CONFIG_FS_STACK=y` (built in) and
    `CONFIG_EROFS_FS_XATTR=y`. The option is `EROFS_FS_PAGE_CACHE_SHARE`, "EROFS page cache share
@@ -368,7 +368,7 @@ where `erofs` is the same images without `inode_share`, the control for iii).
    - S11's out-of-tree recipe, with `CONFIG_EROFS_FS_PAGE_CACHE_SHARE=y
      KCFLAGS=-DCONFIG_EROFS_FS_PAGE_CACHE_SHARE=1`, built `erofs.ko` with vermagic
      `7.0.0-30-generic SMP preempt mod_unload modversions` and 26 `ishare` symbols (sha256
-     `2dde3450…babd7b6`, [`scripts/build_erofs_ishare.sh`](scripts/build_erofs_ishare.sh)).
+     `2dde3450…babd7b6`, `scripts/build_erofs_ishare.sh`).
    - It was not loaded, because (e) never started.
    - Like S11's modules, it would be unsigned and out-of-tree. Unlike fscache, the feature is
      experimental rather than deprecated.
@@ -430,15 +430,15 @@ where `erofs` is the same images without `inode_share`, the control for iii).
 
 ## Files
 
-- **[`raw/`](raw/)**, transcribed from console output:
+- **`raw/`**, transcribed from console output:
   - `packer-main.json`, `packer-pc.json`: (a);
   - `s3bench-1client.json`, `s3-probes.json`: (b);
   - `coldseq-captured.json`: (c), with S10's baselines;
   - `index.json`: (d);
   - `pc-selection.json`, `erofs-ishare.json`: (e);
   - `runtime.json`: VM, S3 and cleanup ledger.
-- **[`scripts/`](scripts/)**, run on the VM unless marked otherwise. S10's `fetch.py`, `convert.py`
-  and `rafs.py` were copied unchanged from [`../nydus-spike-2026-10-02/scripts/`](../nydus-spike-2026-10-02/scripts/),
+- **`scripts/`**, run on the VM unless marked otherwise. S10's `fetch.py`, `convert.py`
+  and `rafs.py` were copied unchanged from `../nydus-spike-2026-10-02/scripts/`,
   and S10's `raw/sample.json` was the sample.
   - **Setup:** `setup.sh`, `run_a.sh`; `kernel_setup.sh` and `build_erofs_ishare.sh` (iii).
   - **(a):** `packer.py`, `packfmt.py`.

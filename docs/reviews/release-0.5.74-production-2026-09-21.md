@@ -56,7 +56,7 @@ median and 22.4 ms maximum** latency. Relay health reported 0.5.74. All four
 services were active. No sandbox routes, pending creates, or reservations
 remained; the canary reported zero active sandboxes and no quarantine.
 
-[Raw rollout and live-test evidence](../benchmarks/release-0.5.74-live-smoke-2026-09-21.json).
+Raw rollout and live-test evidence.
 These are light-load correctness checks. They do not qualify 256/512 concurrent
 agents or establish the loaded performance gain; the next real run can use the
 new wait timing to locate remaining coordination delays.

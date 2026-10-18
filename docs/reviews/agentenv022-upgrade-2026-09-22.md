@@ -45,7 +45,7 @@ in the VM tests:
 | Production v0.1.2 baseline | `75a20bd1ab96e2dff63ff877d0abe63383092e34c8fabdba927128eae062a7f7` |
 | Qualified v0.2.2 candidate | `76d59a1c10cb495e90380e320de8fe30e6370f8b374aab410494c8e0b92a5748` |
 
-The [build manifest](../benchmarks/agentenv022-2026-09-22/build-manifest.json)
+The build manifest
 records every patch digest. The targeted Rust suite passed **217 tests**:
 103 LSMT file/index tests, 54 cache tests and 60 daemon tests; three upstream
 tests remained ignored. Coverage includes failed/interrupted eviction,
@@ -62,9 +62,9 @@ Cross-version tests ran on disposable UCloud VM **12399394**, with 8 vCPUs,
 It had no production worker identity or sandbox assignments.
 After collecting results, all test devices/processes and namespace/cache
 mounts were released and the qualification VM was stopped. The final cleanup
-verification is recorded in [cleanup.json](../benchmarks/agentenv022-2026-09-22/cleanup.json).
+verification is recorded in cleanup.json.
 
-The [migration results](../benchmarks/agentenv022-2026-09-22/migration.json)
+The migration results
 passed all three cases:
 
 - v0.1.2 seal/export → HTTP range reads → v0.2.2 fresh upper.
@@ -78,7 +78,7 @@ Upgrade cases also attempt to reopen a legacy upper and require rejection
 without modifying either data or index. The full-cache case served about
 31 MB of remote reads in the filesystem-only run.
 
-The [gVisor migration run](../benchmarks/agentenv022-2026-09-22/migration-gvisor.json)
+The gVisor migration run
 then passed all three cases using the actual production gVisor executables
 and statically built `conformance_workload.c`/`noop.c`. It checkpoints and
 destroys the sentry on the source, reconstructs storage on the destination,
@@ -93,7 +93,7 @@ The copied production runsc reported version `50e1502a95d3-dirty` and SHA-256
 `be491ee25a10a9036b46037dbd21343cc3bf4a4eee90ca21885e7848124bd9e5`;
 all four companion executables were copied with it.
 
-The [local compaction test](../benchmarks/agentenv022-2026-09-22/local-compaction.json)
+The local compaction test
 preserved overwritten data, explicit zeros, discard mappings and holes across
 29 initial layers plus 24 additional checkpoint cycles. Five compactions were
 adopted with no failures; the final chain had three layers. It also verified
@@ -121,8 +121,8 @@ reservations. Memory was sampled once per second and after 15 seconds idle.
 | Sampled peak anonymous memory | 48.2 MiB | 55.3 MiB |
 | Anonymous memory after cleanup and idle | 48.2 MiB | 48.1 MiB |
 
-Raw results: [baseline](../benchmarks/agentenv022-2026-09-22/churn-old-memory.json)
-and [candidate](../benchmarks/agentenv022-2026-09-22/churn-new-memory.json).
+Raw results: baseline
+and candidate.
 The latency direction is encouraging, but this is one small sequential A/B
 comparison. It does not establish a large memory improvement or a production
 wake SLO. Empty parallel volumes and a small index do not reproduce upstream's
@@ -135,8 +135,8 @@ reservations. Mount p95 improved from **945 ms to 830 ms** and release p95 from
 903 ms to 815 ms. Sampled anonymous-memory peaks were 301 MiB versus 317 MiB;
 after deletion and 15 seconds idle they were 293 MiB versus 285 MiB. This
 supports a modest latency improvement, not a claim of dramatically reduced
-memory use. See [64-way baseline](../benchmarks/agentenv022-2026-09-22/churn-old-64.json)
-and [64-way candidate](../benchmarks/agentenv022-2026-09-22/churn-new-64.json).
+memory use. See 64-way baseline
+and 64-way candidate.
 
 ## Sustained I/O comparison
 
@@ -153,8 +153,8 @@ match the production defaults.
 | Metadata workload | 0.654 s | 0.631 s |
 | Write bandwidth / native loopback | 56.1% | 56.4% |
 
-Raw results: [baseline](../benchmarks/agentenv022-2026-09-22/io-old.json) and
-[candidate](../benchmarks/agentenv022-2026-09-22/io-new.json). Both pass the
+Raw results: baseline and
+candidate. Both pass the
 metadata, random-I/O and sparse-seal gates; **both fail the existing requirement
 to stay within 15% of native sequential write throughput**. The upgrade does
 not resolve that existing bottleneck. This A/B does not show a substantial

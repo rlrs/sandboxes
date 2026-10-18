@@ -635,8 +635,8 @@ The findings are in [chunk-store-m2-plan.md](chunk-store-m2-plan.md) §5.2.
 ## Production moves to UCloud: 0.9.31 to 0.9.33 (2026-10-05)
 
 **What moved.**
-- **Gateway:** job JOB_ID, `cpu-amd-zen5-8-vcpu`, private address 10.36.101.16.
-- **Store node:** job JOB_ID, with a 2,000 GB disk, at 10.36.103.152.
+- **Gateway:** a `cpu-amd-zen5-8-vcpu` job on the private network.
+- **Store node:** a job with a 2,000 GB disk on the private network.
 - **Workers:** autoscaled on `cpu-amd-zen5-64-vcpu`.
 - **Stayed at Hetzner:** the chunk store's S3 bucket. The store node refilled its replica from it in under 2 hours (331 GB).
 

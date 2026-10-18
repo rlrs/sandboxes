@@ -49,13 +49,13 @@ symlinks).
 
 `tests.test_erofs_metadata`, `tests.test_environment_metadata` and
 `tests.test_environment_prefetch` were run as root on the host
-([`walker-tests-root.log.gz`](walker-tests-root.log.gz)). The first run had one
+(`walker-tests-root.log.gz`). The first run had one
 failure, and it was in the test, not the walker. erofs-utils 1.9 gives every
 directory that directly holds a whiteout (a 0:0 character device) an empty
 `trusted.overlay.origin`; 1.4 does not. Overlayfs takes an origin xattr on a lower
 directory as a sign that it may contain whiteouts, and so filters them in
 readdir even where the directory is not merged (from the kernel's overlayfs
-design; not separately tested here). [`mz-and-xattr-probes.json.gz`](mz-and-xattr-probes.json.gz) shows the rule:
+design; not separately tested here). `mz-and-xattr-probes.json.gz` shows the rule:
 it applies to the root, to nested and to opaque directories, and
 `--ovlfs-strip=1` drops it together with the opaque xattrs (and, per its
 help text, the whiteouts). The walker
@@ -67,7 +67,7 @@ and the walker tests also pass locally on 1.4.
 
 ### The scientific rootfs with production flags
 
-[`walker-rootfs-proof.py`](walker-rootfs-proof.py) builds each variant twice
+`walker-rootfs-proof.py` builds each variant twice
 (determinism), walks it, and then proves completeness at 4 KiB block
 granularity. Every block a reader touches, minus the regular-file data extents
 `dump.erofs -e` reports, must be in the walker's ranges. The readers are:
@@ -108,7 +108,7 @@ ranges, even before data extents were subtracted. The walk itself takes about
 **Metadata placement.** Without `--MZ`, mkfs interleaves inodes and
 directory blocks with file data. A 9 MB metadata set then touches 30% of the
 image's chunks. With 1.9's `--MZ`, the same metadata sits in 37 chunks
-([`mz-and-xattr-probes.json.gz`](mz-and-xattr-probes.json.gz)). The superblock
+(`mz-and-xattr-probes.json.gz`). The superblock
 feature bits stay `compat=0x3 incompat=0x1`, so no newer kernel or walker
 feature is needed. `--MZ=i` (inodes only) gives 44 chunks; `--MZ=d` alone is
 rejected by mkfs.
@@ -125,8 +125,8 @@ PYTHONPATH=. .venv/bin/python runtime/storage_native/qualify_environment.py \
 Both runs passed, including the `--layers` scenario (3 images over real Docker
 overlay2 diffs, 5 component references, 3 distinct components, live guest and
 copy-up, shared-base GC fence, zero-upload republication). Raw results:
-[`qualify-environment-base.json.gz`](qualify-environment-base.json.gz) and
-[`qualify-environment-prefetch.json.gz`](qualify-environment-prefetch.json.gz).
+`qualify-environment-base.json.gz` and
+`qualify-environment-prefetch.json.gz`.
 
 | Fixture (base 69.3 MB + toolkit 4 KiB) | Base run | `--prefetch` first attach | `--prefetch` replay, fresh cache |
 | --- | ---: | ---: | ---: |
@@ -146,7 +146,7 @@ backend root.
 
 ### A real image: the scientific rootfs
 
-[`prefetch-rootfs-bench.py`](prefetch-rootfs-bench.py) publishes the rootfs
+`prefetch-rootfs-bench.py` publishes the rootfs
 twice (with and without its signed hint) to a fixture HTTP registry that adds a
 fixed delay per blob request. It then runs the metered backend on a fresh root
 and cache, with the page cache dropped. From separate processes it times
@@ -154,8 +154,8 @@ and cache, with the page cache dropped. From separate processes it times
 walk, and the first command: a chroot `python3 -c "import numpy, pandas,
 scipy.linalg, scipy.sparse, scipy.stats, scipy.optimize"`. Images use the C2.11
 flags (`--mkfs-time`), so no `.pyc` is rewritten. Raw results:
-[`prefetch-rootfs.json.gz`](prefetch-rootfs.json.gz) and
-[`prefetch-rootfs-mz.json.gz`](prefetch-rootfs-mz.json.gz).
+`prefetch-rootfs.json.gz` and
+`prefetch-rootfs-mz.json.gz`.
 
 | Image | Delay | Mode | ensure s | prefetched at ensure | find s | find remote reads | import s | import remote reads | demand misses |
 | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -201,7 +201,7 @@ child process. This was not root-caused.
 
 ## 3. gVisor pause, reclaim and thaw (C1.1)
 
-[`pause-tier-bench.py`](pause-tier-bench.py). Each sandbox runs from a host
+`pause-tier-bench.py`. Each sandbox runs from a host
 overlay over the rootfs, in its own cgroup (`cgroupsPath`) under one cgroup the
 script owns. It has `--network=none`, `--platform=systrap` and default
 `--overlay2=root:self`, with application memory in a file on a swappable tmpfs
@@ -245,8 +245,8 @@ Sentry and gofer anonymous memory. Its warm full touch took 28 ms (13–34) and
 Hibernate comparison: the same sandboxes, stock `runsc checkpoint
 --image-path` then `runsc delete` and `runsc restore --detach`. The checkpoint
 is written to the page cache with no fsync. "Cold" drops the page cache before
-restore. Raw results: [`pause-tier.json.gz`](pause-tier.json.gz),
-[`pause-tier-hibernate-cold.json.gz`](pause-tier-hibernate-cold.json.gz).
+restore. Raw results: `pause-tier.json.gz`,
+`pause-tier-hibernate-cold.json.gz`.
 
 | n | page cache | runs | checkpoint ms | image MiB | restore ms | first exec ms | guest refault ms |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -304,13 +304,13 @@ of reclaimable page cache charged while reading the image.
 
 ## 4. S7: Unix sockets across a bind-mounted host directory (C5.1)
 
-[`s7-host-uds.py`](s7-host-uds.py). A python guest (network none, host-overlay
+`s7-host-uds.py`. A python guest (network none, host-overlay
 rootfs, default `--overlay2=root:self`) gets a host directory bind-mounted at
 `/agent`. "Guest → host" means the guest binds and listens on
 `/agent/guest.sock` and a host process connects to the host path. "Host →
 guest" means a host process listens on `<dir>/host.sock` and the guest
 connects to `/agent/host.sock`. Both round-trip bytes. Raw results:
-[`s7-host-uds.json.gz`](s7-host-uds.json.gz).
+`s7-host-uds.json.gz`.
 
 | `--host-uds` | Guest bind in `/agent` | Host sees / connects | Guest connects to host listener | Guest bind in `/` (overlay rootfs) |
 | --- | --- | --- | --- | --- |

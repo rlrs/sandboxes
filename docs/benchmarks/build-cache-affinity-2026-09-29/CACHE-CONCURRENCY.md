@@ -6,7 +6,7 @@ versus 73.380 seconds with eight imports and execution observations in six logs.
 This measured release used at most **eight imports**. These results do not
 support deploying the broader import set as a workaround.
 
-[Diagnostic R1](cache-concurrency-diagnostic-r1.json) completed from 13:41:26.812
+Diagnostic R1 completed from 13:41:26.812
 to 13:45:04.040 UTC on 2026-09-29. Each arm started with an independent empty
 BuildKit store, using the pinned BuildKit 0.33.0 image and existing configuration.
 The concurrent arms used four client requests at a time and the same 12 frozen
@@ -23,7 +23,7 @@ All arms reported zero cache-import error vertices, and the frozen registry
 snapshot still matched after the trials. The three invocation-owned drivers
 were removed with zero cleanup errors. The test made no registry image/cache
 exports, manifest deletions, shared-builder changes or global prune calls.
-The separate [13:58:21 final audit](final-state.json) now confirms that all ten
+The separate 13:58:21 final audit now confirms that all ten
 owned qualification nodes are retired, reservations are absent, the sampler is
 inactive and production is healthy and idle.
 

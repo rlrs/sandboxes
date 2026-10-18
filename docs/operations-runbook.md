@@ -5,11 +5,11 @@ Production runs in the DFM Pretraining project. Its deployment ID is
 
 | Part | Where | Durable state |
 | --- | --- | --- |
-| Gateway | job JOB_ID (`cpu-amd-zen5-8-vcpu`), `sandbox-gateway-gateway-1` | Local disk: PostgreSQL 18 and `/var/lib/ucloud-sandboxes/state` |
-| Store node | job JOB_ID, `sandboxes-store-1` (since 2026-10-07; was job JOB_ID) | Local disk: chunk index and replica |
+| Gateway | UCloud VM job (`cpu-amd-zen5-8-vcpu`), `sandbox-gateway-gateway-1` | Local disk: PostgreSQL 18 and `/var/lib/ucloud-sandboxes/state` |
+| Store node | UCloud VM job, `sandboxes-store-1` (rebuilt 2026-10-07) | Local disk: chunk index and replica |
 | Workers and builders | autoscaled (`cpu-amd-zen5-64-vcpu` / `-16-vcpu`) | None |
 | Registry | `/work/data/ucloud-sandboxes-prod/registry` | Project drive |
-| Chunk store | Hetzner S3 `example-chunk-bucket`, `production/chunks` | Permanent |
+| Chunk store | Hetzner S3 (bucket named in the deployment config), `production/chunks` | Permanent |
 
 **Addresses.** Everything names the gateway and store node by their DNS
 names, which UCloud's resolver answers on every VM of the project
@@ -122,11 +122,11 @@ The replica refills from S3 by itself, in under 2 h for 331 GB. Keep the
 hostname `sandboxes-store-1`: the configuration names it, so a new address
 needs no change.
 
-Done on 2026-10-07, when job JOB_ID stopped at 12:00 UTC from outside the
+Done on 2026-10-07, when the store node's job stopped at 12:00 UTC from outside the
 gateway: the index restore took 33 s and the store init 22 s.
 
 **The gateway.**
-1. Create a VM like job JOB_ID, with the private network, the project drive mounted, and the two public links.
+1. Create a VM like the gateway's, with the private network, the project drive mounted, and the two public links.
 2. `apt-get install ca-certificates curl docker.io nftables openssl python3-venv postgresql-18`.
 3. From the newest gateway snapshot, stage the installer's inputs:
    - `state.tar` from `state/` (`tar -cf state.tar state`);

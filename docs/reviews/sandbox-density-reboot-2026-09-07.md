@@ -5,7 +5,7 @@ The isolated 32-vCPU test VM, UCloud job **12383398**, powered off during the
 cause of the poweroff**. This report supplements the
 [density performance review](sandbox-density-performance-2026-09-07.md);
 selected records are preserved in the
-[machine-readable evidence](sandbox-density-reboot-2026-09-07.json).
+machine-readable evidence.
 
 | Observation | UTC time on 2026-09-07 |
 | --- | --- |

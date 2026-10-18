@@ -100,7 +100,7 @@ memory-correctness result, not an overall healthy-performance pass: useful-actio
 p95 was **53.94 seconds**, and 11 fleet-health entries failed (three stale
 heartbeats and eight node entries from two failed resource probes). The request
 and continuation budgets were explicitly 1,800 seconds; original pressure
-failures remain retained. See the [report](../benchmarks/architecture-load-2026-09-23/architecture-candidate18-integrity-pressure256.summary.json).
+failures remain retained. See the report.
 
 The sustained512 baseline failed after 1,915 cycles at exec start with an HTML
 “Job is unavailable | UCloud” 503. Cleanup succeeded. The earlier measurements

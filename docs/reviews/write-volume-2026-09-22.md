@@ -97,7 +97,7 @@ Python 3.13.12 in the isolated Linux Docker test environment:
 - Ruff on touched implementation/tests/harnesses and `git diff --check`: pass.
 - Native export and XFS trim qualification: **blocked by host kernel**, not passed.
 
-[Evidence directory](../benchmarks/write-volume-2026-09-22/).
+Evidence directory.
 
 ## Follow-up: production worker authorized and qualification passed
 

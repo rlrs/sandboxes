@@ -8,13 +8,13 @@ All reported trials completed their response/state checks. These are local
 macOS tests with PostgreSQL 17, four logical nodes, two dispatchers/pools with
 16 connections each, 32-KiB model responses, durable commits and simulated worker
 callbacks. Database durability settings and the crash test result are retained in
-[validation.json](validation.json).
+validation.json.
 
 | Workload | Current SQLite sequence p95 | PostgreSQL slice p95 | Trials per backend |
 | --- | ---: | ---: | ---: |
-| [256 simultaneous results](burst-256.json), no restore delay | 1.61–1.66 s | 0.54–0.55 s | 3 |
-| [512 simultaneous results](burst-512.json), no restore delay | 3.03–3.33 s | 1.00–1.03 s | 3 |
-| [512 results at 41/s](steady-512.json), simulated 600-ms restore | 0.620 s | 0.644–0.650 s | 2 |
+| 256 simultaneous results, no restore delay | 1.61–1.66 s | 0.54–0.55 s | 3 |
+| 512 simultaneous results, no restore delay | 3.03–3.33 s | 1.00–1.03 s | 3 |
+| 512 results at 41/s, simulated 600-ms restore | 0.620 s | 0.644–0.650 s | 2 |
 
 The burst advantage supports pursuing the shared transaction/queue design.
 It does not establish universal PostgreSQL superiority: the simplified SQLite
@@ -23,7 +23,7 @@ also consumes about a second in coordination alone, without real restoration.
 The product's subsecond loaded-wake goal remains unqualified.
 
 The initial dispatcher waited for an entire batch before claiming more work.
-Its [rejected steady-load run](rejected-batch-dispatch.json) had PostgreSQL p95
+Its rejected steady-load run had PostgreSQL p95
 1.19–1.20 seconds. Refilling individual slots removed that batch barrier; a
 regression test proves a third operation starts while an earlier RPC is blocked.
 Source hashes for that rejected prototype were discarded because edits for the

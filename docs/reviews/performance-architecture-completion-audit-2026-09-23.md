@@ -25,7 +25,7 @@ its physical-pressure and sustained-load checks remain separate.
 | P1 | PostgreSQL is the sole live relay backend at the explicit 0.5.114 boundary. Live SQLite state/notifier/retry code is removed; the bounded idle importer and source fence remain. Real PostgreSQL HTTP/stateful/restart/import tests pass. Durable response acceptance is independent of delivery. See [retirement evidence](relay-postgres-retirement-2026-09-23.md). |
 | P2 | Canonical async relay lifecycle transport, shared SDK request admission, separate control capacity, and the gateway event-response handoff are implemented. Transport-independent lifecycle commits now own worker proof, route CAS, program outcomes and snapshot compensation; local wake admission owns shared inventory, projected capacity and atomic reservations. The canonical wake-placement use case now owns blocked-owner refresh, publication, local-versus-remote admission and relocation outcomes, using the existing migration executor/journal. HTTP translates typed outcomes. Delete/recreate readbacks and completed-journal replays are fenced; do not describe every gateway route as asynchronous. See [boundary evidence](lifecycle-commit-boundary-2026-09-23.md). |
 | P3 | Native pre-reap capture, quota-owned split components, one v3 completion, sparse remote publication/import, physical reclamation and RAM-active memory are implemented and activated on fresh production workers. Public Warden workspace read/preparation methods replace private cross-component storage calls. Runtime/native proof passed; assembled bootstrap and live forced-load tests have found additional defects, recorded below. |
-| P4 | Signed environment manifests, reusable components, registry-backed verified demand loading, host EROFS/OverlayFS, canonical rootfs/API/GC and backend-loss fencing are implemented. Real Linux and production-kernel component gates passed. General native gVisor EROFS is unsuitable for required xattrs; the constrained native profile remains optional. Four heterogeneous Python/Node slim/tools images passed cold/warm Docker versus EROFS qualification with empty adapter caches on the production kernel; host page caches were retained. Single-component EROFS uses a read-only bind rather than an invalid single-lower overlay. This does not establish loaded fleet performance; Docker remains the activated compatibility adapter. See [raw qualification](../benchmarks/immutable-environment-2026-09-23/heterogeneous-images.json). |
+| P4 | Signed environment manifests, reusable components, registry-backed verified demand loading, host EROFS/OverlayFS, canonical rootfs/API/GC and backend-loss fencing are implemented. Real Linux and production-kernel component gates passed. General native gVisor EROFS is unsuitable for required xattrs; the constrained native profile remains optional. Four heterogeneous Python/Node slim/tools images passed cold/warm Docker versus EROFS qualification with empty adapter caches on the production kernel; host page caches were retained. Single-component EROFS uses a read-only bind rather than an invalid single-lower overlay. This does not establish loaded fleet performance; Docker remains the activated compatibility adapter. See raw qualification. |
 | P5 | One measured resident-wait policy, deficit-only clean-cache reclaim, wait/park/wake observations, advice-based ranking, typed exact transition leases, memory forecasts and foreground/maintenance progress are implemented. Cold offload uses existing published checkpoints and fenced detach. RAM-backing headroom and durable managed-primary growth exposure now feed the existing admission/retention machinery. Pressure correctness and density/throughput proof remain distinct gates. |
 | P6 | Authenticated, sequenced, expiring advisory resource phases are implemented through PostgreSQL, the existing park transport, sync/async SDK and Verifiers. They grant no lifecycle authority. Trainer-independent continuity is conditional on an actual supported preemption contract. |
 
@@ -57,7 +57,7 @@ requires **256 successful terminal outcomes**. Previously, completed primaries
 slept forever while retaining their heaps, an unreclaimable end-state exceeding
 fleet RAM. Correcting that end-state does not explain the earlier slow wakes and
 does not turn earlier failures into passes. Server source remains unchanged from
-rc18. Run [`candidate18-integrity-pressure256`](../benchmarks/architecture-load-2026-09-23/architecture-candidate18-integrity-pressure256.summary.json)
+rc18. Run `candidate18-integrity-pressure256`
 (`relay-load-e46611368211`) completed **2,048/2,048 cycles and 256 normal primary
 exits**, with no workload errors, cleanup errors or recorded SIGBUS. Its
 crash/state-integrity gate passed. **Overall health and performance did not pass**:
@@ -69,9 +69,9 @@ run does not relabel the original 180-second profiles or erase their failures.
 
 | Retained rc18 pressure trial | Completed cycles | Failure and qualification limit |
 | --- | ---: | --- |
-| [Original budget](../benchmarks/architecture-load-2026-09-23/architecture-candidate18-pressure256.summary.json) | 502 | Managed launch exhausted its 180-second SDK budget; 28 fleet-health failures; cleanup passed. |
-| [Extended launch budget](../benchmarks/architecture-load-2026-09-23/architecture-candidate18-pressure-correctness256.summary.json) | 1,282 | Sandbox 0021, cycle 3 exceeded the 180-second continuation deadline; wake succeeded at 180.308 seconds. Fleet health and cleanup passed; no SIGBUS recorded. |
-| [Correct finalization, original continuation budget](../benchmarks/architecture-load-2026-09-23/architecture-candidate18-finished-pressure256.summary.json) | 713 | Sandbox 0029 timed out awaiting cycle 0 continuation; two fleet-health failures; cleanup passed. |
+| Original budget | 502 | Managed launch exhausted its 180-second SDK budget; 28 fleet-health failures; cleanup passed. |
+| Extended launch budget | 1,282 | Sandbox 0021, cycle 3 exceeded the 180-second continuation deadline; wake succeeded at 180.308 seconds. Fleet health and cleanup passed; no SIGBUS recorded. |
+| Correct finalization, original continuation budget | 713 | Sandbox 0029 timed out awaiting cycle 0 continuation; two fleet-health failures; cleanup passed. |
 
 All three earlier trials failed their own acceptance criteria. The later integrity
 pass is narrower than overall pressure qualification; no three-minute continuation
@@ -85,7 +85,7 @@ guarantee or health/performance pass is claimed.
    resident, so this run does not qualify cold restore. This is a substantial
    combined improvement over rc11 natural-512, but individual changes cannot be
    credited separately. The strict useful-action target still fails. See the
-   [rc12 natural report](../benchmarks/architecture-load-2026-09-23/architecture-candidate12-natural512.summary.json).
+   rc12 natural report.
    rc12 forced-64 completed **256/256 turns with 192 measured parks**, without
    operation or cleanup failures; continuation/useful-action p95 were
    **2.014/2.492 s**. Cold correctness passed and latency failed.
@@ -120,8 +120,8 @@ guarantee or health/performance pass is claimed.
    semantics. It also prevents missing or pre-wait memory samples from admitting
    many captures as one-byte claims: an unknown capture probes alone, while
    measured captures retain the existing byte budget. The failed pressure gate
-   stays open. See the [rc17 report](../benchmarks/architecture-load-2026-09-23/architecture-candidate17-pressure256.summary.json)
-   and [worker evidence](../benchmarks/architecture-load-2026-09-23/rc17-pressure-memory/summary.json).
+   stays open. See the rc17 report
+   and worker evidence.
 2. **Run sustained realistic work on the release candidate.** rc13 repository-256
    completed **2,048/2,048 turns** with FULL-synchronous SQLite WAL, retained
    reader/writer state, no operation/cleanup errors and zero parks. Continuation

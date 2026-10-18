@@ -2020,7 +2020,7 @@ Creates, execs, pause and local waits moved into `ucloud-noded` ([rust-node-daem
 
 ### 2026-10-07 (afternoon): the store node rebuilt, and a C2.14 build pilot
 
-- **Store node lost and rebuilt.** Job JOB_ID stopped at 12:00 UTC from outside the gateway (cause unknown). Rebuilt from the runbook as job JOB_ID (10.36.78.225): index from the 06:20 backup, store init, four config fields, gateway services restarted. Its cache refilled from S3 (330 GB) in about 1.5 h; until then, first commands waited on S3 (smoke 41/64).
+- **Store node lost and rebuilt.** Its job stopped at 12:00 UTC from outside the gateway (cause unknown). Rebuilt from the runbook as a new job: index from the 06:20 backup, store init, four config fields, gateway services restarted. Its cache refilled from S3 (330 GB) in about 1.5 h; until then, first commands waited on S3 (smoke 41/64).
 - **Build pilot** ([benchmarks/build-pilot-2026-10-07](benchmarks/build-pilot-2026-10-07/README.md)): 250 foundation-backed training tasks built through the gateway from their exact recipes. TMax 100/100 (p50 28 s, new OCI p50 0.5 MB), Terminal-Lego 98/100 (35 s, about 120 MB, mostly a repeated verifier install), OpenSWE 40/50 (97 s, p50 207 MB, mean 609 MB). Failures are recipe rot. 557 builds/hour on 5 builders at 24 in flight, no queue. A foundation's first use costs a 1–7 minute regeneration.
 - **Fixed:** building from released foundations had been broken since the move to UCloud: stored locators named the Hetzner store node (0.9.52). One transient store 503 failed a whole foundation for 10 minutes (0.9.53).
 - **Direction for C2.14, pending the user:** build OpenSWE on demand ahead of the sampler, with eviction and recipe-failure exclusion, instead of storing all of it.

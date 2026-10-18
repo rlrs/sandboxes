@@ -54,7 +54,7 @@ The [0.5.112 evidence](reviews/release-0.5.112-2026-09-23.md) has 256-agent
 response-ready-to-tool p95 of 0.866 s and 512-agent p95 of 9.525 s. Both rolling
 tests recorded zero actual parks. Forced restore was tested at 64 agents across
 five workers, with tool p95 1.265 s. These are not dense 256/512 restore results.
-The new sanitized [scaling evidence](benchmarks/cold-density-2026-09-23/scaling-summary.json)
+The new sanitized scaling evidence
 retains the cap observation and worker summaries.
 
 ## Canonical boundaries and authority

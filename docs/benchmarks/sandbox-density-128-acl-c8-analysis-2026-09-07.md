@@ -2,7 +2,7 @@
 
 Run `density-902eed08ef744fc5` failed eleven wake admissions. The evidence again supports testing a short CPU-pressure wait with unchanged thresholds: sustained CPU use was low, while adjacent requests encountered the same brief rejection period. This run predates deployment of that wait and does not establish that it fixes the failure.
 
-Sources: [raw benchmark](sandbox-density-128-acl-c8-deep-2026-09-07.json), [analysis and wake CPU intervals](sandbox-density-128-acl-c8-analysis-2026-09-07.json), [original host samples, gzip](sandbox-density-128-acl-c8-host-2026-09-07.jsonl.gz).
+Sources: raw benchmark, analysis and wake CPU intervals, original host samples, gzip.
 
 The profile was 128 sandboxes on 32 vCPUs, each with a 1-CPU limit, 1 GiB memory limit, 256 MiB randomly initialized resident memory and a rotating 16 MiB dirty subset. Every action fully verified and hashed resident memory. Concurrency was 8; three cycles were requested, but the first wake phase failed.
 

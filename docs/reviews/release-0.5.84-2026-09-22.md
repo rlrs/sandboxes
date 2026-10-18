@@ -57,7 +57,7 @@ expected only a few seconds later. Subsequent work must address this and qualify
 mixed provisioning/lifecycle traffic, rather than treating a smaller steady-state
 benchmark as proof that production is healthy.
 
-Artifacts: [release evidence](../benchmarks/release-0.5.84-2026-09-22).
+Artifacts: release evidence.
 The successful fresh worker boots used 0.5.84. All non-agent bundle files and
 non-product Python dependencies were byte-identical to the qualified prior bundle.
 The two legacy workers retired at the user's request earlier this evening are no

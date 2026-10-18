@@ -85,7 +85,7 @@ inventory and are excluded by version-aware placement. Autoscaling resumed
 with the new bundle root. The final public workload results and service checks
 are recorded below and in the accompanying evidence directory.
 
-Evidence: [`release-0.5.83-2026-09-22`](../benchmarks/release-0.5.83-2026-09-22).
+Evidence: `release-0.5.83-2026-09-22`.
 
 ## Production verification after deployment
 

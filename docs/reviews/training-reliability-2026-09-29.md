@@ -10,7 +10,7 @@ The subsequent fixes, SDK release and production canary are recorded in the
 
 ## Confirmed bug: transient status timeout becomes permanent build failure
 
-A [local proof](training-reliability-2026-09-29/build-owner-404-proof.json) exercises
+A local proof exercises
 real gateway methods and the published SDK without HTTP or production calls.
 The owner first reports **200/running**. A simulated owner timeout becomes a
 transport **504**, but the gateway converts it to **404**. The SDK treats 404 as
@@ -27,7 +27,7 @@ The reproduction establishes the bug, not its frequency in customer runs.
 
 ## Confirmed build-slot robustness gap
 
-A [local reproduction](training-reliability-2026-09-29/build-deadline-proof.json)
+A local reproduction
 used the exact SDK wait method and a bounded 1.5-second server child. A
 **0.1-second SDK deadline raised `TimeoutError` while server status remained
 `running` and one slot remained occupied**. The next build was rejected with
@@ -45,7 +45,7 @@ capacity safely, while preserving deliberate detached builds and idempotent retr
 
 ## Confirmed async SDK blocking and timeout budgets
 
-The [SDK 0.4.33 proof](training-reliability-2026-09-29/sdk-archive-lag-proof.json)
+The SDK 0.4.33 proof
 ran four concurrent submissions of the same incompressible **16-MiB owned context**
 with mocked HTTP: **4.019 seconds** elapsed, with a **4.009-second gap** in a
 5-ms event-loop heartbeat. Source matches the published wheel; its SHA is in the

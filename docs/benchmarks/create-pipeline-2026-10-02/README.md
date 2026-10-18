@@ -38,7 +38,7 @@ on Linux 5.15. Other agents' test suites kept the load average at 12–16, so
 ext4 rows are noisy. Each run happens in a disposable
 `unshare --user --map-root-user --net --mount` namespace with a private
 `/run/netns`. The script asserts it is not host root, so it never touches
-the host network. [`bench_create_pipeline.py`](bench_create_pipeline.py)
+the host network. `bench_create_pipeline.py`
 extends the earlier script:
 
 - The registry is the owner instance when the tree has one.
@@ -56,7 +56,7 @@ extends the earlier script:
 | `after_full_owned` | This change, with `commit_owned` fsynced. Isolates the `NORMAL` change. |
 
 Values are the medians, over three interleaved runs, of each run's p50 / p99
-in ms. [`summary.json`](summary.json) has every phase.
+in ms. `summary.json` has every phase.
 
 ## Results
 
@@ -75,7 +75,7 @@ in ms. [`summary.json`](summary.json) has every phase.
 spends 3 ms in `network_ensure`, and one that misses spends 9–10 ms. In two
 of three matrix runs, both `after` trees missed more often, under the
 matrix's host load. An 8-run sequential-only A/B
-([`sequential-ab.json`](sequential-ab.json)) gives p50 5.9–7.4 ms before and
+(`sequential-ab.json`) gives p50 5.9–7.4 ms before and
 5.5–5.9 ms after, with every run hitting the pool. The registry is under
 1 ms per sequential create in every configuration.
 

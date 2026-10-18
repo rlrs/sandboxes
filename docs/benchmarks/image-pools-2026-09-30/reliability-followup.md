@@ -1,6 +1,6 @@
 # Image preparation reliability follow-up
 
-The [measured results](reliability-followup.json) describe live preparation on September 30. They are snapshots of an ongoing campaign, not qualification of an unavailable training selection.
+The measured results describe live preparation on September 30. They are snapshots of an ongoing campaign, not qualification of an unavailable training selection.
 
 ## Deployed changes
 
@@ -76,7 +76,7 @@ The four-worker exact-prefix campaign finished with **315 additional validated T
 
 ## Isolated file-level sharing proof
 
-The [proof evidence](flat-image-sharing-proof.json) records an isolated rebasing experiment for the two ScaleSWE `adamchainz_apig-wsgi` images. The conservative offline encoder rejects unsupported layouts, authenticates compressed source layers, compares contents and metadata, expands affected hardlink groups and encodes deletions. It neither extracts tar archives on the gateway nor changes production source aliases.
+The proof evidence records an isolated rebasing experiment for the two ScaleSWE `adamchainz_apig-wsgi` images. The conservative offline encoder rejects unsupported layouts, authenticates compressed source layers, compares contents and metadata, expands affected hardlink groups and encodes deletions. It neither extracts tar archives on the gateway nor changes production source aliases.
 
 The first archive was rejected because duplicate directory headers are invalid for Docker. The corrected archive emits each path once and relies on the OCI unpacker to apply directory metadata after children. Its compressed delta is **6,263,530 bytes**; the trusted builder reused the original base component and published **11,575,296 new EROFS bytes**. This is an incremental component size, not a reduction in current registry usage: both originals remain retained. Preparation took 46.283 s, including 41.818 s in Docker pulling because whiteouts require the current conservative fallback. There is no measured live-build latency benefit from rebasing yet.
 
@@ -93,7 +93,7 @@ Both original Click images already resolve to the **same 772,345,856-byte EROFS 
 
 ## Compact task-base preparation deployed
 
-The isolated sharing proof is now an explicit offline preparer with source-to-sandbox qualification before alias registration. The [48-image pilot](shared-task-preparation.json) passed across 12 ScaleSWE projects: 59,254,673 compressed delta bytes versus 26,474,609,014 original compressed bytes, with 159,645,696 bytes of observed total registry growth. Anchor storage was already retained; concurrent activity is included, and no old images were deleted. Full source scans qualified 36 images; 12 used matching authenticated filesystem certificates plus fresh mount/exec checks. The sole initial `/tmp` verification failure passed after aligning the check with the existing sandbox tmpfs contract.
+The isolated sharing proof is now an explicit offline preparer with source-to-sandbox qualification before alias registration. The 48-image pilot passed across 12 ScaleSWE projects: 59,254,673 compressed delta bytes versus 26,474,609,014 original compressed bytes, with 159,645,696 bytes of observed total registry growth. Anchor storage was already retained; concurrent activity is included, and no old images were deleted. Full source scans qualified 36 images; 12 used matching authenticated filesystem certificates plus fresh mount/exec checks. The sole initial `/tmp` verification failure passed after aligning the check with the existing sandbox tmpfs contract.
 
 Preparation continues over 8,565 candidates and 118 existing anchors, with two low-priority children, the same persisted 16 GiB growth budget, and a 500 GiB free-space reserve. All 48 pilot images count ready; scheduled candidates do not. At that snapshot total source coverage was **742/35,984**, so the strict all-task-base gate still correctly fails. See [the operating guide](../../shared-task-images.md) for source authentication, recovery pins, exact-filesystem certificate conditions and the remaining multi-layer-image limitation. No SDK change is needed for newly inserted normal source aliases.
 

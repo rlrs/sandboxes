@@ -4,7 +4,7 @@
 gateway installation and repacking of both node roles. The existing qualified
 OS packages, kernel modules, gVisor, and storage-native binaries were preserved.
 Gateway health passed after restart. Exact checksums are recorded in
-[deployment-receipt.json](deployment-receipt.json).
+deployment-receipt.json.
 
 ## Changes
 
@@ -33,7 +33,7 @@ unchanged. Native runtime binaries are unchanged.
 
 ## Local Docker comparison
 
-[benchmark_local.py](benchmark_local.py) uses a disposable localhost registry,
+benchmark_local.py uses a disposable localhost registry,
 a scratch Docker image containing 64 MiB of incompressible data, real overlay2
 mounts, and native mkfs.erofs 1.4. The known host version is pinned explicitly
 because this older mkfs does not support `-V`. Each comparison removes the
@@ -41,7 +41,7 @@ fixture's local image tag; shared Docker/BuildKit caches are not globally pruned
 The registry already contains the signed EROFS component for both comparisons.
 
 The baseline disables only the new preflight lookup, retaining the former
-pull-first path. Results are in [local-docker.json](local-docker.json).
+pull-first path. Results are in local-docker.json.
 
 | Cached-component publication | Elapsed | Docker commands |
 | --- | ---: | ---: |
@@ -53,7 +53,7 @@ manifest digest**. This is a single local cache-path comparison, not production
 latency, fleet throughput, or a promise about entirely new image builds. The
 production builder uses erofs-utils 1.9; no new native format was introduced.
 
-An additional [conversion fixture](local-conversion.json), using an in-memory
+An additional conversion fixture, using an in-memory
 registry and simulated Docker adapter with real mkfs, verifies three cold group
 conversions and zero conversions on a complete hit. Its cold/warm times are not
 an old/new implementation comparison.
@@ -83,7 +83,7 @@ Already running nodes retain their installed package until replaced.
 
 A fresh CCX33 builder built a BusyBox image containing a unique 512 KiB payload,
 then built identical content under another image ID. Both completed successfully.
-The measurements in [production-canary.json](production-canary.json) are:
+The measurements in production-canary.json are:
 
 | Phase | Cold component | Cached component |
 | --- | ---: | ---: |
@@ -94,7 +94,7 @@ The measurements in [production-canary.json](production-canary.json) are:
 | Docker pull | 70 ms | skipped |
 
 The gateway retained both terminal results in
-[production-canary-metrics.json](production-canary-metrics.json). This compares
+production-canary-metrics.json. This compares
 cold and warm builds on the new code, not old and new production versions. The
 small fixture verifies behavior, not throughput for the earlier workload or
 capacity for 500 concurrent containers.
@@ -103,6 +103,6 @@ The published image also started on a fresh CCX63 sandbox worker. All five APT
 update units were masked and inactive on the gateway, fresh builder, and fresh
 worker; the three periodic APT settings were zero on both fresh nodes.
 An exec checked the payload length and exited zero; its own output is saved in
-[production-canary-exec.json](production-canary-exec.json). The sandbox was
+production-canary-exec.json. The sandbox was
 deleted and the builder preparation reservation released after verification;
 the empty nodes remain subject to the existing five-minute idle scale-down.

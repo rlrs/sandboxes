@@ -38,36 +38,36 @@ at September 7 21:39:52 is excluded from the incident count.
 
 ## Evidence and impact
 
-[Provider event export](ucloud-platform-incident-provider-events-2026-09-08.json)
+Provider event export
 contains the original state/status/timestamp fields with UTC conversions.
 It identifies the unexpected poweroffs separately from initial provisioning.
 Guest evidence does not independently identify the underlying host failure.
 
 - **001:** [Incident report](sandbox-density-reboot-2026-09-07.md),
-  [structured evidence](sandbox-density-reboot-2026-09-07.json),
-  [benchmark](../benchmarks/sandbox-density-128-c16-hot-memory-reboot-2026-09-07.json).
+  structured evidence,
+  benchmark.
   The previous-boot journal showed no recorded OOM, panic, watchdog or shutdown
   cause. The temporary host sampler was lost on reboot.
-- **002:** [Incident evidence](sandbox-density-mountfix-reboot-2026-09-08.json),
-  [benchmark](../benchmarks/sandbox-density-128-mountfix-c16-2026-09-08.json),
-  [host samples](../benchmarks/sandbox-density-128-mountfix-c16-host-2026-09-08.jsonl.gz),
-  [kernel journal](../benchmarks/sandbox-density-128-mountfix-c16-kernel-2026-09-08.jsonl.gz),
-  [service journal](../benchmarks/sandbox-density-128-mountfix-c16-services-2026-09-08.jsonl.gz).
+- **002:** Incident evidence,
+  benchmark,
+  host samples,
+  kernel journal,
+  service journal.
   The last valid sample was 06:12:53.447, followed by 1,124 zero-filled bytes.
   The captured guest OOM-kill count stayed zero and swap-out did not rise.
   A test-only `/tmp` entrypoint disappeared, delaying service recovery; it is
-  now stored persistently. [Separate cleanup](sandbox-density-mountfix-reboot-cleanup-2026-09-08.json)
+  now stored persistently. Separate cleanup
   verified zero remaining sandboxes, active disks, storage errors or quota.
-- **003:** [Benchmark](../benchmarks/sandbox-density-128-mountfix-v9-c24-2026-09-08.json),
-  [host samples](../benchmarks/sandbox-density-128-mountfix-v9-c24-host-2026-09-08.jsonl.gz),
-  [kernel journal](../benchmarks/sandbox-density-128-mountfix-v9-c24-kernel-2026-09-08.jsonl.gz),
-  [service journal](../benchmarks/sandbox-density-128-mountfix-v9-c24-services-2026-09-08.jsonl.gz).
+- **003:** Benchmark,
+  host samples,
+  kernel journal,
+  service journal.
   Services recovered after reboot and the benchmark's own cleanup completed
   without errors, verifying zero remaining owned sandboxes and active disks.
 
-- **004:** [Benchmark](../benchmarks/sandbox-density-128-mountfix-v10-c24-2026-09-08.json),
-  [host samples](../benchmarks/sandbox-density-128-mountfix-v10-c24-host-2026-09-08.jsonl.gz),
-  [service journal](../benchmarks/sandbox-density-128-mountfix-v10-c24-services-2026-09-08.jsonl.gz).
+- **004:** Benchmark,
+  host samples,
+  service journal.
   Both services recovered automatically. The benchmark finished with no cleanup
   errors and no remaining owned sandboxes. The node was healthy when checked
   again at 07:26 UTC.
@@ -86,7 +86,7 @@ benchmarks.
 
 Follow-up: the v10 16-worker run from **07:27:44 to 07:30:43 UTC** completed
 all 128 sandboxes through three cycles without a restart or operation errors.
-[Its result](../benchmarks/sandbox-density-128-mountfix-v10-c16-2026-09-08.json)
+Its result
 still fails latency acceptance. Cleanup completed successfully; the dev node
 and both services remained up. This successful run does not remove or close
 the four platform incident records above.

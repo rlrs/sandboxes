@@ -6,7 +6,7 @@ fallback, with no unsupported tar semantics found in the selected layers.
 
 | Selected input | Compressed bytes | Unpacked tar bytes |
 | --- | ---: | ---: |
-| Group 3, layers `[4,10)` | 31,884,562 | 88,381,952 |
+| Group 3, layers `4,10)` | 31,884,562 | 88,381,952 |
 | Group 4, layer `[10,11)` | 313,043,301 | 1,014,097,920 |
 | Group 5, layers `[11,15)` | 790,932 | 7,176,704 |
 | All three groups | 345,718,795 | 1,109,656,576 |
@@ -17,8 +17,8 @@ back. The read-only inspector authenticated each compressed digest and complete
 uncompressed diff ID. It scanned 41,168 members without extracting files and
 found no whiteouts, unsupported hardlinks or special files, unsupported extended
 metadata, duplicate paths, or missing explicit parent metadata. The 131 symlinks
-were supported. See [all selected layers](python-selected-layer-inspection.json)
-and the [large pip layer](python-pip-layer-inspection.json).
+were supported. See [all selected layers
+and the large pip layer.
 
 One new owned image republished the unchanged frozen source on the baseline
 runtime before the measured baseline wave. Its build completed in 3.327 seconds,
@@ -26,10 +26,10 @@ with all BuildKit RUN steps cached and all six EROFS groups reused. All 15 sourc
 diff IDs and compressed descriptor triples were identical to the original.
 The original strict verifier intentionally failed because the new image name
 changes `Labels["ucloud-sandboxes.image-id"]`. A separate
-[source verification receipt](python-source/source-verification.json) checks
+source verification receipt checks
 that exact original/new name binding, permits only that label substitution, and
 requires every other runtime-config field to remain identical. The original
-[failed strict receipt](python-source/summary.json) remains intact.
+failed strict receipt remains intact.
 
 After the baseline wave and its 60-second writeback observation, one idle owned
 builder ran the candidate wheel in a separate package directory. Its service
@@ -43,9 +43,9 @@ exactly, including EROFS image digests and sizes. Each trial rebuilt exactly the
 three selected groups (618,655,744 EROFS bytes). Both B trials used the isolated
 selective subprocess, materialized 11 OCI layers, streamed exactly 345,718,795
 compressed bytes, and skipped Docker. See the
-[full byte comparison](python-byte-comparison.json),
-[private candidate staging receipt](python-byte-stage.json), and
-[post-proof live idle check](byte-live-after.json).
+full byte comparison,
+private candidate staging receipt, and
+post-proof live idle check.
 
 | Arm | Local diagnostic wall seconds | Docker path |
 | --- | ---: | --- |
@@ -77,10 +77,10 @@ rows, and score. All three owned sandboxes were deleted by
 `2026-09-29T23:02:23.750449Z`; their creation took 88.27–88.30 seconds including
 fresh-worker provisioning. These creation times are not build latency.
 
-The [smoke summary](image-smokes/summary.json) and per-sandbox created receipts
+The smoke summary and per-sandbox created receipts
 preserve each resolved repository/tag/manifest, live worker job/epoch/endpoint,
 and an independently read-back exact image-pull lease tuple. At
-`23:03:45.726435Z`, the [fresh-worker audit](worker-audits/168019452.json) verified
+`23:03:45.726435Z`, the fresh-worker audit verified
 all 165 installed package files and the exact file set against the candidate
 wheel, matched launcher import paths, and observed the same process and worker
 incarnation. All five APT/unattended-upgrade units were masked and inactive;

@@ -31,7 +31,7 @@ with no relay or gateway lifecycle call. This needs two answers:
 - **Worker:** one CCX33 from the 0.8.5 snapshot `439222185`, running the 0.8.5
   bundle and the live config, never registered (`gateway_port: 1`). It had
   no swap and no pause tier: the spike pauses with runsc directly.
-- **Fake relay:** [wake_spike.py](wake_spike.py) `relay` on the worker
+- **Fake relay:** wake_spike.py `relay` on the worker
   itself, a TLS HTTP/1.1 server on port 8443. It holds each POST for its
   think time, then answers. One spike-only `iptables` accept let sandboxes
   reach it.
@@ -44,7 +44,7 @@ with no relay or gateway lifecycle call. This needs two answers:
   - `runsc pause` and `resume` on the node's runtime root;
   - a thaw on the first inbound payload, FIN or RST.
 - **Not exercised:** the node agent's pause bookkeeping and reclaim.
-- **Raw evidence:** [raw/](raw/), one JSON per arm with the agents' logs, the
+- **Raw evidence:** raw/, one JSON per arm with the agents' logs, the
   relay's log and every pause and thaw.
 
 ## Results
@@ -139,7 +139,7 @@ Option 3 is feasible. The packet trigger is exact. Detection only infers
   state.
 - **Clocks:** the two hosts' clocks differ by about 350 ms. Latencies use a
   skew estimated from request timing (relay receive minus agent send).
-- **Analysis:** [raw/node-analysis.json](raw/node-analysis.json).
+- **Analysis:** raw/node-analysis.json.
 
 | arm | calls | paused calls | answer → agent p50 / p95 / max | first pause after the request p50 / p95 | answer → next request max |
 | --- | ---: | ---: | ---: | ---: | ---: |

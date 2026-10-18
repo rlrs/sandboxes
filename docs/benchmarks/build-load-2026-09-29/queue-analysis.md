@@ -1,6 +1,6 @@
 # Overload scheduling and local queues
 
-The [48-build overload phase](overload/summary.json) completed all 48 distinct
+The 48-build overload phase completed all 48 distinct
 build IDs in 172.190 seconds. It reached the intended bounds: 32 admitted
 nonterminal builds and 16 executing builds across four builders, with maxima of
 eight admitted and four executing on each builder. Admission limits held, but

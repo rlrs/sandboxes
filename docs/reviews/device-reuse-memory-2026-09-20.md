@@ -98,7 +98,7 @@ and storage variability remain limitations.
 - Linux native daemon suite: 56 tests passed, including five new idle-pool
   regressions for repeated 64-device bursts, expiry, exact-size selection,
   shutdown/late returns, and bounded failure retry delay.
-- [Machine-readable summary](../benchmarks/ucloud-device-reuse-memory-2026-09-20.json).
+- Machine-readable summary.
 - Detailed private evidence is retained under the isolated deployment directory
   on the gateway; no client payloads are included in the committed summary.
 

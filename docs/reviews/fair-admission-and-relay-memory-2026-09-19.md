@@ -2,7 +2,7 @@
 
 The user's 256-agent production run exposed starvation at gateway admission
 and a separate native-memory accumulation in relay lifecycle HTTP requests.
-[Production samples and heap evidence](../benchmarks/prod-256-admission-oom-2026-09-19.json)
+Production samples and heap evidence
 cover the incident on server 0.5.48.
 
 ## Measured causes
@@ -77,7 +77,7 @@ production kernel before deployment.
 
 ## Mixed production qualification
 
-[Machine-readable attempts and heap evidence](../benchmarks/mixed-admission-256-2026-09-19.json)
+Machine-readable attempts and heap evidence
 record a 256-agent mixed create/park/wake workload, with four cycles per agent,
 64 MiB of random resident memory, a 16-MiB writable file, 32-KiB model payloads,
 and single-attempt response commits through the async SDK transport.

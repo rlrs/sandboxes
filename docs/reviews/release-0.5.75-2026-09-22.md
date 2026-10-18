@@ -12,7 +12,7 @@ The exact server wheel SHA-256 is
 Linux validation passed **1,195 tests, 10 skipped**, with the real PostgreSQL
 qualification database enabled, in 101.818 seconds. Ruff and diff checks passed.
 The built wheel installed and passed the installed-package verifier in a clean
-Linux virtual environment. [Evidence](../benchmarks/release-0.5.75-2026-09-22/status.json).
+Linux virtual environment. Evidence.
 
 ## Recovery and rollout
 
@@ -63,7 +63,7 @@ API is called. Measurements exclude the first warmup cycle.
 
 All four runs passed integrity, health, and cleanup checks, with no harness
 control retries or guest transport retries. Full raw results are in
-[`live/`](../benchmarks/release-0.5.75-2026-09-22/live/).
+`live/`.
 The 0.8-second full-path target passed at 64 natural agents and **failed at 256**.
 
 Natural measured cycles with parking observed were 2/8, 8/448, and 9/1,792.

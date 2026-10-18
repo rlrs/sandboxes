@@ -15,7 +15,7 @@ received an independent read-only review with no blocking finding. These are
 reported execution receipts, not another rerun or an aggregate of overlapping
 earlier suites.
 
-[Local scaffolding checks](scaffolding-verification.json) record network-free
+Local scaffolding checks record network-free
 helper self-tests, context/launch validation, read-only heartbeat inspection,
 syntax checks and controller-root comparison. A separate read-only reviewer
 checked the frozen runner, final audit and qualification controller against the
@@ -36,9 +36,9 @@ different responsibilities and digests. Additional VMs or sampler units outside
 the phase receipts must be passed explicitly to the final audit; they cannot be
 inferred from the build history alone.
 
-Production evidence is retained separately: [48 successful builds](single-import-repeat/summary.json),
-[48 exact matches with one import each](single-import-repeat-selection.json),
-[three verified/deleted application smokes](smoke-single-import-repeat.json),
-and [deployment health and rollback guards](deployment-receipt.json). Frozen
-fixtures and SDK 0.4.33 are verified by the [qualification receipt](single-import-repeat.qualification.json).
+Production evidence is retained separately: 48 successful builds,
+48 exact matches with one import each,
+three verified/deleted application smokes,
+and deployment health and rollback guards. Frozen
+fixtures and SDK 0.4.33 are verified by the qualification receipt.
 This suite and workload do not qualify mixed running-agent capacity.

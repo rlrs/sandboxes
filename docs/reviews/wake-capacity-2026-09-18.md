@@ -92,7 +92,7 @@ readiness and checkpoint publication. All 129 test sandbox deletions and the
 test capacity-reservation deletion succeeded.
 
 The machine-readable summary is
-[wake-capacity-2026-09-18-smoke.json](wake-capacity-2026-09-18-smoke.json).
+wake-capacity-2026-09-18-smoke.json.
 The complete test script and cleanup records remain under
 `/work/ucloud-sandboxes/release/0.5.36/` on the gateway. This verifies recovery
 from the real device ceiling with one migration, using a small managed Python

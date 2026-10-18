@@ -318,7 +318,7 @@ continuation p95 was 1.358 s; after provisioning it was 0.867 s. Whole-worker
 physical writes totalled 109.6 GB over observed intervals, including startup;
 these counters are not per-sandbox attribution.
 
-[Sanitized complete summary](../benchmarks/architecture-load-2026-09-23/architecture-candidate12-natural512.summary.json).
+Sanitized complete summary.
 
 ### rc12 cold and physical-pressure gates
 
@@ -365,7 +365,7 @@ component evidence but did not establish an end-to-end latency improvement here.
 A separate diagnostic repeat is explicitly profiling worker registration and
 lifecycle checks; it will not be used as an unprofiled acceptance run.
 
-[Load summary](../benchmarks/architecture-load-2026-09-23/architecture-candidate13-natural512.summary.json)
+Load summary
 and [slow-worker stage evidence](../benchmarks/worker-exec-2026-09-23/README.md).
 
 ## Agreed closeout scope

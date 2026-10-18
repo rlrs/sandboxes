@@ -65,12 +65,12 @@ task deltas hold, and which build-recipe changes shrink them without breaking th
   `FAIL_TO_PASS` and `PASS_TO_PASS` are empty in every selected row, and `install_config.test_cmd`
   is empty. The reward is `OPENSWE_EXIT_CODE == 0`. Eval scripts and gold patches are task
   solutions, so they are not stored here; only aggregate scan counts are
-  ([`raw/eval-script-git-usage.json`](raw/eval-script-git-usage.json)).
+  (`raw/eval-script-git-usage.json`).
 
 ### Tasks
 
-[`raw/tasks.json`](raw/tasks.json) lists the 35 tasks attempted with their recipes, and
-[`raw/order.json`](raw/order.json) gives the processing order.
+`raw/tasks.json` lists the 35 tasks attempted with their recipes, and
+`raw/order.json` gives the processing order.
 
 - **29 tasks built:**
   - 13 pandas-dev/pandas commits: the 9 S10 successes plus 39341, 42222, 46301 and 50682;
@@ -96,8 +96,8 @@ task deltas hold, and which build-recipe changes shrink them without breaking th
 
 ## Method
 
-**Tree accounting** ([`scripts/walk.py`](scripts/walk.py),
-[`scripts/analyze.py`](scripts/analyze.py)):
+**Tree accounting** (`scripts/walk.py`,
+`scripts/analyze.py`):
 
 - **Final trees, not layers.** Each image's final tree is streamed with `docker export`. This is
   what a RAFS v6 image built from the final tree, plus our chunk store, holds: files deleted or
@@ -106,7 +106,7 @@ task deltas hold, and which build-recipe changes shrink them without breaking th
   sha256 of its uncompressed bytes, and stored at its zstd size (level 3, per chunk).
 - **Checked against Nydus.** On two full images the walker's chunk sets equal
   `nydus-image v2.4.5 create -t dir-rafs --chunk-size 0x40000 --compressor zstd` exactly, and
-  compressed sizes agree within 0.15% ([`raw/calibration.json`](raw/calibration.json)).
+  compressed sizes agree within 0.15% (`raw/calibration.json`).
 - **Delta.** A task's delta is every path whose type, size, mtime, mode or link differs from its
   foundation's tree.
 - **New chunk bytes** are counted per variant, in a fixed order (S10's order, then the added
@@ -120,7 +120,7 @@ task deltas hold, and which build-recipe changes shrink them without breaking th
   further commit of the same project. All figures are in MB of 10^6 bytes; "zstd" is the stored
   size.
 
-**Path classes** (`classify` in [`analyze.py`](scripts/analyze.py)):
+**Path classes** (`classify` in `analyze.py`):
 
 | Class | Paths |
 |---|---|
@@ -132,7 +132,7 @@ task deltas hold, and which build-recipe changes shrink them without breaking th
 | tmp | `/tmp`, `/var/tmp`, logs |
 | other | apt-installed system files (`/usr`, `/lib`, …), `/etc`, dpkg, home directories |
 
-**Slimming variants.** [`scripts/slim.sh`](scripts/slim.sh) runs as the final build step, in a
+**Slimming variants.** `scripts/slim.sh` runs as the final build step, in a
 container from the built image, which is then exported and committed:
 
 | Variant | What it does |
@@ -145,8 +145,8 @@ container from the built image, which is then exported and committed:
 | (a)+shared pack | (a) + objects replaced by one byte-identical pack per project (a bare clone made once on the VM), full history kept. Measured for pandas, moto and scikit-learn only |
 | **(c)** | (a)+shallow, loose, plus three steps. Delta `.pyc` files are recompiled as checked-hash pycs (deterministic, and validated against the source on every import); Python 3.6 pycs are deleted instead. In-tree `*.so` get `strip -p --strip-debug` (mtime kept). setuptools `build/temp.*/*.o` are deleted, but never inside a meson/ninja build directory |
 
-**Verification.** Every variant image ran [`scripts/verify.sh`](scripts/verify.sh) and
-[`scripts/run_eval.sh`](scripts/run_eval.sh) with no network:
+**Verification.** Every variant image ran `scripts/verify.sh` and
+`scripts/run_eval.sh` with no network:
 
 - **Git and imports:** `git status --porcelain` (exit code, line count, content hash); HEAD
   against the dataset's `base_commit`; `git fsck --connectivity-only`; the package's
@@ -237,7 +237,7 @@ New chunk MB (zstd) by class; "(c)" is the same task after slimming variant (c).
   - pandas-63232 paid 411 MB. The 13 pandas clones produced two distinct packs, from clones about
     10 minutes apart;
   - the bare clones made on the VM held packs of 428 MB (pandas), 194 MB (scikit-learn) and
-    109 MB (moto) ([`raw/mirrors.txt`](raw/mirrors.txt)).
+    109 MB (moto) (`raw/mirrors.txt`).
 
   A multi-day C2.14 campaign will see each project's pack change whenever upstream refs move. With
   full history, later commits would then pay up to a full pack each, not the measured 30 MB.
@@ -246,7 +246,7 @@ New chunk MB (zstd) by class; "(c)" is the same task after slimming variant (c).
   without `--no-cache-dir`.
 - **Installed packages dominate what is left.**
   - Native code is the bulk: `.so` files, conda's `lib/` (MKL, LLVM, OpenBLAS), llvmlite, numpy,
-    scipy, PyQt5 and pyarrow ([`raw/pkgdetail-c.txt`](raw/pkgdetail-c.txt)).
+    scipy, PyQt5 and pyarrow (`raw/pkgdetail-c.txt`).
   - Of the 1,615 installs in the 29 tasks, 744 are distinct `package==version`. First installs cost
     1,172 MB.
   - The 871 repeat installs still cost 237 MB under (c), and 386 MB with today's `.pyc`. Repeats
@@ -304,8 +304,8 @@ New chunk MB (zstd) per task:
 
 ## Verification
 
-Per-variant results are in [`raw/verify/`](raw/verify/) and [`raw/eval/`](raw/eval/), and are
-summarised in [`raw/verification.json`](raw/verification.json).
+Per-variant results are in `raw/verify/` and `raw/eval/`, and are
+summarised in `raw/verification.json`.
 
 | Check | today (base) | (a) | (a)+gc | (a)+shallow / loose | (a)+placeholder | (a)+shared pack | (c) |
 |---|---|---|---|---|---|---|---|
@@ -334,7 +334,7 @@ summarised in [`raw/verification.json`](raw/verification.json).
     the script carries on, and the test passes only because nothing had changed.
   - Across the dataset, 870 of 36,884 eval scripts name their base commit, 1,919 use `git reset`,
     1,249 `git clean`, 1,027 `git diff`, 362 `git log`/`show`/`rev-parse`/`describe`, and 90 check
-    out paths from a SHA ([`raw/eval-script-git-usage.json`](raw/eval-script-git-usage.json)).
+    out paths from a SHA (`raw/eval-script-git-usage.json`).
   - The shallow cut keeps all of these working except history walks (`git log`, `HEAD~1`).
 - **The version string changes** under every history cut: `pandas.__version__` loses its
   `+674.g4fb963b6a3` suffix. That affects only code that parses the local version part. 43447
@@ -433,33 +433,33 @@ Assumptions and how to read them:
 
 ## Files
 
-- [`raw/results.json`](raw/results.json): per task and variant, delta bytes, files and new chunk
+- `raw/results.json`: per task and variant, delta bytes, files and new chunk
   bytes (uncompressed and zstd) per subclass, plus the top directories of new chunks.
-- [`raw/summary.json`](raw/summary.json): the aggregates above
-  ([`scripts/summarize.py`](scripts/summarize.py)); [`scripts/tables.py`](scripts/tables.py)
+- `raw/summary.json`: the aggregates above
+  (`scripts/summarize.py`); `scripts/tables.py`
   prints the tables.
-- [`raw/verify/`](raw/verify/), [`raw/eval/`](raw/eval/),
-  [`raw/verification.json`](raw/verification.json): per-variant harness checks and eval outcomes
+- `raw/verify/`, `raw/eval/`,
+  `raw/verification.json`: per-variant harness checks and eval outcomes
   (output tails, which contain no patches).
-- [`raw/pipeline.jsonl`](raw/pipeline.jsonl): every build, slim, walk, verify and eval step with
+- `raw/pipeline.jsonl`: every build, slim, walk, verify and eval step with
   its timing and errors.
-- [`raw/pkgdetail-base.txt`](raw/pkgdetail-base.txt),
-  [`raw/pkgdetail-c.txt`](raw/pkgdetail-c.txt): new chunk bytes by installed package, and the cost
+- `raw/pkgdetail-base.txt`,
+  `raw/pkgdetail-c.txt`: new chunk bytes by installed package, and the cost
   of repeat installs.
-- [`raw/calibration.json`](raw/calibration.json): the walker against `nydus-image`.
-  [`raw/mirrors.txt`](raw/mirrors.txt): the per-project bare-clone pack sizes.
-- [`raw/tasks.json`](raw/tasks.json), [`raw/order.json`](raw/order.json): recipes and processing
-  order. [`raw/eval-script-git-usage.json`](raw/eval-script-git-usage.json): git usage across all
+- `raw/calibration.json`: the walker against `nydus-image`.
+  `raw/mirrors.txt`: the per-project bare-clone pack sizes.
+- `raw/tasks.json`, `raw/order.json`: recipes and processing
+  order. `raw/eval-script-git-usage.json`: git usage across all
   36,884 eval scripts.
-- [`scripts/`](scripts/): what ran.
-  - [`select.py`](scripts/select.py): task selection.
-  - [`evalscan.py`](scripts/evalscan.py), [`prep_eval.py`](scripts/prep_eval.py): eval
+- `scripts/`: what ran.
+  - `select.py`: task selection.
+  - `evalscan.py`, `prep_eval.py`: eval
     definitions.
-  - [`pipeline.py`](scripts/pipeline.py): the VM driver.
-  - [`slim.sh`](scripts/slim.sh): the variants, which is the recipe step to adopt.
-  - [`walk.py`](scripts/walk.py), [`analyze.py`](scripts/analyze.py): accounting.
-  - [`verify.sh`](scripts/verify.sh), [`run_eval.sh`](scripts/run_eval.sh): verification.
-  - [`calib.sh`](scripts/calib.sh), [`calib.py`](scripts/calib.py), [`rafs.py`](scripts/rafs.py):
+  - `pipeline.py`: the VM driver.
+  - `slim.sh`: the variants, which is the recipe step to adopt.
+  - `walk.py`, `analyze.py`: accounting.
+  - `verify.sh`, `run_eval.sh`: verification.
+  - `calib.sh`, `calib.py`, `rafs.py`:
     calibration.
 
   These are spike code.

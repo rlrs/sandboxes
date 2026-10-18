@@ -89,8 +89,8 @@ Do not raise wake concurrency based on these samples: workers already have
 filesystem and I/O contention. None of the larger candidates above is implemented
 or performance-qualified by this change.
 
-Evidence: [storage phases](../benchmarks/storage-contention-2026-09-22/storage-phases.txt),
-[storage counters](../benchmarks/storage-contention-2026-09-22/storage-metrics.txt),
-[process I/O](../benchmarks/storage-contention-2026-09-22/io-source.txt),
-[Linux tests](../benchmarks/storage-contention-2026-09-22/linux-tests.txt),
-[baseline failure](../benchmarks/storage-contention-2026-09-22/baseline-regression.txt).
+Evidence: storage phases,
+storage counters,
+process I/O,
+Linux tests,
+baseline failure.

@@ -68,7 +68,7 @@ snapshot `438710747` (Ubuntu 26.04.1, kernel `7.0.0-30-generic`).
   - 6 TMax: the shared source image used by 3,649 rows, plus 5 foundations;
   - 6 Terminal-Lego: 2 shared sources, plus 4 foundations.
 
-  The list is in [raw/images.json](raw/images.json).
+  The list is in raw/images.json.
 - **Registry:** read-only from production `http://10.42.0.2:5000`. Nothing was written to
   production.
 - **Node bundle:** `release-0.8.1-20261002/sandbox-node-package.tar.gz` from the gateway,
@@ -84,8 +84,8 @@ advantage.
   pre-warmed with every component blob first (8.8 GB).
 - Bytes fetched are nftables counters on each registry's source port. They were
   validated against curl and against both daemons' own counters (within 1%;
-  [raw/counter-check.json](raw/counter-check.json),
-  [raw/bytes-check2.json](raw/bytes-check2.json)).
+  raw/counter-check.json,
+  raw/bytes-check2.json).
 
 **Today's path, as run here.**
 - Our real `EnvironmentBackend` (`serve-environment-io`, with 0.8.1's
@@ -138,7 +138,7 @@ The sandbox runs `sleep`. Commands are timed as `runsc exec` calls:
 - **Cache disk:** the filesystem's used-bytes delta after `sync`. `cachefiles` keeps
   in-use backing files as unlinked tmpfiles, which `du` cannot see.
 
-The harness is in [harness/](harness/): `s11lib.py`, `bench.py`, `verify_fscache.py`
+The harness is in harness/: `s11lib.py`, `bench.py`, `verify_fscache.py`
 and the step scripts.
 
 ## Module build recipe (exact kernel 7.0.0-30-generic)
@@ -149,13 +149,13 @@ and the step scripts.
   (`EROFS_FS=m`, `CACHEFILES=m`). `FSCACHE=y` is compiled into `netfs.ko`
   (`NETFS_SUPPORT=m`), which already exports everything both modules use.
 - **Full-tree check.** Running `olddefconfig` on the full tree with the options enabled
-  changes nothing outside the two options ([raw/modules/config.diff](raw/modules/config.diff)).
+  changes nothing outside the two options (raw/modules/config.diff).
   The other differences in that diff come from the build machine: no `rustc` and a
   different compiler name. They are not caused by the options.
 - **One dependent option.** `EROFS_FS_PAGE_CACHE_SHARE` becomes unavailable, because it
   `depends on ... !EROFS_FS_ONDEMAND`. Ubuntu does not set it today.
 - **No other users.** No source outside `fs/erofs` and `fs/cachefiles` tests either
-  option ([raw/modules/option-users-outside.txt](raw/modules/option-users-outside.txt)).
+  option (raw/modules/option-users-outside.txt).
 - **Conclusion:** a full kernel build is not needed.
 
 ### Signature policy and loading
@@ -202,7 +202,7 @@ Notes on the recipe:
   the source tree's own `modules_prepare` therefore gives `7.0.12-30-generic`. Always
   build against the matching `linux-headers` tree.
 - **Outputs:** sha256 sums of the spike's modules are in
-  [raw/modules/sha256.txt](raw/modules/sha256.txt); build and load logs are in
+  raw/modules/sha256.txt; build and load logs are in
   [raw/logs/](raw/logs/).
 
 ### Fitting this into the node bundle
@@ -225,7 +225,7 @@ These are notes for `scripts/repack_node_bundle.py` and `vm_init.py`.
 
 Values are medians per image across the 16 images that have `python3`. The other 4
 (TMax 0, Terminal-Lego 1/3/5) have no Python and finish in about 20 ms on both paths.
-Per-image values are in [raw/summary.json](raw/summary.json).
+Per-image values are in raw/summary.json.
 
 | Measure | Our EROFS/NBD | fscache + nydusd | fscache vs NBD |
 | --- | ---: | ---: | ---: |
@@ -282,7 +282,7 @@ Under a burst, our backend client also failed with `BlockingIOError(EAGAIN)`:
 - **Cause:** the backend's Unix socket uses socketserver's default backlog of 5, and the
   client's timeout socket gets `EAGAIN` from `connect(2)`.
 - **Scale:** 19 of 40 parallel calls failed in isolation
-  ([raw/backend-client-eagain.json](raw/backend-client-eagain.json)).
+  (raw/backend-client-eagain.json).
 - **Effect on these runs:** the earlier runs lost 3–8 of 20 sandboxes to it. The numbers
   above use a spike-only retry; a follow-up task is filed.
 
@@ -315,7 +315,7 @@ production binder needs to retry the bind and to treat "already exists" as succe
 | Nydus data blobs, summed / distinct | 5.44 / 2.89 GB |
 | Nydus bootstraps | 35.6 MB |
 
-Per-image numbers are in [raw/storage.json](raw/storage.json). Dedupe beyond layer
+Per-image numbers are in raw/storage.json. Dedupe beyond layer
 identity is S10's question.
 
 ## Integration notes for C2.13
@@ -499,12 +499,12 @@ are filed for both:
 
 ## Files
 
-- **Summaries:** [raw/summary.json](raw/summary.json) holds the summaries and per-image
+- **Summaries:** raw/summary.json holds the summaries and per-image
   values.
 - **Benchmark runs:**
   - sequential: `raw/bench-{fscache,nbd}-seq.json`;
   - parallel: `raw/bench-*-par-r{1..4}.json` and `raw/bench-*-par-x3.json`.
-- **fscache checks:** [raw/verify-fscache.json](raw/verify-fscache.json) covers
+- **fscache checks:** raw/verify-fscache.json covers
   contents, sharing, chunk dictionary, validation and failover.
 - **Storage and conversion:**
   - storage: `raw/storage.json`, `raw/environments.json`;

@@ -40,12 +40,12 @@ were healthy. Two pre-existing parked sandboxes were preserved, with no pending
 relay deliveries at deployment. The retry regression uses a simulated clock;
 it exercises 80 failures without making the suite sleep for 80 seconds.
 
-[Retained incident events and worker samples](../benchmarks/relay-wake-incident-2026-09-19.json).
+Retained incident events and worker samples.
 
 
 ## Production qualification
 
-[Retained result](../benchmarks/relay-fast-512-0545-2026-09-19.json).
+Retained result.
 
 512 sandboxes passed five interleaved model/park/wake/tool cycles on workers
 12396394, 12396395, 12396396 and 12396398, with 128 sandboxes per worker.

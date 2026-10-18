@@ -46,7 +46,7 @@ covering `volumes_live_capacity` index. The new inventory decodes 512 records
 instead of 20,512. The benchmark's retired-device count represents a large
 backlog, not an observed current production inventory.
 
-[Raw measurements](../benchmarks/storage-journal-hotpaths-2026-09-21.json).
+Raw measurements.
 These are synthetic local database-path measurements, not end-to-end production
 speedups or evidence of a particular production workload's bottleneck.
 

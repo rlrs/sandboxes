@@ -33,10 +33,10 @@ MiB of compressed OCI layers and 1,118/705/130 MiB of EROFS payloads respectivel
 These are measured compressed artifacts, not unpacked rootfs sizes.
 
 The platform was `linux/amd64`. All base images are pinned to multiarchitecture
-index digests in [base-pins.json](base-pins.json), and the
-exact dependency locks are in [locks](locks). Application variants change one
+index digests in base-pins.json, and the
+exact dependency locks are in locks. Application variants change one
 late source file. Dependency variants change Python `rich` or Node `zod` and
-use separately frozen dependency locks. [Fixture manifests](fixture-manifests.json)
+use separately frozen dependency locks. Fixture manifests
 record input hashes and expected executable results.
 Python locks freeze package versions without wheel hashes; npm locks include
 integrity hashes. The evidence does not promise identical future Python wheel
@@ -79,7 +79,7 @@ status codes, not their error bodies, so it cannot classify every 503's cause.
 Percentiles of separate phases must not be added together.
 
 Full per-recipe distributions, observed concurrency and phase timers are in
-[the generated report](build-load-report.md); its [JSON](build-load-report.json)
+[the generated report](build-load-report.md); its JSON
 preserves counts and maxima. Cold/warm phases differ in concurrency and share
 work, so their latency ratio is not a controlled estimate of optimization gain.
 
@@ -137,7 +137,7 @@ per image, but only 2.05 GB of unique OCI layer blobs. Their EROFS payloads were
 2.08 GB; 2.05 GB of those blobs also belonged to the measured images. Descriptor
 accounting excludes filesystem metadata, uploads and pending garbage collection.
 
-The [first prune](cache-prune-first.json), executed through the normal registry
+The first prune, executed through the normal registry
 maintenance lock and CLI with repository prefix `ucloud-build-cache`, reduced
 117 tags to the configured 64 entries. It deleted 50 cache manifests because
 some manifests had multiple tags, retained 1.63 GB of referenced cache blobs,
@@ -146,7 +146,7 @@ forced. Removing cache references does not promise an immediate disk-space drop,
 especially while final images still reference the same blobs.
 
 After that prune, all four original builders retired through the normal
-autoscaler; [the retirement receipt](first-pool-retired.json) has an empty fleet
+autoscaler; the retirement receipt has an empty fleet
 and no sandbox/build demand. Four new builder IDs were provisioned and each
 BuildKit store was again measured at 0 B. The replacement phase mixes 12 older
 contexts (application revisions 1–4) and 12 recent contexts (25–28) on this pool.
@@ -161,8 +161,8 @@ does not show warm-store latency after replacement. Both VM state and retained
 tags changed, so this experiment cannot isolate pruning's performance effect.
 The [independent review](review.md) details cohort accounting and claim limits.
 
-The [final prune](cache-prune-final.json) reduced 88 tags to 64 by removing 21
-cache manifests, with no image-record removals. The [final inventory](image-inventory-final.json)
+The final prune reduced 88 tags to 64 by removing 21
+cache manifests, with no image-record removals. The final inventory
 confirms 64 entries referencing 1.27 GB of unique compressed cache blobs; all but
 0.274 MB are also referenced by the measured images. Across all 138 images,
 OCI layers total 55.81 GB counted per image versus 2.08 GB unique, and EROFS
@@ -172,24 +172,24 @@ and physical filesystem usage are different measures.
 
 ## Functional checks and cleanup
 
-[Three representative replacement images](smoke-replacement.json), one per
+Three representative replacement images, one per
 recipe at application revision 1, passed their real Python data/native/model or
 Node application checks inside production sandboxes. All three temporary
 sandboxes were deleted. This is representative execution validation, not smoke
 coverage of every image, revision or dependency variant.
 
 Both preparation holds were released and all nine host samplers were stopped.
-Their complete records are retained as gzip JSONL in [telemetry](telemetry).
+Their complete records are retained as gzip JSONL in telemetry.
 The 138 managed test-image aliases, frozen contexts and gateway-local build
 receipts/logs remain as qualification artifacts under the normal lifecycle.
 Cache pruning does not remove those image aliases or force physical GC.
 
-The [final audit](final-state.json) at 08:38:11 UTC confirms all eleven observed
+The final audit at 08:38:11 UTC confirms all eleven observed
 test builder/warmed-worker VMs are absent from the provider, an empty fleet,
 zero sandboxes and active builds, no prepared or pending demand, and an inactive
 gateway sampler. Gateway/relay HTTPS health and metrics pass. Read-only exact-ID
 queries confirm all 138 successful summaries remain in the operator-history
-database after VM retirement. [The audit script](final-audit.py) stays on the
+database after VM retirement. The audit script stays on the
 gateway for credentialed checks and only returns allowlisted metadata.
 
 ## Reproduction and interpretation
@@ -211,10 +211,10 @@ stop and preserve its telemetry before idle retirement. Execute the fixture
 manifest's smoke command in a sandbox from each published recipe and delete
 those temporary sandboxes.
 
-The [reproduction check](fixture-reproduction.json) regenerated six contexts
+The reproduction check regenerated six contexts
 (each recipe at application revision 1 and its dependency-change variant) from
 the preserved locks and base pins. All six input hashes match the measured
-fixtures. [Validation metadata](validation.json) records tool/input hashes and
+fixtures. Validation metadata records tool/input hashes and
 the final consistency checks.
 
 Recompute reports locally, including from gzip-compressed telemetry:
@@ -230,4 +230,4 @@ sandboxes, LLM relay traffic, or a sustained mixed workload. The SDK and health
 probes originate on the gateway, so WAN latency is absent and driver CPU is
 included in whole-host measurements. A sandbox worker was automatically warmed
 by build activity even while sandbox demand was zero; its provisioning is a
-whole-host cold-phase confounder documented in [the receipt](build-triggered-worker.json).
+whole-host cold-phase confounder documented in the receipt.

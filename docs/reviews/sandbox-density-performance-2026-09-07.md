@@ -251,7 +251,7 @@ covering input/profile validation, event pagination and terminal races,
 complete cleanup, late creates, failed deletion, retained storage owners
 and missing storage metrics. Simulated tests are not live density evidence.
 
-The [artifact-lock benchmark](../benchmarks/hibernation-artifact-lock-concurrency-2026-09-07.json)
+The artifact-lock benchmark
 published 128 tiny three-file generations using 16 workers and an injected
 20-ms memory-file flush delay. Across three repetitions, median total time
 fell from **3.369 seconds** with the former exclusive root lock to
@@ -261,7 +261,7 @@ a few bytes and the delay is artificial. It measures neither real dirty-memory
 bandwidth nor gVisor restore, ublk, remote storage or CPU fairness.
 
 Historical small-sandbox observations are available in the
-[August park/wake evidence](../benchmarks/hetzner-park-wake-optimization-2026-08-13.json):
+August park/wake evidence:
 park median about 0.25 seconds, attached wake median about 0.56 seconds, and
 warm detached wake around 1.54 seconds. One empty-cache detached wake took
 8.29 seconds. Those samples are useful context and do not supply density
@@ -323,9 +323,9 @@ initialization version 3 and deployment identity `density-20260907`.
 
 | Live attempt, UTC | Result | Measured scope |
 | --- | --- | --- |
-| [Two-sandbox smoke, 21:46–21:47](../benchmarks/sandbox-density-smoke-2026-09-07.json) | Passed two park/wake cycles and cleanup | Park invocation p95 ≤ 0.426 s and wake through verified work p95 ≤ 1.022 s; only two observations per phase |
-| [128 sandboxes, concurrency 32, 21:47–21:51](../benchmarks/sandbox-density-128-c32-before-load-fix-2026-09-07.json) | Created all 128; failed initial activity before park/wake | Additional 127 creates took 83.884 s. Activity: 115 successes, 13 CPU-load admission failures; successful-call invocation p95 3.717 s, maximum 10.699 s |
-| [128 requested, concurrency 16, 21:53–21:56](../benchmarks/sandbox-density-128-c16-before-allocation-fix-2026-09-07.json) | Created 127; failed creation before density activity or park/wake | One of 127 additional creates failed at the storage-device gate; the create phase took 79.693 s |
+| Two-sandbox smoke, 21:46–21:47 | Passed two park/wake cycles and cleanup | Park invocation p95 ≤ 0.426 s and wake through verified work p95 ≤ 1.022 s; only two observations per phase |
+| 128 sandboxes, concurrency 32, 21:47–21:51 | Created all 128; failed initial activity before park/wake | Additional 127 creates took 83.884 s. Activity: 115 successes, 13 CPU-load admission failures; successful-call invocation p95 3.717 s, maximum 10.699 s |
+| 128 requested, concurrency 16, 21:53–21:56 | Created 127; failed creation before density activity or park/wake | One of 127 additional creates failed at the storage-device gate; the create phase took 79.693 s |
 
 Both failed attempts report no cleanup errors or remaining owned IDs. Their
 final snapshots show zero active sandboxes, zero active creates, zero active
@@ -350,7 +350,7 @@ environment graders described in the compatibility review.
 
 ### Third live run: allocations fixed; mass wake still fails
 
-[Candidate v3, 128 sandboxes and 16 workers](../benchmarks/sandbox-density-128-c16-before-bounded-restore-2026-09-07.json)
+Candidate v3, 128 sandboxes and 16 workers
 created all 128 sandboxes, completed all 128 activity calls and parked all 128.
 Activity p95 was **2.561 s** and park p95 **3.068 s**, with phase durations
 **13.842 s** and **14.066 s**. These exceed the original service/completion
@@ -386,8 +386,8 @@ patch; the new default-ACL patch is not included.
 
 | Run | Initial activity p95 / phase | Park p95 / phase | Wake outcome |
 | --- | --- | --- | --- |
-| [128, 16 workers, 256 MiB dirty](../benchmarks/sandbox-density-128-c16-full-memory-v4-2026-09-07.json) | 3.732 s / 16.907 s | 2.819 s / 13.116 s | 125 successes; three memory-PSI admission failures; successful-request p95 5.580 s |
-| [128, 16 workers, 16 MiB dirty](../benchmarks/sandbox-density-128-c16-hot-memory-reboot-2026-09-07.json) | 0.774 s / 4.834 s | 3.223 s / 14.023 s | VM restarted during first wake phase; 28 successes, 100 failed requests; incomplete cleanup |
+| 128, 16 workers, 256 MiB dirty | 3.732 s / 16.907 s | 2.819 s / 13.116 s | 125 successes; three memory-PSI admission failures; successful-request p95 5.580 s |
+| 128, 16 workers, 16 MiB dirty | 0.774 s / 4.834 s | 3.223 s / 14.023 s | VM restarted during first wake phase; 28 successes, 100 failed requests; incomplete cleanup |
 
 Both profiles retain and verify 256 MiB per sandbox (32 GiB across the node).
 The smaller profile rotates a 16-MiB dirty subset and hashes every resident
@@ -396,7 +396,7 @@ Its activity improvement is a workload distinction, not a like-for-like speedup.
 The full-dirty run completed cleanup with zero owned sandboxes and zero active
 backend devices. Neither run is a density qualification pass.
 
-A [two-sandbox diagnostic run](../benchmarks/sandbox-density-smoke-v4-diagnostics-2026-09-07.json)
+A two-sandbox diagnostic run
 completed three correct park/wake cycles and cleanup, but failed the original
 activity p95 target due to a roughly 2.56-second outlier. It does not substitute
 for a complete 128-sandbox run.
@@ -418,16 +418,16 @@ to serve healthy sandboxes. Repeated startup preserves quarantine; wake and
 exec remain denied. Unknown fencing failures still fail closed.
 
 On the rebooted worker, startup succeeded with 40 storage-error volumes.
-[Generation-fenced cleanup](sandbox-density-reboot-cleanup-2026-09-07.json)
+Generation-fenced cleanup
 then removed all 128 owned test sandboxes and verified zero active creates,
 active storage devices, error volumes and hard reservations. The original
 interrupted run remains failed. See the [reboot evidence](sandbox-density-reboot-2026-09-07.md).
 
-A fresh [eight-sandbox, two-cycle diagnostic](../benchmarks/sandbox-density-8-v5-diagnostics-2026-09-07.json)
+A fresh eight-sandbox, two-cycle diagnostic
 passed all original targets and state checks, then cleaned up completely.
 Each sandbox retained 256 MiB with a 16-MiB rotating dirty subset. Park p95
 was **0.367 / 0.321 seconds**, and wake through useful work p95 was
-**1.198 / 1.221 seconds**. [Temporary phase timing](../benchmarks/sandbox-density-8-v5-phase-timings-2026-09-07.json)
+**1.198 / 1.221 seconds**. Temporary phase timing
 showed storage release as the largest park component in this small run.
 This does not replace the missing complete 128-sandbox qualification.
 The recovery node wheel SHA is `3d336446aa3066f771c02c0bb57202873fad6b610ea7af2a044ff375d74774b0`;
@@ -435,9 +435,9 @@ its storage service remains on the functionally identical storage code in v4.
 
 ### Built ACL runtime candidate
 
-The separate [gVisor ACL build](gvisor-acl-build-2026-09-07.json) passed all
+The separate gVisor ACL build passed all
 five test targets and produced a complete optimized distribution. The
-[isolated installation](gvisor-acl-installation-2026-09-07.json) uses fresh
+isolated installation uses fresh
 direct-runtime state; it does not reuse older checkpoints. The archive is
 retained locally under `dist/gvisor-acl-20260907/` with SHA-256
 `e27d1a86c89837ac06aa08ca2cb4236b161fa564b479ea92b1143c0dec1bb986`.
@@ -445,7 +445,7 @@ No production rollout is part of this review.
 
 ### First 128-sandbox ACL runtime trial
 
-The [ACL runtime trial with 16 workers](../benchmarks/sandbox-density-128-acl-c16-hot-2026-09-07.json)
+The ACL runtime trial with 16 workers
 created all 128 sandboxes and completed all initial activity and park calls.
 Each sandbox retained 256 MiB and dirtied a rotating 16-MiB subset. Activity
 p95 was **0.775 seconds** with a **4.988-second** phase; park p95 was
@@ -455,7 +455,7 @@ CPU-pressure check. The 121 successful wake calls had a censored p95 of
 **2.766 seconds**; the whole wake phase took **14.670 seconds**. Cleanup
 returned active sandboxes, creates, backend devices and storage errors to zero.
 
-The [synchronized analysis](../benchmarks/sandbox-density-128-acl-c16-analysis-2026-09-07.json)
+The synchronized analysis
 retains the distinction between successful-request latency and phase success.
 Park's storage-release span dominated at **2.483 seconds p95**; checkpoint
 capture was **0.069 seconds**, artifact commit **0.145 seconds**, and stopping
@@ -475,13 +475,13 @@ to one CPU. Their aggregate `memory.current` was **35.92 GiB**. File-backed
 charges were **33.58 GiB**, including **33.27 GiB** mapped files, with
 **1.90 GiB** of anonymous memory. The sentry boot processes' PSS is only a
 partial process/mapping view and must not be substituted for total guest
-memory. The raw [host samples](../benchmarks/sandbox-density-128-acl-c16-host-2026-09-07.jsonl.gz)
-and [timing journal](../benchmarks/sandbox-density-128-acl-c16-journal-2026-09-07.jsonl.gz)
+memory. The raw host samples
+and timing journal
 are retained with the benchmark.
 
 ### Lower concurrency and bounded CPU admission
 
-The [eight-worker repeat](../benchmarks/sandbox-density-128-acl-c8-deep-2026-09-07.json)
+The eight-worker repeat
 again created all 128 sandboxes. Activity p95 was **0.631 seconds**, and park
 p95 improved to **1.397 seconds**. Parking the full population still took
 **14.795 seconds**, and completion p95 was **13.498 seconds**. Eleven wake
@@ -504,7 +504,7 @@ deadline; it bounds retries rather than forcibly cancelling provider code.
 The node-only wheel SHA is
 `8bc834925cdf8f8760003c7414eb7388ea49d1690897663817df89c094c7ad0d`.
 
-The [three-cycle v6 trial](../benchmarks/sandbox-density-128-acl-v6-c16-wait-2026-09-07.json)
+The three-cycle v6 trial
 completed all 128 wake-and-state checks in each of the first two cycles,
 without CPU admission errors. It still failed latency limits, and the third
 wake wave admitted only 24 sandboxes: **104 requests hit the active-device
@@ -517,8 +517,8 @@ subsequently removed every owned sandbox, active device and storage error.
 | 1 | 0.812 s | 2.364 s / 13.125 s | 2.442 s / 14.075 s | 128/128 |
 | 2 | 0.797 s | 2.305 s / 13.934 s | 2.259 s / 7.291 s, censored | 24/128 |
 
-The raw [host samples](../benchmarks/sandbox-density-128-acl-v6-c16-host-2026-09-07.jsonl.gz)
-and [node/storage timing records](../benchmarks/sandbox-density-128-acl-v6-c16-journal-2026-09-07.jsonl.gz)
+The raw host samples
+and node/storage timing records
 are retained. Deep storage tracing found that the kernel's exclusive-open
 probe repeatedly returned `EBUSY` for the full 500-ms release wait; the service
 then durably retired the device instead of exposing it to another owner.
@@ -537,7 +537,7 @@ injected pause is diagnostic evidence, not a latency benchmark.
 
 ### v7: three complete cycles; latency still misses acceptance
 
-The [v7 run](../benchmarks/sandbox-density-128-acl-v7-c16-reclaim-2026-09-07.json)
+The v7 run
 created all 128 sandboxes and completed all 384 park and 384 wake-through-work
 operations, preserving the memory, process and filesystem checks. No operation
 errors occurred, and cleanup verified zero owned sandboxes or active devices.
@@ -559,7 +559,7 @@ reservations under that lock. Only the exact retired owner with a successful
 exclusive-open check can be reclaimed. Busy devices remain charged. The
 two-second bound covers retries and retirement-lock waits; backend calls keep
 their existing command timeout. The existing 500-ms park release wait is
-unchanged. [Full repository verification](../benchmarks/sandbox-density-final-check-2026-09-08.json)
+unchanged. Full repository verification
 and its complete log are retained.
 
 ### Runtime mount retention fix (2026-09-08)
@@ -567,9 +567,9 @@ and its complete log are retained.
 A subsequent namespace control identified detached mount references in later
 sentries: their executable mappings and Go's cached `cpu.max` descriptors
 referenced cloned host/cgroup mounts with namespace ID zero. Ordinary mountinfo
-hid these references. The [statmount-by-FD evidence](../benchmarks/gvisor-detached-mounts-before-2026-09-08.json)
-and [namespace observations](../benchmarks/gvisor-detached-mounts-before-2026-09-08.jsonl.gz)
-are retained. An earlier [exclusive-open probe](../benchmarks/gvisor-busy-device-before-2026-09-08.json)
+hid these references. The statmount-by-FD evidence
+and namespace observations
+are retained. An earlier exclusive-open probe
 returned `EBUSY` despite finding no ordinary namespace reference.
 
 Patch `0003-ucloud-release-detached-mounts.patch` now opens the sentry executable
@@ -579,7 +579,7 @@ and gofer children disable Go's automatic cgroup CPU watcher. The sentry uses
 two scheduler processors during bootstrap, then retains gVisor's explicit CPU
 sizing. OCI quotas and block-device exclusive-open fencing remain enforced.
 The pinned build passed all seven configured test gates and the optimized
-complete release build. The [installation manifest](gvisor-mountfix-installation-2026-09-08.json)
+complete release build. The installation manifest
 identifies the exact binary and companions installed on the idle dev node in
 a fresh runtime generation. No production runtime has been changed.
 
@@ -587,11 +587,11 @@ The first three-sandbox control completed all state checks and cleanup. During
 the repeated control, two later sentries used the original host executable mount
 (namespace ID 8), had no `cpu.max` descriptors, and retained only two active
 storage devices after the first sandbox parked. The injected hold makes these
-controls unsuitable for latency acceptance. The [58 hold samples](../benchmarks/gvisor-mountfix-control-analysis-2026-09-08.json)
+controls unsuitable for latency acceptance. The 58 hold samples
 confirm this state from 1.26 to 58.70 seconds after park, with zero retired
-devices throughout. The original [ACL oracle](prime-acl-mountfix-2026-09-08.json)
-passes all 9 tests with reward 1 and cleanup verified. The [ten-cycle hibernation repeat](gvisor-mountfix-hibernation-2026-09-08.json)
-also passes all existing checks. The first [128-sandbox repeat](../benchmarks/sandbox-density-128-mountfix-c16-2026-09-08.json)
+devices throughout. The original ACL oracle
+passes all 9 tests with reward 1 and cleanup verified. The ten-cycle hibernation repeat
+also passes all existing checks. The first 128-sandbox repeat
 was interrupted by a VM poweroff during its second wake wave. All 128 first
 wakes and both park waves completed before the interruption. The first park
 p95 was **2.489 seconds**, its full wave **10.318 seconds**; the second park
@@ -606,21 +606,21 @@ samples ending at **06:12:53.447 UTC**, plus a trailing 1,124-byte zero-filled
 record after the abrupt restart. Guest `oom_kill` remained zero and swap-out
 counters did not rise during the captured run; this does not establish the
 cause of poweroff. The retained kernel records have no panic/OOM/shutdown
-message. The pre-reboot [host telemetry](../benchmarks/sandbox-density-128-mountfix-c16-host-2026-09-08.jsonl.gz),
-[kernel journal](../benchmarks/sandbox-density-128-mountfix-c16-kernel-2026-09-08.jsonl.gz)
-and [service journal](../benchmarks/sandbox-density-128-mountfix-c16-services-2026-09-08.jsonl.gz)
+message. The pre-reboot host telemetry,
+kernel journal
+and service journal
 are preserved without replacing the invalid trailing data.
 
 A test-only storage diagnostic entrypoint was in `/tmp` and disappeared on
 reboot, delaying API recovery. It has been moved to `/var/tmp/density-diagnostics`
 and the test wrapper updated. Product package code was unaffected by this
 harness repair. Original benchmark cleanup failed while the API was unavailable;
-a separately recorded, [generation-fenced cleanup](sandbox-density-mountfix-reboot-cleanup-2026-09-08.json)
+a separately recorded, generation-fenced cleanup
 then completed with zero remaining sandboxes, active devices, storage errors
 or hard reservations. The 24-worker repeat completed as recorded below.
 
 
-The [captured first-wave storage trace](../benchmarks/gvisor-mountfix-storage-release-analysis-2026-09-08.json)
+The captured first-wave storage trace
 contains 128 release operations and **zero exclusive-open failures**. Backend
 release p95 is **45.4 ms**, replacing the old 500-ms busy-device wait. Remaining
 storage tails include journal transition p95 **94.4 ms** and completion p95
@@ -631,7 +631,7 @@ transaction/durability changes have been made based only on this trace.
 
 ### 24 request workers, eight restore slots
 
-The [three-cycle repeat](../benchmarks/sandbox-density-128-mountfix-c24-2026-09-08.json)
+The three-cycle repeat
 completed all 128 sandboxes in every phase with zero operation errors or
 cleanup errors. All park and activity thresholds pass. Wake remains outside
 the unchanged targets. Host telemetry and the detailed service journal are
@@ -643,7 +643,7 @@ retained beside the raw benchmark.
 | 1 | 0.944 s | 1.703 s / 9.545 s | 3.201 s / 13.144 s |
 | 2 | 0.910 s | 1.730 s / 8.259 s | 3.684 s / 14.186 s |
 
-The [wake-stage analysis](../benchmarks/sandbox-density-128-mountfix-c24-wake-analysis-2026-09-08.json)
+The wake-stage analysis
 shows restore-slot waiting p95 **2.062 seconds**, network reconciliation p95
 **473 ms**, and Warden resume p95 **1.259 seconds**. These overlapping/component
 quantiles must not be added. The next controlled repeat raises the existing
@@ -655,7 +655,7 @@ configuration trial, not a change to the general deployment default.
 
 ### Restore-limit trial and firewall verification
 
-The [16-restore-slot trial](../benchmarks/sandbox-density-128-mountfix-c24-r16-2026-09-08.json)
+The 16-restore-slot trial
 also preserved all 128 sandboxes through three cycles and cleaned up fully,
 but worsened wake p95 to **6.118 / 4.558 / 4.272 seconds**, with waves of
 **16.931 / 15.441 / 15.222 seconds**. Park and activity still passed. The test
@@ -669,13 +669,13 @@ original check-and-repair path. The snapshot is local to that invocation,
 never cached across wakes. DNS-backed egress refresh, kernel lease validation,
 private-network denials and exact-port policy are preserved.
 
-The [real Linux qualification](../benchmarks/network-rule-snapshot-qualification-2026-09-08.json)
+The real Linux qualification
 runs in a separate network namespace. All 11 required checks matched; deleting
 a private-network deny triggered repair, and a different TCP port could not
 stand in for the required rule. Across 25 alternating samples, median host-rule
 reconciliation fell from **14.03 ms to 2.50 ms** (p95 **15.43 ms to 2.68 ms**).
 This microbenchmark does not establish end-to-end wake latency. The
-[qualification source](../benchmarks/network-rule-snapshot-qualification-2026-09-08.py)
+qualification source
 is retained. All 121 direct-runtime tests passed, including four new firewall
 snapshot regressions.
 
@@ -687,7 +687,7 @@ unchanged. The 24-request/eight-restore-slot repeat is recorded below.
 
 ### v8 result and journal writer coordination
 
-The [v8 density run](../benchmarks/sandbox-density-128-mountfix-v8-c24-2026-09-08.json)
+The v8 density run
 completed all 128 sandboxes across three cycles, with no operation or cleanup
 errors. It still fails latency acceptance: park p95 is **2.154 / 1.721 / 1.689
 seconds**, wake through work p95 **3.879 / 3.503 / 3.875 seconds**, and wake
@@ -701,7 +701,7 @@ commit semantics are unchanged. An unfinished transaction is rolled back
 before handing the writer slot to another request. No backend work, guest
 execution, or kernel block-device fencing is moved inside the writer guard.
 
-The [Linux microbenchmark](../benchmarks/journal-writer-qualification-2026-09-08.json)
+The Linux microbenchmark
 runs 512 durable counter transactions with 16 workers, alternating old and new
 coordination over three fresh journals. Every committed increment is verified.
 Old wave durations are **443 / 541 / 748 ms**, versus **368 / 391 / 363 ms**;
@@ -718,7 +718,7 @@ The same 24-request/eight-restore-slot density profile is being rerun.
 
 ### v9 platform interruption; v10 network lease locking
 
-The [v9 run](../benchmarks/sandbox-density-128-mountfix-v9-c24-2026-09-08.json)
+The v9 run
 completed two correct cycles and both first wake waves for all 128 sandboxes.
 Its third wake was interrupted by another UCloud VM poweroff: 95 requests
 completed and 33 timed out. Service recovery and the benchmark's own cleanup
@@ -745,18 +745,18 @@ The new regression uses two manager instances on the same state directory:
 a stalled namespace setup allows another sandbox to finish; deletion of the
 stalled incarnation waits, and its slot is not reused before cleanup. Existing
 migration, exact-egress, durable allocation and repair tests still pass.
-[Full verification](../benchmarks/sandbox-density-v10-check-2026-09-08.json)
+Full verification
 passes 830 main tests (5 skipped), 82 SDK tests, lint, Go and package checks.
-The [unchanged ACL oracle](prime-acl-v10-2026-09-08.json) passes 9/9 with reward
+The unchanged ACL oracle passes 9/9 with reward
 1 and its sandbox deleted, exercising actual package downloads and grader
 execution through the candidate's network path.
 
-The [node installation](../benchmarks/sandbox-density-v10-installation-2026-09-08.json)
+The node installation
 uses wheel SHA256
 `ce083a63597eea4ef5fbe14cca9c37a9d6ca61a79a658c42611cd017de5bc059`.
 The storage daemon keeps the identical storage code in the v9 wheel, with
 SHA256 `6ba6d749684928c1c37219270fa9f92b16f8ba88bdd1dffacb47cdbc9a45d045`.
-The gVisor distribution and eight-restore-slot limit are unchanged. The [24-request-worker repeat](../benchmarks/sandbox-density-128-mountfix-v10-c24-2026-09-08.json)
+The gVisor distribution and eight-restore-slot limit are unchanged. The 24-request-worker repeat
 completed two wake waves, but was interrupted during its third by platform
 incident 004. Its first two park p95 values were **1.794 / 1.731 seconds**;
 wake p95 was **5.397 / 4.283 seconds**, with waves **16.930 / 16.146 seconds**.
@@ -768,9 +768,9 @@ restore slots and unchanged SLOs.
 
 ### Latest complete run: v10, 16 request workers, eight restore slots
 
-[Raw result](../benchmarks/sandbox-density-128-mountfix-v10-c16-2026-09-08.json),
-[host samples](../benchmarks/sandbox-density-128-mountfix-v10-c16-host-2026-09-08.jsonl.gz),
-and [service journal](../benchmarks/sandbox-density-128-mountfix-v10-c16-services-2026-09-08.jsonl.gz)
+Raw result,
+host samples,
+and service journal
 retain the complete benchmark interval. All 128 sandboxes passed state, memory,
 filesystem, SQLite and process checks after each wake. There were no operation
 or cleanup errors, no remaining owned sandboxes, and no VM restart. The result
@@ -784,7 +784,7 @@ is **failed on latency**, not a qualification pass.
 
 Request concurrency reduced service latency compared with the 24-worker v10
 run, but did not improve whole-wave throughput enough to meet the target.
-The [preceding diagnostic trace](../benchmarks/sandbox-density-128-mountfix-v10-c24-wake-analysis-2026-09-08.json)
+The preceding diagnostic trace
 shows network setup p95 around 235 ms; remaining time includes restore-slot
 waiting and storage remount/journal work. The Warden stage named
 `validate_artifact` includes storage mount, so its duration must not be

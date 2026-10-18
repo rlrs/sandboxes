@@ -13,7 +13,7 @@ physical collection makes registry reads and writes unavailable for its duration
 
 `runtime/storage_native/qualify_registry_gc.py` exercises real HTTP uploads,
 manifest publication and deletion, then the real service stop/collect/restart
-path. The results in [qualification.json](qualification.json) confirm:
+path. The results in qualification.json confirm:
 
 - Live manifest and layer remain readable; only unreachable content is removed.
 - New publication works after collection.

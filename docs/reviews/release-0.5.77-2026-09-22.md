@@ -50,7 +50,7 @@ before the restart. The earlier user sandbox on worker 12398541 remains preserve
 ## Production load results
 
 See the JSON artifacts in
-[`release-0.5.77-2026-09-22/`](../benchmarks/release-0.5.77-2026-09-22/).
+`release-0.5.77-2026-09-22/`.
 
 The natural 256×8 run completed 2,048/2,048 cycles correctly but regressed:
 1,792 measured cycles had wake p95 **8.656 s** and response-ready-to-verified-exec

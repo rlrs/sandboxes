@@ -19,14 +19,14 @@ gateway/scheduler/provider authority migration remains outstanding.
 
 | Trial | Responses | p50, s | p95, s | p99, s | Max, s |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| [ucloud-relay-final-burst-1](ucloud-relay-final-burst-1.json) | 512/512 | 1.132 | 1.148 | 1.148 | 1.150 |
-| [ucloud-relay-final-burst-2](ucloud-relay-final-burst-2.json) | 512/512 | 1.016 | 1.108 | 1.109 | 1.112 |
-| [ucloud-relay-final-burst-3](ucloud-relay-final-burst-3.json) | 512/512 | 0.898 | 0.906 | 0.907 | 0.909 |
-| [ucloud-relay-final-kill-1](ucloud-relay-final-kill-1.json) | 512/512 | 1.187 | 1.753 | 1.757 | 1.757 |
-| [ucloud-relay-final-kill-2](ucloud-relay-final-kill-2.json) | 512/512 | 1.168 | 1.743 | 1.747 | 1.747 |
-| [ucloud-relay-final-kill-3](ucloud-relay-final-kill-3.json) | 512/512 | 1.429 | 1.817 | 1.820 | 1.821 |
-| [ucloud-relay-final-kill-4](ucloud-relay-final-kill-4.json) | 512/512 | 1.571 | 2.076 | 2.077 | 2.079 |
-| [ucloud-relay-final-kill-5](ucloud-relay-final-kill-5.json) | 512/512 | 1.183 | 1.702 | 1.913 | 1.913 |
+| ucloud-relay-final-burst-1 | 512/512 | 1.132 | 1.148 | 1.148 | 1.150 |
+| ucloud-relay-final-burst-2 | 512/512 | 1.016 | 1.108 | 1.109 | 1.112 |
+| ucloud-relay-final-burst-3 | 512/512 | 0.898 | 0.906 | 0.907 | 0.909 |
+| ucloud-relay-final-kill-1 | 512/512 | 1.187 | 1.753 | 1.757 | 1.757 |
+| ucloud-relay-final-kill-2 | 512/512 | 1.168 | 1.743 | 1.747 | 1.747 |
+| ucloud-relay-final-kill-3 | 512/512 | 1.429 | 1.817 | 1.820 | 1.821 |
+| ucloud-relay-final-kill-4 | 512/512 | 1.571 | 2.076 | 2.077 | 2.079 |
+| ucloud-relay-final-kill-5 | 512/512 | 1.183 | 1.702 | 1.913 | 1.913 |
 
 ## Environment and method
 

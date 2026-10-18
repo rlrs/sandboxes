@@ -42,7 +42,7 @@ The concurrent test is **256 checkpoint cycles, not 256 simultaneous sandboxes**
 I/O PSI some avg10 rose from 0.31% to 1.21%; it did not reproduce the earlier
 production storage saturation. Warm-retention savings and wake p95 remain unmeasured.
 
-Artifacts: [single trace](tiered.json), [concurrent traces](concurrent.json).
+Artifacts: single trace, concurrent traces.
 
 ## XFS trim
 
@@ -75,7 +75,7 @@ trimming remains disabled. A pressure-aware policy must coordinate with volume
 ownership and freeze/seal, pace incremental work, and avoid repeatedly scanning
 large volumes. Results qualify this kernel/backend combination, not every backend.
 
-Artifacts: [trim](trim.json), [concurrent trim](trim-concurrent.json).
+Artifacts: trim, concurrent trim.
 
 ## Cleanup and health
 
@@ -83,4 +83,4 @@ Both test volume trees were removed after confirming no test mount remained.
 Test daemons shut down and their devices were deleted by the harness. The serving
 backend retained PID **5496**, all 16 warm pool devices, zero active devices,
 zero active/waiting storage operations, zero error volumes, and a successful
-node-agent health response. [Post-test check](worker-after.log).
+node-agent health response. Post-test check.

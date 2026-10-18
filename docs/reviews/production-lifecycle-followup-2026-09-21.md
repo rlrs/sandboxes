@@ -2,7 +2,7 @@
 
 The latest retained non-test workload ran **13:32:58–14:01:02 UTC** on **0.5.70**. It produced 3,603 program requests across 208 distinct sandbox IDs. Later activity was deployment testing. Production was idle when inspected, with no sandbox routes or fresh worker heartbeats. Current deployed runtime is **0.5.73**; these historical traces cannot establish its loaded performance.
 
-Evidence: [retained metrics and selected traces](../benchmarks/production-lifecycle-followup-2026-09-21.json). Searches covered 13:00–14:02 UTC, returning up to 30 traces per category; the selected slow traces are a diagnostic sample, not a representative latency distribution.
+Evidence: retained metrics and selected traces. Searches covered 13:00–14:02 UTC, returning up to 30 traces per category; the selected slow traces are a diagnostic sample, not a representative latency distribution.
 
 ## Largest unresolved delay: coordination before worker execution
 
@@ -33,7 +33,7 @@ Create retries also showed gateway delay: traces `175166be27d9a056040c00504a27df
 
 **Ordinary database reads repeatedly wrote permission metadata.** Routing connection entry/exit and control-state transaction entry unconditionally called `chmod` on the database, WAL, and shared-memory files. They now inspect the mode and change it only when needed. Permissions are checked on every access: new sidecars and externally changed permissions are still repaired. No cached authorization decision or durability setting was introduced.
 
-A reproducible local synthetic benchmark uses 268 migration records, one relevant to the requested sandbox, with empty snapshot metadata. See [results](../benchmarks/lifecycle-metadata-2026-09-21.json) and `scripts/benchmark_lifecycle_metadata.py`. These are small hot-path improvements, not an explanation for tens of seconds of waiting or a production speedup measurement.
+A reproducible local synthetic benchmark uses 268 migration records, one relevant to the requested sandbox, with empty snapshot metadata. See results and `scripts/benchmark_lifecycle_metadata.py`. These are small hot-path improvements, not an explanation for tens of seconds of waiting or a production speedup measurement.
 
 For 100 reads with live WAL/SHM files, routing permission writes fell **600 → 0**, and control-state permission writes fell **300 → 0**. The indexed epoch lookup decodes one migration instead of 268; exact local latency measurements are in the JSON.
 

@@ -2,7 +2,7 @@
 
 The candidate reduces physical registry writes by about 88%, including a 30-second writeback observation, but this single 48-request repeat burst does **not** demonstrate faster tail completion. All 48 builds succeed on four fresh eight-core builders with the same frozen fixture hashes; batch completion increases from 122.065 to 135.561 seconds (+11.1%) and client p95 from 118.652 to 132.432 seconds (+11.6%). Median client time improves from 84.219 to 76.800 seconds (−8.8%).
 
-Sources: [comparison](repeat-comparison.json), [per-recipe phases](build-load-report.json), [whole-burst host findings](host-findings.json), and [narrow-window counters](builder-tail-analysis.json). This is an observational comparison of one burst per configuration, not a replicated causal experiment. Fresh hosts, placement, concurrent BuildKit graph reuse, and both candidate runtime changes can affect timing.
+Sources: comparison, per-recipe phases, whole-burst host findings, and narrow-window counters. This is an observational comparison of one burst per configuration, not a replicated causal experiment. Fresh hosts, placement, concurrent BuildKit graph reuse, and both candidate runtime changes can affect timing.
 
 ## What still costs time
 

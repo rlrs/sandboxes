@@ -224,7 +224,7 @@ error. This health data is operational state, not a duplicate trace store.
 The test suite freezes the exporter, saturates its queue, and verifies that a
 burst of request-thread spans completes without waiting for the exporter.
 The initial 100,000-operation microbenchmark is recorded in
-[`benchmarks/telemetry-overhead-2026-08-13.json`](benchmarks/telemetry-overhead-2026-08-13.json);
+`benchmarks/telemetry-overhead-2026-08-13.json`;
 at 10% sampling it measured 9.821 microseconds of instrumentation per synthetic
 operation with no drops. A seven-run paired follow-up measured the sampled
 thread-clock addition at 1.136 microseconds per operation at that 10% sampling

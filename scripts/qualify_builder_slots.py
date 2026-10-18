@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -512,7 +513,7 @@ def main(argv=None):
     run.add_argument('--cases-sha256', required=True)
     run.add_argument('--sdk-wheel', type=Path, required=True)
     run.add_argument('--deployment-config', type=Path, default=Path('/etc/ucloud-sandboxes/deployment.json'))
-    run.add_argument('--gateway-url', default='https://203.0.113.10')
+    run.add_argument('--gateway-url', default=os.environ.get('UCLOUD_SANDBOX_URL'))
     run.add_argument('--output', type=Path, required=True)
     run.add_argument('--run-id', required=True)
     run.add_argument('--expected-node', action='append', required=True)
@@ -527,7 +528,7 @@ def main(argv=None):
     hold = sub.add_parser('hold')
     hold.add_argument('--sdk-wheel', type=Path, required=True)
     hold.add_argument('--deployment-config', type=Path, default=Path('/etc/ucloud-sandboxes/deployment.json'))
-    hold.add_argument('--gateway-url', default='https://203.0.113.10')
+    hold.add_argument('--gateway-url', default=os.environ.get('UCLOUD_SANDBOX_URL'))
     hold.add_argument('--output', type=Path, required=True)
     hold.add_argument('--reservation', required=True)
     hold.add_argument('--duration', type=float, default=5400)
@@ -545,9 +546,9 @@ def main(argv=None):
         require(len(set(args.expected_node)) == 4 and all(re.fullmatch(r'[0-9]+', v) for v in args.expected_node),
                 'Expected four numeric builder IDs')
         require(0 < args.deadline_seconds <= 1800 and 0 < args.drain_seconds <= 2100, 'Invalid finite time bounds')
-        parsed = urlsplit(args.gateway_url)
+        parsed = urlsplit(args.gateway_url or '')
         require(parsed.scheme == 'https' and parsed.hostname and not parsed.username and not parsed.password
-                and not parsed.query and not parsed.fragment, 'Use credential-free HTTPS gateway URL')
+                and not parsed.query and not parsed.fragment, 'Use credential-free HTTPS gateway URL (--gateway-url or UCLOUD_SANDBOX_URL)')
         require(sha(args.cases) == args.cases_sha256, 'Case inventory SHA differs')
         manifest = json.loads(args.cases.read_text())
         args.mode = manifest['mode']

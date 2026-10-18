@@ -13,18 +13,18 @@ EROFS equivalence, load, all three application smokes and the combined final
 cleanup audit passed. Placement/cache chronology and two complete component-cache
 hits prevent attributing the whole batch improvement solely to process isolation.
 
-[Source verification](candidate-source.json) records all **163 packaged files**
+Source verification records all **163 packaged files**
 matching candidate wheel SHA-256
 `b1580ae4ffc8e81a81cb5cc56f4e539bb084a07c2a16bbb95f57c6707448917d`.
 The runtime change is committed as `0371094`.
 The baseline is the deployed R1 wheel
 `7b00954ae39cae9c552c238769dea193df0f5388b4ef8de6155670aeba5a947a`.
-[Staging](staging-receipt.json) completed at 12:07:48 UTC with unchanged dependency
+Staging completed at 12:07:48 UTC with unchanged dependency
 and native inventories for both future-node bundles. The
-[deployment receipt](deployment-receipt.json) records activation; only
+deployment receipt records activation; only
 `node_package_root` changed. The paired gateway/configuration rollback is under
 `/work/ucloud-sandboxes/builder-execution-20260929-r1/rollback`; use this release's
-[controller](deployment-controller.py) for rollback.
+controller for rollback.
 
 ## Evidence and scope
 
@@ -51,7 +51,7 @@ The implementation records `selective_subprocess_ms` for startup, extraction,
 squash and IPC; `selective_materialization_ms` and `squash_ms` remain nested child
 stage timings. They must not be added to the enclosing subprocess duration.
 
-[The real tools-image canary](tools-erofs-equivalence.json) passed four ABBA
+The real tools-image canary passed four ABBA
 trials against the pinned existing OCI image. Every trial reproduced all five
 published signed components and rehashed EROFS bytes; the forced-missing final
 component was 14,925,824 bytes. Both candidate trials reported positive child
@@ -108,9 +108,9 @@ Those hits correctly have no child timer. Overall, 162 groups were reused and
 misses, this is another reason not to treat the entire latency delta as an
 isolated execution-model effect.
 
-[All three application smokes](smoke-exec-repeat.json) executed successfully and
+All three application smokes executed successfully and
 were deleted by 12:19:20 UTC, one image from each measured recipe. The builder
-reservation was [released at 12:21:12 UTC](pool-release.json), with no pending
+reservation was released at 12:21:12 UTC, with no pending
 build or preparation demand. Normal node retirement and the final combined audit
 subsequently passed at 12:24:13 UTC.
 
@@ -161,17 +161,17 @@ intervals. These batch averages do not justify increasing all concurrency limits
 
 ### Registry reuse and pruning
 
-[Registry aggregation](candidate-registry.json) recorded 840 successful mounts
+Registry aggregation recorded 840 successful mounts
 and no declined mount responses, with 64,368,328 managed-image committed blob
 bytes and 64,139,613 cache committed blob bytes. These completed HTTP events use
 immutable blob sizes, not measured request bodies or physical writes. The earlier
 pre-mount optimization remains effective; the smaller totals also reflect this
 run's reused outputs and cache history.
 
-[Normal cache pruning](cache-prune.json) deleted 48 of 112 inventoried cache
+Normal cache pruning deleted 48 of 112 inventoried cache
 manifests and retained 64 entries referencing 953,222,353 bytes. It did not run
 global garbage collection; manifest deletion does not establish physical byte
-reclamation. [The owned-image inventory](image-inventory.json) records sharing
+reclamation. The owned-image inventory records sharing
 across the 48 measured images:
 
 | Descriptor accounting, decimal GB | Summed across images | Unique content |
@@ -184,7 +184,7 @@ belongs to these test images. These are different logical accounting views;
 they are not unpacked filesystem size or measured registry disk usage. Metadata,
 in-progress uploads and pending garbage collection are excluded.
 
-[The execution analyzer](analyze-execution.py) reports each numeric timing's
+The execution analyzer reports each numeric timing's
 coverage, median, p95 and maximum, including `selective_subprocess_ms`. It also
 calculates each record's subprocess duration minus its extraction and squash
 durations before aggregating residual overhead. The residual includes imports,
@@ -205,7 +205,7 @@ python3 docs/benchmarks/builder-execution-2026-09-29/analyze-execution.py
 
 ## Combined final audit
 
-[The completed receipt](final-state.json) reports `audit_complete: true` at
+The completed receipt reports `audit_complete: true` at
 **12:24:13 UTC**: 96/96 exact successful history identities, all six application
 smokes verified/deleted, all 11 temporary nodes retired, no fleet nodes,
 sandboxes, active builds or reservations, and both samplers stopped. Gateway and
@@ -214,13 +214,13 @@ budget preserved. All 163 installed packaged files and both future-node bundle
 hashes matched the qualified R2 release. The 96 measured managed image aliases
 and local qualification artifacts are intentionally retained.
 
-[The publication artifact audit](artifact-audit.json) inventories both release
+The publication artifact audit inventories both release
 directories with file hashes and a bounded credential-pattern/JSON-schema review.
 It found no embedded credentials or raw customer logs; authorized operational
 IDs, numeric metrics and owned synthetic fixture metadata remain present. This
 is an artifact review, not a repository-wide security audit.
 
-[The audit script](final-audit.py) is read-only apart from exclusively creating
+The audit script is read-only apart from exclusively creating
 a new mode-0600 receipt. It uses the gateway's existing SDK/provider credentials
 without copying or printing them. It requires:
 

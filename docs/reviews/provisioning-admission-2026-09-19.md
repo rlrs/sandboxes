@@ -50,8 +50,8 @@ paths worked before this fix.
 
 ## Production qualification
 
-[Full result](../benchmarks/provision-64-0546-2026-09-19.json) and
-[drain/relay evidence](../benchmarks/provision-64-0546-evidence-2026-09-19.json).
+Full result and
+drain/relay evidence.
 
 The public-endpoint run used the published SDK 0.4.23, one asynchronous
 sandbox client per sandbox, 64 concurrent creates, and two interleaved

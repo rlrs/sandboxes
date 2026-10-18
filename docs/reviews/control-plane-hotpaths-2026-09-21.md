@@ -46,7 +46,7 @@ unfinished cleanup transaction, preserving the already committed event.
 
 ## Local measurements and regression coverage
 
-[Raw results](../benchmarks/control-plane-hotpaths-2026-09-21.json) compare the
+Raw results compare the
 baseline at `c1826b9` with this candidate, using CPython 3.10.13 on macOS.
 The heartbeat fixture has six workers and 86 inventory entries per worker,
 including four nested dependency descriptors per entry. Three alternating

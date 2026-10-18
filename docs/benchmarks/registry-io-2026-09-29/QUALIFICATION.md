@@ -16,7 +16,7 @@ admission were both four per builder, including preparation; no extra local
 build queue was admitted. The baseline wheel is
 `f38db1aae25b0ddb14401fce61d80e299a2d8740b2586998e521b21ef0a26a2f`.
 
-The accompanying [registry summary](baseline-repeat-registry.json) covers
+The accompanying registry summary covers
 09:41:55–09:43:58 UTC. Managed-image upload commits referenced 5,339,586,891
 bytes. One 313,045,072-byte digest appeared in ten completed upload commits,
 accounting for 3,130,450,720 bytes of that total. These are immutable blob sizes

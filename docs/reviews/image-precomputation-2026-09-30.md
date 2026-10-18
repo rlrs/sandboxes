@@ -6,7 +6,7 @@ There is an important limit to v0.7.0 sharing: all nine Scale-SWE images sampled
 
 This is an analysis and implementation plan. No production changes, image builds, or image-layer downloads were performed for this study.
 
-The user subsequently supplied the complete environment-family list: 14 training entries and 14 evaluation entries, representing 20 families after grouping heldout/dev variants. BIRD and the four NeMo families are explicitly deferred from immediate work. The expanded scope and evaluation findings are recorded below and in [environment-portfolio.json](../benchmarks/image-precomputation-2026-09-30/environment-portfolio.json).
+The user subsequently supplied the complete environment-family list: 14 training entries and 14 evaluation entries, representing 20 families after grouping heldout/dev variants. BIRD and the four NeMo families are explicitly deferred from immediate work. The expanded scope and evaluation findings are recorded below and in environment-portfolio.json.
 
 ## Evidence and scope
 
@@ -18,7 +18,7 @@ Inspected the exact requested revisions:
 
 The study covers 122,681 rows projected from 37 SWE Parquet files, all 36,884 OpenSWE OSS recipe rows, 13,825 Terminal-Lego Dockerfiles/verifier scripts, and 14,600 TMax Dockerfiles/install scripts. The complete pinned OpenSWE JSONL was streamed and its SHA256 verified against the dataset's LFS metadata; unrelated task content was not retained. Registry inspection fetched manifests and configs for 27 images, without filesystem blobs.
 
-The actual training `images.sqlite` and selection are unavailable. Counts below describe upstream pools, before task admission filters, exclusions, or sampling. OpenSWE and TMax use the recipe source's explicit pins; other dataset revisions were resolved during this study. Every revision and method is recorded in [inventory-summary.json](../benchmarks/image-precomputation-2026-09-30/inventory-summary.json). The registry sample is deliberately small and stratified, not a statistical estimate of whole-corpus storage or speed.
+The actual training `images.sqlite` and selection are unavailable. Counts below describe upstream pools, before task admission filters, exclusions, or sampling. OpenSWE and TMax use the recipe source's explicit pins; other dataset revisions were resolved during this study. Every revision and method is recorded in inventory-summary.json. The registry sample is deliberately small and stratified, not a statistical estimate of whole-corpus storage or speed.
 
 | Family | Inspected tasks/recipes | Distinct image references | Best precomputation unit |
 |---|---:|---:|---|
@@ -40,7 +40,7 @@ Other adapters were traced but their task pools were not enumerated in the initi
 
 ### SWE-Smith: prepare hundreds of environments, not tens of thousands of tasks
 
-Python alone has 50,908 task rows but 131 image references. Across all eight languages there are 450 references. Task setup checks out an instance branch inside a repository environment. Preserve that behavior and precompute each distinct environment once. The [450 preparation candidates](../benchmarks/image-precomputation-2026-09-30/swesmith-preparation-candidates.json) are saved in descending upstream task-count order; these are source references requiring digest resolution, not already-prepared artifacts.
+Python alone has 50,908 task rows but 131 image references. Across all eight languages there are 450 references. Task setup checks out an instance branch inside a repository environment. Preserve that behavior and precompute each distinct environment once. The 450 preparation candidates are saved in descending upstream task-count order; these are source references requiring digest resolution, not already-prepared artifacts.
 
 The index currently adds `git fetch` and ripgrep to the upstream image. Freeze the required refs and commits in a versioned preparation manifest instead of depending on whatever a mutable all-refs fetch returns later. The existing `ucloud_warm_swesmith.py` provides a starting point for warming dependency caches from a baseline worktree. Keep grader-only tests out of the shared agent environment. Retain the resulting EROFS components, not just a BuildKit cache entry.
 
@@ -98,7 +98,7 @@ The table applies the backend's current 64 MiB grouping algorithm to the inspect
 
 Checkstyle's duplicate OCI blobs account for about 56% of the three-image compressed total; Hugo's about 44%. R2E's samples share an OS layer, but it is grouped with differing subsequent layers, eliminating reuse of the planned EROFS groups. Explicit stable base cut points can recover that OS sharing, but do not turn the remaining large, distinct dependency layers into shared data.
 
-For flattened Scale-SWE, do not expect different PR images to deduplicate merely because they are from the same repository. The bounded sample proves this problem exists; it does not establish the flattening rate of all 17,202 images. [registry-manifests.json](../benchmarks/image-precomputation-2026-09-30/registry-manifests.json) records all 27 exact references, resolved digests, layer sizes, and diff IDs.
+For flattened Scale-SWE, do not expect different PR images to deduplicate merely because they are from the same repository. The bounded sample proves this problem exists; it does not establish the flattening rate of all 17,202 images. registry-manifests.json records all 27 exact references, resolved digests, layer sizes, and diff IDs.
 
 ## BuildKit and EROFS: retain both, remove repeated materialization
 

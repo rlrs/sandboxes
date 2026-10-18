@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -41,7 +42,7 @@ def clients():
     from ucloud_sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_dict(json.loads(Path('/etc/ucloud-sandboxes/deployment.json').read_text()))
     token = config.sandbox_api_token_file().read_text().strip()
-    return sdk, config, lambda: sdk.SandboxClient('https://203.0.113.10', api_token=token, timeout_seconds=120)
+    return sdk, config, lambda: sdk.SandboxClient(os.environ['UCLOUD_SANDBOX_URL'], api_token=token, timeout_seconds=120)
 
 
 def fleet(config):

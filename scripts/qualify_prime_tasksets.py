@@ -16,7 +16,7 @@ from ucloud_sandboxes.environment_contract import describe_environment
 from ucloud_sandboxes.sandbox import SandboxSpec
 
 
-MANIFEST = Path(__file__).resolve().parents[1] / "docs/prime-tasksets.json"
+MANIFEST = Path(__file__).resolve().parents[1] / "scripts/data/prime-tasksets.json"
 
 
 def verify_sources(source: Path, manifest: dict) -> None:

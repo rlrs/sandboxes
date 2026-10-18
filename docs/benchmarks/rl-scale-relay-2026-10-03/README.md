@@ -54,10 +54,10 @@ Traced in the code:
   worker in the driver holds each call for the sampled think time (5–30 s),
   then commits a fixed completion.
 - **Runs:**
-  1. **[raw/relay-smoke-8.json](raw/relay-smoke-8.json).** An 8-sandbox smoke
+  1. **raw/relay-smoke-8.json.** An 8-sandbox smoke
      from zero: 2 turns with 1–3 s thinks. 8/8 succeeded, ready in about 65 s
      (provisioning).
-  2. **[raw/relay-64.json](raw/relay-64.json).** 64 tasks, `--seed 1`, 8
+  2. **raw/relay-64.json.** 64 tasks, `--seed 1`, 8
      turns. Declared `warm-seeded`, because the smoke's worker was still up
      with 5 images cached.
      - 57 of 64 succeeded.

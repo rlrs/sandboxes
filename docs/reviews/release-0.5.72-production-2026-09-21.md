@@ -59,6 +59,6 @@ Final inventory had no sandbox routes, pending creates or reservations. Worker
 autoscaler were active. All 20 public health requests returned 200 and 0.5.72,
 with **15.6 ms median and 29.5 ms maximum** latency.
 
-[Raw deployment, canary, concurrent-test and final-health results](../benchmarks/release-0.5.72-live-smoke-2026-09-21.json).
+Raw deployment, canary, concurrent-test and final-health results.
 These checks establish light-load correctness; they do not measure a production
 throughput gain or qualify loaded 256/512 concurrency.

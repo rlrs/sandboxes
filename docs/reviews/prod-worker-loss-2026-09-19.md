@@ -41,7 +41,7 @@ incorrect and is superseded by that clarification. It does not make fast local c
 survive node loss, or establish that the separate admission-pressure errors
 are resolved.
 
-[Structured evidence](../benchmarks/prod-worker-loss-2026-09-19.json).
+Structured evidence.
 
 ## Handling in 0.5.54
 

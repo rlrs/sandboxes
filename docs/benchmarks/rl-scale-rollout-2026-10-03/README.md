@@ -91,8 +91,8 @@ python3 bench_rl_scale.py rollout --gateway-url https://203.0.113.10 \
     runs before citing externally.
 
 Raw reports:
-- [raw/zero-512.json](raw/zero-512.json): the full report, including the
+- raw/zero-512.json: the full report, including the
   density timeline, per-node `environment_io` deltas, create phases and
   samples;
-- [raw/zero-8-smoke.json](raw/zero-8-smoke.json): the 8-sandbox smoke from
+- raw/zero-8-smoke.json: the 8-sandbox smoke from
   zero just before it, with ready at about 61 s, all of it provisioning.

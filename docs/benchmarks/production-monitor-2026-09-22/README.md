@@ -25,5 +25,5 @@ The strongest observed bottleneck is worker filesystem/I/O contention, with
 additional gateway CPU contention. PostgreSQL is not continuously saturated.
 
 A five-minute heartbeat monitors until 13:25 UTC and reports meaningful changes.
-Raw filtered observations: [first snapshot](monitor-1.txt),
-[second snapshot](monitor-2.txt), [OS samples](monitor-os.txt).
+Raw filtered observations: first snapshot,
+second snapshot, OS samples.

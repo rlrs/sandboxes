@@ -41,7 +41,7 @@ The design's "3.81 TB today" was an S10 extrapolation; the Volume holds 2.8 TB.
 
 **Inventory, measured** (`chunk-migrate inventory`, 2026-10-03, read-only, about
 2 minutes; summary in
-[benchmarks/m2-inventory-2026-10-03](benchmarks/m2-inventory-2026-10-03/summary.json)):
+benchmarks/m2-inventory-2026-10-03):
 
 | Family | Images | Task rows | Unique EROFS, GB | Unique OCI, GB | Build inputs |
 | --- | ---: | ---: | ---: | ---: | ---: |

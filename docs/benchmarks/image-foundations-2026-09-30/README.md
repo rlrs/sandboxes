@@ -1,6 +1,6 @@
 # Shared image foundation qualification
 
-On 2026-09-30, four foundations were built in production, validated in temporary sandboxes, and retained with their signed artifact dependencies. The complete aggregate measurements are in [summary.json](summary.json). The preparation workflow is documented in [image-foundations.md](../../image-foundations.md).
+On 2026-09-30, four foundations were built in production, validated in temporary sandboxes, and retained with their signed artifact dependencies. The complete aggregate measurements are in summary.json. The preparation workflow is documented in [image-foundations.md](../../image-foundations.md).
 
 | Foundation | Candidate source recipes | EROFS bytes |
 | --- | ---: | ---: |

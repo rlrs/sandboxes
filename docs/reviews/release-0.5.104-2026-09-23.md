@@ -44,7 +44,7 @@ admission error. Existing serialized configurations receive the new default.
   whether the latency benefit outweighs lost speculative read throughput.
 
 Raw compatibility, I/O, previous load reports and compaction trace are in
-[the benchmark directory](../benchmarks/positioned-read-advice-2026-09-23/).
+the benchmark directory.
 The native artifact SHA is
 `1467ab24852d33d5ad20c0c78855cbf8eb3260c5d4aeda5d761a001e29f94feb`.
 

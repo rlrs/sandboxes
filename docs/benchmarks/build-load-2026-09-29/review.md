@@ -10,7 +10,7 @@ maintained by the main run in [README.md](README.md).
 
 All **138 recorded builds succeeded**, with 138 distinct build UUIDs and image
 IDs. Every recorded context hash matches its recipe/variant entry in the
-[90 preserved fixture manifests](fixture-manifests.json); the builds used 87
+90 preserved fixture manifests; the builds used 87
 distinct contexts. The local fixture generator and all four preserved locks
 match the hashes checked before staging:
 
@@ -38,7 +38,7 @@ are documented in [cache-miss-analysis.md](cache-miss-analysis.md).
 
 ## Replacement cohorts
 
-[replacement/summary.json](replacement/summary.json) records 24/24 successful
+replacement/summary.json records 24/24 successful
 builds on four replacement VMs, a 149.107-second batch and 24 durable-history
 records. The initial-store logs record 0 B for each replacement BuildKit store.
 The shared registry and EROFS caches remained populated after the first prune.
@@ -81,14 +81,14 @@ repeated-context counts differ.
   compressed descriptors and EROFS payloads, not unpacked roots or incremental
   physical disk consumption. Cache/image overlap concerns the inventoried test
   images, not every reference elsewhere in the registry.
-- [The smoke receipt](smoke-replacement.json) verifies and deletes exactly three
+- The smoke receipt verifies and deletes exactly three
   representative replacement sandboxes: image indices 000/001/002, one per
   recipe, all `app-change-1`. It does not validate every produced image, the
   recent cohort, or the dependency-change variants in running sandboxes.
 
 ## Retention and cleanup boundary
 
-The [final scoped prune](cache-prune-final.json) deleted 21 cache manifests,
+The final scoped prune deleted 21 cache manifests,
 reported 64 retained entries and 1,268,718,583 unique referenced bytes, and
 removed no image records. This is a logical retention result; physical space
 reclamation still depends on references and registry garbage collection.

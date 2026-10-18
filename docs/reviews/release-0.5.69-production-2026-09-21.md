@@ -71,5 +71,5 @@ synthetic partition, authenticated same-boot recovery and sandbox state. Its
 control database was isolated and it issued no provider mutations. This transient
 is retained here rather than counted as an uninterrupted qualification pass.
 
-Raw results: [host benchmark](../benchmarks/release-0.5.69-production-host-2026-09-21.json)
-and [live smoke](../benchmarks/release-0.5.69-live-smoke-2026-09-21.json).
+Raw results: host benchmark
+and live smoke.

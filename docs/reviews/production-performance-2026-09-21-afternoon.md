@@ -142,7 +142,7 @@ must not be interpreted as failed-rollout counts. One generation-fenced program
 projection conflict was recorded; this inspection did not establish it as a
 throughput bottleneck.
 
-[Structured evidence](../benchmarks/production-performance-2026-09-21-afternoon.json)
+Structured evidence
 contains host counters, initial heartbeat snapshots, latency estimates and the
 selected trace summaries. It contains no prompts, API tokens or command output
 from user sandboxes. Measurements are observations of a changing live workload,
@@ -182,7 +182,7 @@ three alternating before/after rounds of 20 operations produced:
 
 This measures local component overhead, not full production latency or a claim
 about production registry cardinality. The baseline is merge commit `4175036`.
-[Raw timings and fixture parameters](../benchmarks/registry-usage-hotpaths-2026-09-21.json).
+Raw timings and fixture parameters.
 
 The full Python suite passed 1,008 tests with six environment-dependent skips.
 Ruff and `git diff --check` passed. New regressions stream real Unix-socket data
@@ -234,7 +234,7 @@ The registry fixture has 5,000 permanent leases and 500 images. Streaming uses
 8 MiB chunks and retains two upload chunks; it excludes native compaction,
 storage and network latency. Allocation peaks are Python tracemalloc figures,
 not total RSS. These results do not establish production speedups.
-[Raw measurements](../benchmarks/gateway-storage-hotpaths-2026-09-21.json) and
+Raw measurements and
 [reproducible benchmark](../../scripts/benchmark_gateway_storage_hotpaths.py).
 
 Validation after this pass: 1,012 Python tests, six environment-dependent skips;

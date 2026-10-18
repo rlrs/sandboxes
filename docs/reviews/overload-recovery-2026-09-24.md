@@ -172,7 +172,7 @@ with all native/OS/kernel/storage members verified byte-identical. All 142 packa
 files matched the committed-source wheel after installation. PostgreSQL remains
 the relay authority; policy and sandbox configuration are unchanged. Gateway,
 relay, registry, and autoscaler are active. See the
-[receipt](../benchmarks/overload-recovery-2026-09-24/deployment-result.json).
+receipt.
 
 The post-deployment SDK 0.4.26 smoke ran four sandboxes through three forced
 park/resume cycles each on freshly provisioned worker 12400891. All 12 cycles and
@@ -183,4 +183,4 @@ reported `slo_passed=false`: its fleet-health gate lacked observation beyond the
 30-second placement grace. This short run is correctness evidence, not sustained
 load qualification. After cleanup, routes and relay inflight/delivery-pending
 counts were zero; all four services were active and the worker reported rc23,
-open admission, and zero sandboxes. See the [smoke result](../benchmarks/overload-recovery-2026-09-24/deployment-smoke.json).
+open admission, and zero sandboxes. See the smoke result.

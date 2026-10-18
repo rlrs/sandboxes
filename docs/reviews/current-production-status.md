@@ -45,8 +45,8 @@ growth admission, and memory-aware autoscaling. Immutable environments remain
 opt-in and disabled in production. Production allows zero to ten workers.
 
 The frozen baseline passed **1,748 Linux tests against real PostgreSQL**, with
-12 environment skips. See the [qualification record](../benchmarks/autoscaler-memory-2026-09-23/qualification.json)
-and [deployment record](../benchmarks/autoscaler-memory-2026-09-23/deployment.json).
+12 environment skips. See the qualification record
+and deployment record.
 These existing full-suite results were not rerun merely to commit identical code.
 
 The latest [production load tests](../benchmarks/autoscale-load-2026-09-23/README.md)

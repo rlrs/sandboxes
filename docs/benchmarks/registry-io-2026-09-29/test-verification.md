@@ -2,8 +2,8 @@
 
 This record covers the registry-I/O candidate deployed at 10:34:03 UTC. Its
 exact wheel and source-bundle hashes are recorded in
-[the deployment receipt](deployment-receipt.json)
-and [staging receipt](staging-receipt.json).
+the deployment receipt
+and staging receipt.
 It does not retroactively claim a full repository test run.
 
 The implementation task reported these focused local suites:
@@ -54,7 +54,7 @@ is a separate result, preserved under `build-optimization-2026-09-29`.
 
 The live controlled registry canary passed separately, exercising mount success
 and the small normal-upload fallback with readback. Its results are retained in
-[mount-canary.json](mount-canary.json).
+mount-canary.json.
 This API check is distinct from the 48-build load test and real-sandbox smoke
 checks. Final load, history, cleanup, provider retirement, reservation, sampler,
 and health gates belong in the release's `final-state.json`; do not infer their

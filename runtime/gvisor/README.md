@@ -119,7 +119,7 @@ remove layers below a live or parked sandbox. Startup calls `reconcile_images()`
 to recover the mounted image set from durable metadata before admitting work.
 
 The canonical overlay2 production measurement is
-[`rootfs-overlay2-production-2026-08-02.json`](../../docs/benchmarks/rootfs-overlay2-production-2026-08-02.json).
+`rootfs-overlay2-production-2026-08-02.json`.
 
 ## Runtime verification
 

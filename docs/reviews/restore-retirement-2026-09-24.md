@@ -63,4 +63,4 @@ checks found zero sandbox routes, relay inflight/pending responses, worker
 registrations, overlap claims or live retained checkpoints. Worker source hashes
 match the committed rc25 files. All control-plane services are active.
 
-Evidence: [deployment and benchmark receipts](../benchmarks/restore-retirement-2026-09-24/).
+Evidence: deployment and benchmark receipts.

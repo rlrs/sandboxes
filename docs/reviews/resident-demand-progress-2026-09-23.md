@@ -35,7 +35,7 @@ The retained rc18 report has 233 node samples reclaiming for queued demand;
 active checkpoints. This is evidence of substantial headroom during reclamation,
 not proof that every such capture was unnecessary: the old telemetry did not
 separate admitted growth from queued costs. See the
-[sample summary](../benchmarks/resident-demand-2026-09-23/rc18-demand-samples.json).
+sample summary.
 
 The resident-wait heartbeat now reports `admitted_demand_bytes`, the incremental
 `pending_demand_bytes`, and `unknown_transition_memory_costs`, all derived from the
@@ -47,7 +47,7 @@ The focused Linux gate passed **128 tests in 8.799 seconds**, including full-bou
 crossed capture, concurrent admission, protected restore headroom, ample-headroom
 parallelism, deletion/drain cleanup, unknown memory, response priority and history.
 The durable heartbeat upgrade lane passed **10 tests in 0.481 seconds**. Raw logs
-are retained in [the qualification directory](../benchmarks/resident-demand-2026-09-23/).
+are retained in the qualification directory.
 A matching loaded A/B is required before attributing fewer parks, lower I/O or
 better continuation latency to these changes.
 
@@ -85,9 +85,9 @@ heap refault on the next turn does not trigger the generic cache's full-checkpoi
 backoff. The feature-disabled RAM and legacy cache paths retain their behavior.
 
 The assembled hybrid lane passed **176 Linux tests in 15.425 seconds**
-([raw log](../benchmarks/resident-demand-2026-09-23/hybrid-resident-linux-tests.log)).
+(raw log).
 The Python 3.10 compatibility lane passed **91 tests in 8.168 seconds**
-([raw log](../benchmarks/resident-demand-2026-09-23/hybrid-resident-python310.log)).
+(raw log).
 Tests cover real allocation/Warden-journal RAM-to-file selection
 with exhausted tmpfs, writeback cancellation, cgroup replacement, and retryable
 disk-overlap admission only while the exact checkpoint remains parked. Native,
@@ -110,7 +110,7 @@ PARKED boundaries and after restore rollback commits PARKED. Running or uncertai
 authority is unchanged, as is feature-disabled behavior. The queued-progress,
 adoption, already-parked and absent-candidate cases are covered alongside existing
 lifecycle/retention/growth tests: **127 Linux tests passed in 15.251 seconds**
-([raw log](../benchmarks/resident-demand-2026-09-23/recovered-placement-linux-tests.log)).
+(raw log).
 This change is outside the frozen rc19 deployment and requires a later release.
 
 ## Deferred physical retention cleanup after rc19
@@ -136,5 +136,5 @@ the two costs; the latter reports candidate and released counts. **107 Linux tes
 passed in 10.744 seconds**, including one batch for eight generations, lock-free
 physical work, existing maintenance integration, failed trim, crash after local
 commit, retained readers, reappearing sources, and concurrent delete/reimport
-([raw log](../benchmarks/resident-demand-2026-09-23/deferred-physical-linux-tests.log)).
+(raw log).
 This establishes the cleanup ordering, not a measured production latency gain.

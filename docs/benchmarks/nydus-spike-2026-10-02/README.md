@@ -66,7 +66,7 @@ Nydus's chunk dictionary, and do not adopt `nydusd`.**
 
 ### Sample (from `all-cached-training-tasks-with-terminal-lego-2026-10-01.zip`)
 
-[`raw/sample.json`](raw/sample.json) lists the 181 images (seed 20261002).
+`raw/sample.json` lists the 181 images (seed 20261002).
 
 | Group | Images | Notes |
 |---|---:|---|
@@ -88,7 +88,7 @@ Nydus's chunk dictionary, and do not adopt `nydusd`.**
   - **Builds:** the Docker legacy builder ran 4 and then 3 builds in parallel,
     fetching from GitHub, PyPI, conda and Debian mirrors.
   - **Outcome:** 33 attempts produced 18 images, 9 pandas-dev/pandas and 9 from
-    other projects ([`raw/openswe-builds.jsonl`](raw/openswe-builds.jsonl)).
+    other projects (`raw/openswe-builds.jsonl`).
   - **Failures:** 9 of 18 pandas recipes failed against today's upstream,
     either in dependency resolution or in their own import checks. That
     supports the C2.14 lockfiles. 5 GitHub clones failed under parallel load and
@@ -96,7 +96,7 @@ Nydus's chunk dictionary, and do not adopt `nydusd`.**
 
 ## Method
 
-**Conversion** ([`scripts/convert.py`](scripts/convert.py)):
+**Conversion** (`scripts/convert.py`):
 
 - **Per layer:** each OCI layer is converted on its own, as `nydusify` does:
   `nydus-image create -t targz-rafs --fs-version 6 --digester sha256
@@ -117,9 +117,9 @@ Nydus's chunk dictionary, and do not adopt `nydusd`.**
     only chunks that are frequent across versions, selected by exponential
     smoothing and DBSCAN. It references the original blobs, so it neither
     covers every chunk nor repacks blobs.
-- **Chunk-store accounting** ([`scripts/analyze.py`](scripts/analyze.py)): each
+- **Chunk-store accounting** (`scripts/analyze.py`): each
   image's final chunk table is read from its bootstrap with
-  [`scripts/rafs.py`](scripts/rafs.py). The superblock extension at byte 1152
+  `scripts/rafs.py`. The superblock extension at byte 1152
   gives the chunk table, made of 80-byte `RafsV5ChunkInfo` entries. A chunk
   costs its compressed size the first time its sha256 is seen. Chunks of
   shadowed files are never stored.
@@ -127,8 +127,8 @@ Nydus's chunk dictionary, and do not adopt `nydusd`.**
   found from each image's `org.ucloud.immutable-environment.v1` root.
   Today's components are lz4-compressed EROFS (`lz4_0padding`).
 
-**Mount and first command** ([`scripts/mounttest.py`](scripts/mounttest.py) and
-[`scripts/spike_nbd.py`](scripts/spike_nbd.py)):
+**Mount and first command** (`scripts/mounttest.py` and
+`scripts/spike_nbd.py`):
 
 - **Backend:** a Python NBD backend with the same ioctl plumbing as
   `environment_nbd.py`.
@@ -159,7 +159,7 @@ Nydus's chunk dictionary, and do not adopt `nydusd`.**
 ### Stored bytes, sample of 181 images
 
 All figures are in GB and count each unique blob or chunk once
-([`raw/storage-1m.json`](raw/storage-1m.json), [`raw/storage-256k.json`](raw/storage-256k.json)).
+(`raw/storage-1m.json`, `raw/storage-256k.json`).
 
 | Family | Images | OCI unique | EROFS unique | **Today: OCI + EROFS** | Nydus, no dict | Nydus, stock dict ¹ | **Nydus + our chunk store** | of which bootstraps |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -200,7 +200,7 @@ Across all 181 images, the median image has 26.7k chunks at 1 MiB and 31.6k at
 256 KiB.
 
 **OpenSWE task images built on the VM**
-([`raw/openswe-tasks.json`](raw/openswe-tasks.json)), as marginal bytes on top of
+(`raw/openswe-tasks.json`), as marginal bytes on top of
 the 181-image corpus:
 
 | Group | n | OCI MB (new) | New layers, uncompressed MB | Nydus no-dict new MB | **Chunk store new MB** mean (median) | Bootstrap MB | Convert s | Build s (median) |
@@ -223,7 +223,7 @@ the 181-image corpus:
 - **Stock dictionary:** 2,736 CPU-s, of which 1,361 s were dictionary merges.
   One merge grew to 17 s per image at 158 images and a 140 MB dictionary.
 - **`nydusify convert` end to end** (pull from 10.42.0.2, convert, push to the
-  VM registry, see [`raw/nydusify.jsonl`](raw/nydusify.jsonl)):
+  VM registry, see `raw/nydusify.jsonl`):
   - Terminal-Lego, 50 MB and 7 layers: 2.9 s wall, 3.0 CPU-s;
   - ScaleSWE, 500 MB: 24.9 s wall, 32.6 CPU-s.
 
@@ -247,7 +247,7 @@ the 181-image corpus:
    all been shadowed disappear. 205 cached layer bootstraps referenced such
    blobs and had to be rebuilt against the current dictionary.
 3. **The merged dictionary records truncated blob sizes**
-   ([`raw/dict-integrity.json`](raw/dict-integrity.json)).
+   (`raw/dict-integrity.json`).
    - In the final `dict.boot`, blob `a32d8fd3…` has `blocks=2230` (9.1 MB),
      while its chunk table reaches the uncompressed offset 52.8 MB. The real
      blob has 12,946 blocks.
@@ -258,7 +258,7 @@ the 181-image corpus:
      exported and matched the no-dictionary conversion.
    - Through our flat device, image 47 had 2,076 of 42,138 files whose bytes
      differed from both the no-dictionary conversion and today's EROFS
-     ([`raw/hashdiff-047.json`](raw/hashdiff-047.json)). Every chunk still
+     (`raw/hashdiff-047.json`). Every chunk still
      passed its sha256 check. The chunk table and the inode chunk addresses
      simply no longer agree.
    - We did not trace the bug inside Nydus. Using `merge` to grow a dictionary
@@ -273,7 +273,7 @@ offsets. Conversion needs no state across images and parallelizes completely.
 
 ### Mount and first command (cold page cache, fresh backend, runsc)
 
-Medians of 2 repeats ([`raw/mount-*.json`](raw/)). The "MB read" column counts
+Medians of 2 repeats (`raw/mount-*.json`). The "MB read" column counts
 compressed chunk bytes for Nydus and 256 KiB EROFS windows for today, during the
 cold `import sys` cycle.
 
@@ -318,7 +318,7 @@ cold `import sys` cycle.
   `.pyc` files are all stale, so CPython recompiles on every run. See
   [Feasibility](#feasibility).
 - **Other kernel paths.** For a 5-blob Terminal-Lego image
-  ([`scripts/devmode.sh`](scripts/devmode.sh)):
+  (`scripts/devmode.sh`):
   - `-o device=/dev/nbdX`, one per blob, plus the bootstrap device, mounted in
     11 ms, and 200 files read back correctly;
   - `nydus-image export --block` took 0.77 s and wrote a 150 MB raw image
@@ -365,7 +365,7 @@ be trusted.
   and its uncompressed offset; the chunk table gives the digest; a pack index
   gives the compressed bytes.
 - **Exposure:** the 80-byte chunk table in the bootstrap, which
-  [`scripts/rafs.py`](scripts/rafs.py) parses in about 40 lines, and the
+  `scripts/rafs.py` parses in about 40 lines, and the
   blob's `blob.meta` ToC.
 - **Chunks are small.** Chunks never span files, so most are small files. The
   mean compressed chunk is 19 KB, and the median image has 31.6k chunks. Fetch
@@ -469,23 +469,23 @@ Assumptions:
 
 ## Files
 
-- [`raw/storage-1m.json`](raw/storage-1m.json),
-  [`raw/storage-256k.json`](raw/storage-256k.json): per-image and per-family
+- `raw/storage-1m.json`,
+  `raw/storage-256k.json`: per-image and per-family
   accounting (OCI, EROFS, bootstrap, new blob bytes with and without the
   dictionary, chunk-store bytes, conversion wall and CPU).
-- [`raw/runs/*.images.jsonl`](raw/runs/): raw converter records for the four
+- `raw/runs/*.images.jsonl`: raw converter records for the four
   sample runs and the OpenSWE run, including dictionary size, blob counts and
   merge errors.
-- [`raw/mount-*.json`](raw/): every attach and command run, backend fetch
+- `raw/mount-*.json`: every attach and command run, backend fetch
   counters, tree comparison, tar mtimes and `.pyc` checks.
-- [`raw/openswe-tasks.json`](raw/openswe-tasks.json),
-  [`raw/openswe-builds.jsonl`](raw/openswe-builds.jsonl),
-  [`raw/openswe-task-selection.json`](raw/openswe-task-selection.json): the
+- `raw/openswe-tasks.json`,
+  `raw/openswe-builds.jsonl`,
+  `raw/openswe-task-selection.json`: the
   OpenSWE task builds and their marginals.
-- [`raw/dict-integrity.json`](raw/dict-integrity.json),
-  [`raw/hashdiff-047.json`](raw/hashdiff-047.json): the dictionary corruption
-  evidence. [`raw/nydusify.jsonl`](raw/nydusify.jsonl): `nydusify` end-to-end
-  runs. [`raw/sample.json`](raw/sample.json): the sample.
-- [`scripts/`](scripts/): what ran on the VM (fetch, convert, analyze, the NBD
+- `raw/dict-integrity.json`,
+  `raw/hashdiff-047.json`: the dictionary corruption
+  evidence. `raw/nydusify.jsonl`: `nydusify` end-to-end
+  runs. `raw/sample.json`: the sample.
+- `scripts/`: what ran on the VM (fetch, convert, analyze, the NBD
   backend, the mount harness, the build and integrity checks). These are spike
   code, not product code.
