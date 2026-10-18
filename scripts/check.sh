@@ -25,6 +25,15 @@ else
   exit 1
 fi
 
+# Modules that need a real ucloud-noded build it with `cargo build --offline`;
+# fetch the locked crates first so a fresh machine can.
+if command -v cargo >/dev/null 2>&1; then
+  (
+    cd runtime/noded
+    cargo fetch --locked
+  )
+fi
+
 # One process per test module, in parallel, with a per-test watchdog.
 test_runner_flags=()
 if command -v eatmydata >/dev/null 2>&1; then
