@@ -136,12 +136,6 @@ class DrainAdmissionTests(unittest.TestCase):
                 phases = response.json()["timings"]["manager"]["phases"]
                 return (phases["startup_admission_ms"] + phases["active_capacity_ms"]) / 1000
 
-            def admission_wait(response) -> float:
-                # The node's own timing of the startup slot and capacity
-                # waits, without the runtime work after them.
-                phases = response.json()["timings"]["manager"]["phases"]
-                return (phases["startup_admission_ms"] + phases["active_capacity_ms"]) / 1000
-
             # CPU load is advice, not a veto: commands run and creates are
             # admitted without waiting for a lower sample.
             node.sample_metrics = lambda: replace(fixed_metrics(), cpu_percent=95.0, load_average_1m=16.0)
