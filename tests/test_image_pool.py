@@ -10,15 +10,12 @@ from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
 
-spec = importlib.util.spec_from_file_location("prepare_image_pool", Path(__file__).parents[1] / "scripts/prepare_image_pool.py")
+spec = importlib.util.spec_from_file_location("prepare_image_pool", Path(__file__).parents[1] / "scripts/images/prepare_image_pool.py")
 pool = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pool)
-planner_spec = importlib.util.spec_from_file_location("plan_image_pool", Path(__file__).parents[1] / "scripts/plan_image_pool.py")
+planner_spec = importlib.util.spec_from_file_location("plan_image_pool", Path(__file__).parents[1] / "scripts/images/plan_image_pool.py")
 planner = importlib.util.module_from_spec(planner_spec)
 planner_spec.loader.exec_module(planner)
-qualification_spec = importlib.util.spec_from_file_location("qualify_image_pool", Path(__file__).parents[1] / "scripts/qualify_image_pool.py")
-qualification = importlib.util.module_from_spec(qualification_spec)
-qualification_spec.loader.exec_module(qualification)
 
 
 class ImagePoolTests(unittest.TestCase):
@@ -362,8 +359,6 @@ class ImagePoolTests(unittest.TestCase):
             self.assertEqual(pool.register_import_alias(store, record, "example/image:latest"), "registered")
             saved = store.get(import_image_id("example/image:latest"))
             self.assertEqual(saved.digest_ref, record.digest_ref)
-            self.assertTrue(qualification.matching_alias(saved, record.tag + "@" + record.manifest_digest))
-            self.assertFalse(qualification.matching_alias(saved, record.tag + "@sha256:" + "b" * 64))
             self.assertEqual(pool.register_import_alias(store, record, "example/image:latest"), "already-ready")
             changed = pool.replace(record, manifest_digest="sha256:" + "b" * 64)
             self.assertEqual(pool.register_import_alias(store, changed, "example/image:latest"), "preserved-existing")

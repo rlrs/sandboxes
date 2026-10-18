@@ -23,10 +23,10 @@ TEST_TIER = "contract"
 
 # The script under test imports the SDK at module level.
 if (SDK_UNAVAILABLE := sdk_skip_reason()) is None:
-    from scripts.live_relay_load_benchmark import AGENT, uploaded_tool_probe, with_lease_renewal, parse_args, ContinuationObserver, response_window, retry_control, safe_error, summary, meets_useful_action_slo
-    from scripts.live_relay_load_benchmark import resource_sample, resource_summary, FleetHealthQualification
-    from scripts.live_relay_load_benchmark import finish_primary
-    from scripts.live_relay_load_benchmark import MeasuredRelayClient, guest_retry_summary, response_retry_summary
+    from scripts.bench.live_relay_load_benchmark import AGENT, uploaded_tool_probe, with_lease_renewal, parse_args, ContinuationObserver, response_window, retry_control, safe_error, summary, meets_useful_action_slo
+    from scripts.bench.live_relay_load_benchmark import resource_sample, resource_summary, FleetHealthQualification
+    from scripts.bench.live_relay_load_benchmark import finish_primary
+    from scripts.bench.live_relay_load_benchmark import MeasuredRelayClient, guest_retry_summary, response_retry_summary
 else:
     load_tests = skip_module(__name__, SDK_UNAVAILABLE)
 
@@ -633,7 +633,7 @@ class RelayLoadBenchmarkTests(unittest.TestCase):
 class ProbeResponseDiagnosticTests(unittest.TestCase):
     def diagnostic(self, body, headers=None):
         from types import SimpleNamespace
-        from scripts.live_relay_load_benchmark import probe_response_diagnostic
+        from scripts.bench.live_relay_load_benchmark import probe_response_diagnostic
 
         async def run():
             stream = asyncio.StreamReader()
@@ -668,7 +668,7 @@ class ProbeResponseDiagnosticTests(unittest.TestCase):
 
     def test_stalled_preview_is_bounded_and_cancellation_propagates(self):
         from types import SimpleNamespace
-        from scripts.live_relay_load_benchmark import probe_response_diagnostic
+        from scripts.bench.live_relay_load_benchmark import probe_response_diagnostic
 
         async def run():
             response = SimpleNamespace(status=503, headers={}, content=asyncio.StreamReader())

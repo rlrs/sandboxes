@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.ucloud_observability_report import (
+from scripts.ops.ucloud_observability_report import (
     _attribute_value,
     _attributes,
     _findings,

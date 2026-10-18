@@ -1,11 +1,11 @@
-"""scripts/build_image_index.py: how inventory rows become index names."""
+"""scripts/images/build_image_index.py: how inventory rows become index names."""
 import hashlib
 import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build_image_index.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "images" / "build_image_index.py"
 spec = importlib.util.spec_from_file_location("build_image_index", SCRIPT)
 index = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(index)

@@ -75,7 +75,7 @@ from a prepared image. Names are `ready`, `not_built`, `building`, `retrying`
 (all sampled) or `failed` (not sampled; e.g. a yanked package). The gateway
 exports, per environment, the non-failed task ids as the taskset's
 `task_ids_file`; re-export after builds fail for good.
-[`scripts/build_image_index.py`](../scripts/build_image_index.py) fills the
+[`scripts/images/build_image_index.py`](../scripts/images/build_image_index.py) fills the
 index from a training inventory (`export`, then `register`; both rerunnable).
 
 **Recipes.** Identical build inputs share one image id (`recipe-<sha40>`), so
@@ -104,9 +104,10 @@ For each build the gateway looks for an exact prepared match (never "a
 similar image of the same project"), rewrites `FROM` to it and keeps the
 remaining instructions byte-identical; the decision is frozen per request so
 retries never change context. Unusual Dockerfiles skip matching and build
-unchanged. Prepared images are made offline with the `scripts/plan_image_*`
-and `scripts/prepare_image_*` tools, which validate the result and run a smoke
-sandbox before it enters the catalog.
+unchanged. Prepared images are made offline with the `scripts/images/plan_image_*`
+and `scripts/images/prepare_image_*` tools, which validate the result and run a
+smoke sandbox; `register_prepared_images.py` then adds their receipts to the
+catalog.
 
 ## Where images are built
 

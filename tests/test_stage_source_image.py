@@ -12,7 +12,7 @@ from urllib.error import HTTPError
 
 from sandboxes.managed_registry import RegistryRequestError
 
-SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
+SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts' / 'images'
 with patch.object(sys, 'path', [str(SCRIPTS), *sys.path]):
     import prepare_image_pool as pool
     spec = importlib.util.spec_from_file_location('staging', SCRIPTS / 'stage_source_image.py')

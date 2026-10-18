@@ -146,9 +146,8 @@ delete, and daemon-restart recovery through the node API.
 `compatibility_workload.py` additionally verifies cross-user writes with
 default ACLs and umasks 0022/0077 on `/tmp` and `/srv`, including nested
 directories, FIFOs, Unix sockets, setgid ownership, explicit 0600/0700 modes,
-and controls without default ACLs. `qualify_gvisor_hibernation.py` requires
-this matrix to pass before and after hibernation. These are qualification
-requirements; adding the patch does not itself establish a live runtime pass.
+and controls without default ACLs. The matrix must pass before and after
+hibernation; adding the patch does not itself establish a live runtime pass.
 
 ## Ownership invariants
 
@@ -205,5 +204,5 @@ the run directory is kept and named in `retained_run_dir`. The script never
 overwrites an existing report.
 
 The client-side metrics (time to first command, burst, creation rate, density
-at p99, park/wake) come from `scripts/bench_rl_scale.py`. Its reports point to
+at p99, park/wake) come from `scripts/bench/bench_rl_scale.py`. Its reports point to
 this probe for page sharing and PSS/USS.

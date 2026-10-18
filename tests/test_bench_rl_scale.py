@@ -17,7 +17,7 @@ import unittest
 from unittest import mock
 import zipfile
 
-from scripts import bench_rl_scale as bench
+from scripts.bench import bench_rl_scale as bench
 
 TEST_TIER = "contract"
 
@@ -313,7 +313,7 @@ class ArgumentTests(unittest.TestCase):
                                        capture_output=True, text=True, timeout=60)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertIn("usage:", completed.stdout)
-        probe = ("import sys; import scripts.bench_rl_scale; "
+        probe = ("import sys; import scripts.bench.bench_rl_scale; "
                  "assert 'ucloud_sandboxes_sdk' not in sys.modules")
         completed = subprocess.run([sys.executable, "-c", probe], cwd=SCRIPT.parents[1],
                                    capture_output=True, text=True, timeout=60)

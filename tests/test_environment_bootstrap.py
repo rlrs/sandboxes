@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from scripts.environment_producer_key import provision
+from sandboxes.environment_keys import provision
 from tests import test_vm_init as vm_fixtures
 from sandboxes.config import DeploymentConfig
 from sandboxes.environment_config import EnvironmentDeploymentConfig, environment_publisher_from_args

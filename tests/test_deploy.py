@@ -250,7 +250,7 @@ class DeployTests(unittest.TestCase):
             self.assertNotIn("SNAPSHOT_STORE_KIND=", script)
 
         hetzner_installer = (
-            Path(__file__).parents[1] / "scripts" / "install_hetzner_gateway.sh"
+            Path(__file__).parents[1] / "scripts" / "ops" / "install_hetzner_gateway.sh"
         ).read_text(encoding="utf-8")
         self.assertIn(
             "gateway-reconcile --config",

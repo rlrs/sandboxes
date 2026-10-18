@@ -2,7 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from scripts.environment_producer_key import provision
+from sandboxes.environment_keys import provision
 
 
 class EnvironmentProducerKeyTests(unittest.TestCase):

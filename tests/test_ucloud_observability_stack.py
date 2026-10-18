@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 SCRIPT = (
-    Path(__file__).parents[1] / "scripts" / "install_ucloud_observability_stack.sh"
+    Path(__file__).parents[1] / "scripts" / "ops" / "install_ucloud_observability_stack.sh"
 )
 
 

@@ -2,7 +2,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "install_hetzner_otlp_stack.sh"
+SCRIPT = Path(__file__).parents[1] / "scripts" / "ops" / "install_hetzner_otlp_stack.sh"
 
 
 class HetznerOtlpStackTests(unittest.TestCase):

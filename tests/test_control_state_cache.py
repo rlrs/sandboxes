@@ -29,7 +29,7 @@ class ControlStateCacheTests(unittest.TestCase):
                         raw["runtime_metrics"].pop(name)
                     payload = control_state._json(raw)
                     connection.execute("UPDATE control_records SET payload = ?", (payload,))
-                from scripts.verify_heartbeat_upgrade import verify
+                from scripts.release.verify_heartbeat_upgrade import verify
                 self.assertEqual(verify(path), 1)
                 # Open a fresh store as the upgraded gateway/autoscaler does.
                 reader = ControlStateStore(path)
@@ -46,7 +46,7 @@ class ControlStateCacheTests(unittest.TestCase):
         from copy import deepcopy
         from sandboxes.resource_evidence import DeviceIO, ResourceEvidence
         from sandboxes.models import ResidentWaitMetrics
-        from scripts.verify_heartbeat_upgrade import verify
+        from scripts.release.verify_heartbeat_upgrade import verify
 
         for old_cpu, old_device in ((True, False), (False, True), (True, True)):
             with self.subTest(old_cpu=old_cpu, old_device=old_device), TemporaryDirectory() as directory:

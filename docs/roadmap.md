@@ -20,8 +20,8 @@ under [Open decisions](#open-decisions).
 ## Admission
 
 - **Last two gates for Rust admission:** a mid-burst drain must not report ready early, and
-  growth admission at ~180 sandboxes/node must stay under 1 s (`scripts/bench_rl_scale.py`,
-  `scripts/live_relay_load_benchmark.py`, flag `sandbox.direct_node_rust_admission`).
+  growth admission at ~180 sandboxes/node must stay under 1 s (`scripts/bench/bench_rl_scale.py`,
+  `scripts/bench/live_relay_load_benchmark.py`, flag `sandbox.direct_node_rust_admission`).
 - **Delete the Python admission ledger** one release after the flag is on
   (`transition_admission.py`, ledger/pool/growth code in `direct_service.py`, `DemandPublisher`,
   `agent-demand.json`). `admission.py` stays for the gateway.

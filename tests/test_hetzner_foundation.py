@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 import subprocess
 
-from scripts import setup_hetzner_foundation as foundation
+from scripts.ops import setup_hetzner_foundation as foundation
 
 
 class HetznerFoundationTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class HetznerFoundationTests(unittest.TestCase):
             foundation._ip_networks(["not-a-network"])
 
     def test_gateway_installer_has_valid_bash_syntax(self) -> None:
-        installer = Path(__file__).parents[1] / "scripts" / "install_hetzner_gateway.sh"
+        installer = Path(__file__).parents[1] / "scripts" / "ops" / "install_hetzner_gateway.sh"
         subprocess.run(["bash", "-n", str(installer)], check=True)
 
 

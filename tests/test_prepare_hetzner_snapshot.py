@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "prepare_hetzner_snapshot.sh"
+SCRIPT = ROOT / "scripts" / "ops" / "prepare_hetzner_snapshot.sh"
 
 
 class PrepareHetznerSnapshotTests(unittest.TestCase):

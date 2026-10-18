@@ -270,7 +270,7 @@ class ImageFoundationTests(unittest.TestCase):
         self.assertIn(b"pip3 install -r requirements.txt", remainder)
 
     def load_script(self, name):
-        spec = importlib.util.spec_from_file_location(name, Path(__file__).parents[1] / "scripts" / (name + ".py"))
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).parents[1] / "scripts" / "images" / (name + ".py"))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module
@@ -371,7 +371,7 @@ class ImageFoundationTests(unittest.TestCase):
 
     def test_index_rewrite_preserves_original_and_task_operations(self):
         spec = importlib.util.spec_from_file_location(
-            "plan_foundations", Path(__file__).parents[1] / "scripts/plan_image_foundations.py")
+            "plan_foundations", Path(__file__).parents[1] / "scripts/images/plan_image_foundations.py")
         planner = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(planner)
         with tempfile.TemporaryDirectory() as directory:

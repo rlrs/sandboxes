@@ -10,7 +10,8 @@
 - `runtime/managed_process/`, `runtime/chunk_serve/`: Go components.
 - `runtime/gvisor/`, `runtime/storage_native/`, `runtime/nydusd/`: pinned upstream
   builds and patches. `runtime/toolkits/`: agent toolkits.
-- `scripts/`: operator, release and image tools (`scripts/data/` holds pinned inputs).
+- `scripts/`: checks (`check.sh`, `run_tests.py`); `ops/` installers and operator
+  tools, `release/`, `images/`, `bench/` (live load benchmarks).
 - `tests/`, `docs/`.
 
 The SDK is a separate repo, [ucloud-sandboxes-sdk](https://github.com/rlrs/ucloud-sandboxes-sdk);

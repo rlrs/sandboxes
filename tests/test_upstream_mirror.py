@@ -26,7 +26,7 @@ from sandboxes.systemd import (
 import sandboxes.vm_init as vm_init
 
 ROOT = Path(__file__).resolve().parents[1]
-with patch.object(sys, "path", [str(ROOT / "scripts"), *sys.path]):
+with patch.object(sys, "path", [str(ROOT / "scripts" / "images"), *sys.path]):
     import prepare_image_pool as pool
 
 MIRROR = {"listen_address": "10.42.0.2", "storage_root": "/work/data/upstream-mirror",
@@ -82,7 +82,7 @@ class UpstreamMirrorServiceTests(unittest.TestCase):
         self.assertIn("OnCalendar=hourly", units["ucloud-sandbox-upstream-mirror-trim.timer"])
         self.assertIn("ucloud-sandbox-upstream-mirror-trim.timer", SYSTEMD_UNIT_NAMES)
         self.assertIn("ucloud-sandbox-upstream-mirror@.service", REGISTRY_STORAGE_SYSTEMD_UNITS)
-        installer = (ROOT / "scripts/install_hetzner_gateway.sh").read_text()
+        installer = (ROOT / "scripts/ops/install_hetzner_gateway.sh").read_text()
         self.assertIn("ucloud-sandbox-upstream-mirror@.service \\\n  ucloud-sandbox-upstream-mirror-trim.service; do", installer)
         self.assertIn('install -D -m 0600 -o root -g root "$staged_credentials" "$mirror_credentials_file"', installer)
 

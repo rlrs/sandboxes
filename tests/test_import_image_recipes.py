@@ -1,4 +1,4 @@
-"""scripts/import_image_recipes.py: exports from a git checkout, as training would see it."""
+"""scripts/images/import_image_recipes.py: exports from a git checkout, as training would see it."""
 import hashlib
 import importlib.util
 import io
@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "import_image_recipes.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "images" / "import_image_recipes.py"
 
 
 def load():

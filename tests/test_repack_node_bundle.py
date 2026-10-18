@@ -8,7 +8,7 @@ import zipfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from scripts.repack_node_bundle import (
+from scripts.release.repack_node_bundle import (
     add_chunk_serve,
     add_nydusd,
     add_runtime_debs,
@@ -86,7 +86,7 @@ class RepackNodeBundleTests(unittest.TestCase):
             manifest = {"runtime": {"platform": {"architecture": "amd64"}, "packages": ["libc"]}}
             def inspect(argv, **kwargs):
                 return SimpleNamespace(stdout="\n".join(Path(argv[-1]).stem.split("_")))
-            with patch("scripts.repack_node_bundle.subprocess.run", side_effect=inspect):
+            with patch("scripts.release.repack_node_bundle.subprocess.run", side_effect=inspect):
                 add_runtime_debs(root / "bundle", manifest, [extra, extra])
                 self.assertEqual({item["name"] for item in manifest["runtime"]["files"]}, {old.name, extra.name})
                 self.assertEqual(manifest["runtime"]["packages"], ["libc"])

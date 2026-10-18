@@ -7,7 +7,7 @@ import unittest
 TEST_TIER = "contract"
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts/configure_hetzner_sdk_ingress.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts/ops/configure_hetzner_sdk_ingress.sh"
 
 
 def capacity_renderer():

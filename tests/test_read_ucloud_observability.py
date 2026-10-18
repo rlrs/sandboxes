@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).parents[1] / "scripts" / "read_ucloud_observability.sh"
+SCRIPT = Path(__file__).parents[1] / "scripts" / "ops" / "read_ucloud_observability.sh"
 
 
 class ReadUCloudObservabilityTests(unittest.TestCase):

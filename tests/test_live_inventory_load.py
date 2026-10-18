@@ -15,7 +15,7 @@ TEST_TIER = "contract"
 
 # The script under test imports the SDK at module level.
 if (SDK_UNAVAILABLE := sdk_skip_reason()) is None:
-    from scripts import live_inventory_load as load
+    from scripts.bench import live_inventory_load as load
 else:
     load_tests = skip_module(__name__, SDK_UNAVAILABLE)
 

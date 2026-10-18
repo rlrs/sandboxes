@@ -450,7 +450,7 @@ class MaintenanceUnitTests(unittest.TestCase):
             self.assertNotIn("Requires=ucloud-sandbox-registry.service", units[name])
         self.assertIn("ucloud-sandbox-registry-pressure.timer", SYSTEMD_UNIT_NAMES)
         self.assertIn("ucloud-sandbox-registry-pressure.service", REGISTRY_STORAGE_SYSTEMD_UNITS)
-        installer = (Path(__file__).parents[1] / "scripts/install_hetzner_gateway.sh").read_text()
+        installer = (Path(__file__).parents[1] / "scripts/ops/install_hetzner_gateway.sh").read_text()
         self.assertIn("ucloud-sandbox-registry-pressure.timer", installer)
 
     def test_gateway_reconcile_enables_the_pressure_timer(self) -> None:

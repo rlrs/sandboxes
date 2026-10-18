@@ -10,7 +10,7 @@ TEST_TIER = "contract"
 
 # The script under test imports the SDK at module level.
 if (SDK_UNAVAILABLE := sdk_skip_reason()) is None:
-    from scripts import live_relay_load_benchmark as benchmark
+    from scripts.bench import live_relay_load_benchmark as benchmark
 else:
     load_tests = skip_module(__name__, SDK_UNAVAILABLE)
 

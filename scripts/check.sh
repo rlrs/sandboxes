@@ -13,11 +13,11 @@ UV_PROJECT_ENVIRONMENT="$root_project_venv" uv sync --locked --extra postgres
 UV_PROJECT_ENVIRONMENT="$root_project_venv" \
   uv run --extra postgres ruff check sandboxes tests scripts
 
-for script in scripts/*.sh; do
+for script in scripts/*.sh scripts/*/*.sh; do
   bash -n "$script"
 done
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck --severity=warning scripts/*.sh
+  shellcheck --severity=warning scripts/*.sh scripts/*/*.sh
 elif [ "${UCLOUD_CHECK_ALLOW_MISSING_SHELLCHECK:-0}" = 1 ]; then
   echo "shellcheck is unavailable; explicitly skipping shell lint" >&2
 else
@@ -44,7 +44,7 @@ uv venv "$check_root/root-venv"
 uv pip install --python "$check_root/root-venv/bin/python" "${root_wheels[0]}"
 (
   cd "$check_root"
-  "$check_root/root-venv/bin/python" "$repo_root/scripts/verify_installed_wheel.py"
+  "$check_root/root-venv/bin/python" "$repo_root/scripts/release/verify_installed_wheel.py"
 )
 
 if command -v go >/dev/null 2>&1; then
@@ -97,7 +97,7 @@ if [ -f "$sdk_root/pyproject.toml" ]; then
     (
       cd "$check_root"
       "$check_root/sdk-venv/bin/python" \
-        "$repo_root/scripts/verify_installed_sdk_wheel.py"
+        "$repo_root/scripts/release/verify_installed_sdk_wheel.py"
     )
     UV_PROJECT_ENVIRONMENT="$sdk_project_venv" uv sync --locked --all-extras
     "$root_project_venv/bin/ruff" check \

@@ -105,9 +105,9 @@ variable, and the UCloud session is a separate file. Apply changes with
 5. **Install ops tooling** on the gateway:
 
    ```bash
-   sudo scripts/install_ucloud_ops.sh --backups <dir under /work/data> \
+   sudo scripts/ops/install_ucloud_ops.sh --backups <dir under /work/data> \
      --public-gateway <gateway-url> --public-relay <relay-url>
-   sudo scripts/install_ucloud_observability_stack.sh \
+   sudo scripts/ops/install_ucloud_observability_stack.sh \
      --private-bind-ip 0.0.0.0 --endpoint-host <gateway-host>
    ```
 
@@ -146,7 +146,7 @@ A release is the wheel plus two digest-pinned node bundles
 
 ```bash
 uv build                                   # dist/sandboxes-<version>-py3-none-any.whl
-python scripts/verify_installed_wheel.py   # in a venv with the wheel installed
+python scripts/release/verify_installed_wheel.py   # in a venv with the wheel installed
 ```
 
 Native components (`runsc`, managed init, storage-native, `noded`,
@@ -155,9 +155,9 @@ Native components (`runsc`, managed init, storage-native, `noded`,
 are unchanged, repack instead:
 
 ```bash
-python scripts/repack_node_bundle.py --source <old sandbox bundle> --wheel <wheel> \
+python scripts/release/repack_node_bundle.py --source <old sandbox bundle> --wheel <wheel> \
   --storage-backend ... --storage-manifest ... --storage-license ... --output <new sandbox bundle>
-python scripts/derive_builder_bundle.py --source <new sandbox bundle> \
+python scripts/release/derive_builder_bundle.py --source <new sandbox bundle> \
   --buildx-deb <deb> --output <new builder bundle>
 ```
 
@@ -251,7 +251,7 @@ The first stop is the secret-free JSON report (health, latency percentiles,
 errors, slow traces), from a checkout with the UCloud CLI logged in:
 
 ```bash
-scripts/read_ucloud_observability.sh <gateway-job-id> --window 30m --rate-window 5m --trace-limit 5
+scripts/ops/read_ucloud_observability.sh <gateway-job-id> --window 30m --rate-window 5m --trace-limit 5
 ```
 
 For Grafana, tunnel `-L 3000:127.0.0.1:3000` over the SSH command that
@@ -319,7 +319,7 @@ workers re-register on their next heartbeat.
    `postgres.dump`), `deployment.json`, `postgres.dsn` and `s3.env` (from
    `etc/`), `ucloud-session.json` (from `state/`), `release/` with the live
    kit's two bundles, and the live kit's wheel.
-4. `sudo scripts/install_ucloud_gateway.sh`. It restores PostgreSQL and the
+4. `sudo scripts/ops/install_ucloud_gateway.sh`. It restores PostgreSQL and the
    state directory (refusing existing ones), installs venv, units and
    drop-ins, and stops before starting services. Copy the chunk-index tokens
    from the backup to `/var/lib/ucloud-chunk-index/`.
@@ -327,7 +327,7 @@ workers re-register on their next heartbeat.
    with gateway services stopped (review the counts, then add `--execute`):
 
    ```bash
-   python scripts/rehome_registry_host.py --config /etc/ucloud-sandboxes/deployment.json \
+   python scripts/ops/rehome_registry_host.py --config /etc/ucloud-sandboxes/deployment.json \
      --from <old-host>:5000 --to <new-host>:5000
    ```
 
@@ -386,19 +386,34 @@ Required keys: `scope_id`, `network_id`, `sandbox_image`, `builder_image`
 (default `HETZNER_API_KEY`). Private-only workers need
 `enable_private_egress: true`, with the gateway NATing their traffic.
 
-1. `scripts/setup_hetzner_foundation.py --egress-gateway-ip <ip> --execute`
+1. `scripts/ops/setup_hetzner_foundation.py --egress-gateway-ip <ip> --execute`
    (network, SSH key, firewalls).
 2. Prepare PostgreSQL as in UCloud step 3.
 3. Stage the wheel, `deployment.json`, both bundles, the SSH key pair, the
    Hetzner env file and `configure_hetzner_sdk_ingress.sh` in `/tmp`; run
-   `scripts/install_hetzner_gateway.sh --public-ip <ipv4>`.
-4. `scripts/configure_hetzner_sdk_ingress.sh --public-host <dns-or-ip>` (Nginx
+   `scripts/ops/install_hetzner_gateway.sh --public-ip <ipv4>`.
+4. `scripts/ops/configure_hetzner_sdk_ingress.sh --public-host <dns-or-ip>` (Nginx
    and Let's Encrypt; relay under `/relay/`).
 
 Boot workers from a snapshot so the kernel matches the bundle: on a drained,
 disposable source server run
-`scripts/prepare_hetzner_snapshot.sh "$(hostname)" <docker-image-gib> sandbox|builder`,
+`scripts/ops/prepare_hetzner_snapshot.sh "$(hostname)" <docker-image-gib> sandbox|builder`,
 power off, snapshot, and canary one clone (create, exec, park, wake).
+
+## Scripts
+
+`scripts/` holds the checks: `check.sh`, `run_tests.py`, and the two CI-only
+PostgreSQL checks. `scripts/ops/` holds the installers and operator tools for
+both providers, including `install_hetzner_otlp_stack.sh` (OTLP collector on a
+Hetzner gateway) and `qualify_hetzner_host.sh` (run by the snapshot script).
+`scripts/release/` builds and verifies bundles and wheels;
+`verify_heartbeat_upgrade.py` decodes retained heartbeat rows with a candidate
+package before a restart. `scripts/images/` holds the image index and
+prepared-image tools ([images.md](images.md)), plus `preflight_environment.py`
+(checks a sandbox spec offline), `build_environment_canary.sh` (publishes a
+tiny signed canary environment) and `guest_conformance_probe.py` (filesystem
+and process probes run inside a guest). `scripts/bench/` holds the live load
+benchmarks the roadmap's admission gates use.
 
 ## Adding a provider
 

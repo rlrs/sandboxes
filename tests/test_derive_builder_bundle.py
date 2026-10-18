@@ -7,7 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from scripts.derive_builder_bundle import derive_builder_bundle
+from scripts.release.derive_builder_bundle import derive_builder_bundle
 from sandboxes.vm_init import (
     BUILDER_RUNTIME_PACKAGES,
     RUNTIME_KERNEL_MODULES,
@@ -112,7 +112,7 @@ class DeriveBuilderBundleTests(unittest.TestCase):
                 },
             )()
             with patch(
-                "scripts.derive_builder_bundle.subprocess.run", return_value=completed
+                "scripts.release.derive_builder_bundle.subprocess.run", return_value=completed
             ):
                 derive_builder_bundle(source, buildx, output)
 
