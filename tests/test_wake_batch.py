@@ -9,9 +9,9 @@ from unittest.mock import patch
 
 from tests.test_control_plane import _gateway_server, _sandbox_route, build_heartbeat
 from tests import test_wake_capacity as capacity_fixtures
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.gateway import placement
-from ucloud_sandboxes.models import ResourceQuantity
+from sandboxes import control_plane
+from sandboxes.gateway import placement
+from sandboxes.models import ResourceQuantity
 
 
 class WakeBatchTests(unittest.TestCase):

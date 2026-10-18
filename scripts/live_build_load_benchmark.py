@@ -39,14 +39,14 @@ def write_json(path, value):
 def clients():
     sys.path.insert(0, SDK_WHEEL)
     import ucloud_sandboxes_sdk.client as sdk
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_dict(json.loads(Path('/etc/ucloud-sandboxes/deployment.json').read_text()))
     token = config.sandbox_api_token_file().read_text().strip()
     return sdk, config, lambda: sdk.SandboxClient(os.environ['UCLOUD_SANDBOX_URL'], api_token=token, timeout_seconds=120)
 
 
 def fleet(config):
-    from ucloud_sandboxes.control_state import ControlStateStore
+    from sandboxes.control_state import ControlStateStore
     return [{'job_id': h.job_id, 'node_url': h.node_url,
              'active_image_builds': h.active_image_builds,
              'active_sandboxes': h.active_sandboxes,

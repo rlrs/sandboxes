@@ -1,6 +1,6 @@
 # Architecture
 
-UCloud Sandboxes runs untrusted code in gVisor sandboxes on a pool of VMs. One
+Sandboxes runs untrusted code in gVisor sandboxes on a pool of VMs. One
 public gateway owns routing and placement; each sandbox node owns the
 processes, storage and local journals of the sandboxes it runs. An autoscaler
 buys and releases VMs, and a model relay carries agents' model calls and parks
@@ -9,8 +9,8 @@ flow, the correctness rules, and how nodes manage resources. Image formats and
 builds are in [images.md](images.md), endpoints in [api.md](api.md), running
 the system in [operations.md](operations.md), and the reasoning behind past
 choices in [decisions.md](decisions.md). For every config key and default, run
-`uv run ucloud-sandboxes sample-config` or read
-[config.py](../ucloud_sandboxes/config.py).
+`uv run sandboxes sample-config` or read
+[config.py](../sandboxes/config.py).
 
 ```mermaid
 flowchart LR
@@ -68,7 +68,7 @@ flowchart LR
 - `ucloud-sandbox-builds`: image builds inside sandboxes (off by default).
 
 **Sandbox nodes**, set up at boot by
-[vm_init.py](../ucloud_sandboxes/vm_init.py):
+[vm_init.py](../sandboxes/vm_init.py):
 
 - `ucloud-sandbox-node`, the Python node agent. Its Warden owns every sandbox
   on the node (OCI bundles, cgroups, `runsc` processes, network namespaces,
@@ -368,7 +368,7 @@ reply.)
 ### Pools and the autoscaler
 
 The autoscaler plans a **sandbox pool** and a **builder pool** independently
-through a small provider interface ([providers/](../ucloud_sandboxes/providers);
+through a small provider interface ([providers/](../sandboxes/providers);
 UCloud in production, Hetzner maintained). Each 5 s cycle it subtracts what
 ready and booting nodes can take from demand and creates VMs for the deficit,
 within `min_nodes`/`max_nodes` and provisioning caps. Demand comes from:

@@ -3,8 +3,8 @@ from unittest.mock import patch
 import unittest
 
 from tests import test_managed_control_admission as fixture
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.resident_memory import ResidentMemorySample, ResidentReclaimResult
+from sandboxes.hibernation import HibernationState
+from sandboxes.resident_memory import ResidentMemorySample, ResidentReclaimResult
 
 
 class ResidentReclaimFenceTests(unittest.TestCase):
@@ -38,7 +38,7 @@ class ResidentReclaimFenceTests(unittest.TestCase):
             return True
 
         service.warden.flush_reclaimable_memory = flush
-        with patch("ucloud_sandboxes.direct_service.ResidentMemoryReclaimer.reclaim") as reclaim:
+        with patch("sandboxes.direct_service.ResidentMemoryReclaimer.reclaim") as reclaim:
             result = service.reclaim_resident_wait("s", generation=1,
                 relay_request_id="request", target_bytes=1024 << 20,
                 is_wait_current=lambda: current)
@@ -52,7 +52,7 @@ class ResidentReclaimFenceTests(unittest.TestCase):
         flushed = []
         service.warden.flush_reclaimable_memory = lambda _: flushed.append(True) or True
         with patch.object(service._resident_memory, "sample", return_value=clean) as refresh, \
-                patch("ucloud_sandboxes.direct_service.ResidentMemoryReclaimer.reclaim",
+                patch("sandboxes.direct_service.ResidentMemoryReclaimer.reclaim",
                       return_value=ResidentReclaimResult(1024 << 20, 1024 << 20, .1, 0,
                                                         "target_reached")) as reclaim:
             result = service.reclaim_resident_wait("s", generation=1,
@@ -69,7 +69,7 @@ class ResidentReclaimFenceTests(unittest.TestCase):
         service.warden.flush_reclaimable_memory = lambda _: True
         with patch.object(service._resident_memory, "sample",
                           return_value=replace(sample, cgroup_inode=99)), \
-                patch("ucloud_sandboxes.direct_service.ResidentMemoryReclaimer.reclaim") as reclaim:
+                patch("sandboxes.direct_service.ResidentMemoryReclaimer.reclaim") as reclaim:
             result = service.reclaim_resident_wait("s", generation=1,
                 relay_request_id="request", target_bytes=1024 << 20,
                 is_wait_current=lambda: True)
@@ -117,7 +117,7 @@ class ResidentReclaimFenceTests(unittest.TestCase):
             return ResidentReclaimResult(0, 0, 0, 0, "superseded")
 
         with patch(
-            "ucloud_sandboxes.direct_service.ResidentMemoryReclaimer.reclaim",
+            "sandboxes.direct_service.ResidentMemoryReclaimer.reclaim",
             side_effect=reclaim,
         ):
             result = service.reclaim_resident_wait(

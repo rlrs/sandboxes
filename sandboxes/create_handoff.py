@@ -265,7 +265,7 @@ def create_config(service: Any, *, node_epoch: str, rust_creates_enabled: bool,
     Python stays the single source of truth for flags and assembly checks;
     runtime/noded reads this instead of parsing the agent's command line.
     ``exec`` is phase 2a's: what noded needs to run execs itself, fenced by
-    ucloud_sandboxes/exec_fence.py; ``exec_sessions`` is the ExecSessionManager.
+    sandboxes/exec_fence.py; ``exec_sessions`` is the ExecSessionManager.
     ``pause`` is phase 3a's (pause_handoff.pause_config); ``admission`` is
     step 3c.0's (admission_config).
     """

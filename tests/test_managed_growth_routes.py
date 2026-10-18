@@ -16,11 +16,11 @@ from unittest.mock import patch
 from tests import test_direct_provisioner as fixtures
 from tests.admission_backends import AdmissionBackendCase
 from tests.test_rust_exec_fence import TOKEN, _UnixConnection
-from ucloud_sandboxes.admission_decision import PROJECTED
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.managed_process import ManagedProcessStart, control_request_bytes
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.sandbox import SandboxCapacityUnavailableError
+from sandboxes.admission_decision import PROJECTED
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.managed_process import ManagedProcessStart, control_request_bytes
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.sandbox import SandboxCapacityUnavailableError
 
 TEST_TIER = "contract"
 DIGEST = "a" * 64

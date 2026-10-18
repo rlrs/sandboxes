@@ -7,9 +7,9 @@ from unittest.mock import patch
 from tests.storage_native_publisher_support import FakeExporter, digest
 from tests.test_storage_native_registry import FakeRegistry
 from tests.test_storage_native_s3 import FakeS3
-from ucloud_sandboxes.storage_native_publication import CompletedLayerUploads, local_layer_identity
-from ucloud_sandboxes.storage_native_registry import PublishedStorageLayer, RegistrySnapshotPublisher
-from ucloud_sandboxes.storage_native_s3 import S3SnapshotPublisher
+from sandboxes.storage_native_publication import CompletedLayerUploads, local_layer_identity
+from sandboxes.storage_native_registry import PublishedStorageLayer, RegistrySnapshotPublisher
+from sandboxes.storage_native_s3 import S3SnapshotPublisher
 
 
 class CompletedUploadTests(unittest.TestCase):

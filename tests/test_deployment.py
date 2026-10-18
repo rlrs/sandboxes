@@ -1,6 +1,6 @@
 import unittest
 
-from ucloud_sandboxes.deployment import agent_version_is_schedulable
+from sandboxes.deployment import agent_version_is_schedulable
 
 
 class DeploymentTests(unittest.TestCase):

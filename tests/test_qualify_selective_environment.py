@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from scripts.qualify_selective_environment import (
     ReadOnlyClient, capture_registry, require_exact_publications, selected_group_indices,
 )
-from ucloud_sandboxes.environment_artifact import content_digest, layer_chain_id, sign_layer_component
+from sandboxes.environment_artifact import content_digest, layer_chain_id, sign_layer_component
 
 
 class SelectiveQualificationTests(unittest.TestCase):

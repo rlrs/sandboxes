@@ -8,16 +8,16 @@ from tempfile import TemporaryDirectory
 from threading import Barrier
 import unittest
 
-from ucloud_sandboxes.agent import build_heartbeat as _build_heartbeat
-from ucloud_sandboxes.bootstrap import VmBootstrapRecord
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.models import (
+from sandboxes.agent import build_heartbeat as _build_heartbeat
+from sandboxes.bootstrap import VmBootstrapRecord
+from sandboxes.control_state import ControlStateStore
+from sandboxes.models import (
     NodeRuntimeMetrics,
     ResourceQuantity,
     SandboxInventoryEntry,
     utc_now,
 )
-from ucloud_sandboxes.registry import (
+from sandboxes.registry import (
     HeartbeatIdentityError,
     heartbeat_from_dict,
     heartbeat_to_dict,

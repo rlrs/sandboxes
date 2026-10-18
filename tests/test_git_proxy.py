@@ -9,8 +9,8 @@ from tempfile import TemporaryDirectory
 import threading
 import unittest
 
-from ucloud_sandboxes.git_proxy import GitHubProxy, git_insteadof
-from ucloud_sandboxes.package_cache import PackageCache, PackageCacheConfig, _Handler
+from sandboxes.git_proxy import GitHubProxy, git_insteadof
+from sandboxes.package_cache import PackageCache, PackageCacheConfig, _Handler
 
 TOKEN = "github_pat_test_token_0123456789"
 

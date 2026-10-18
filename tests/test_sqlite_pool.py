@@ -7,7 +7,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.sqlite_pool import SqliteConnectionPool
+from sandboxes.sqlite_pool import SqliteConnectionPool
 
 TEST_TIER = "contract"
 
@@ -22,7 +22,7 @@ class SqliteLeaseTests(unittest.TestCase):
                 with guard:
                     wakeups.append(1)
                 return result
-        with patch("ucloud_sandboxes.sqlite_pool.Condition", CountedCondition):
+        with patch("sandboxes.sqlite_pool.Condition", CountedCondition):
             pool = SqliteConnectionPool(1)
             self.addCleanup(pool.close)
             def connect():

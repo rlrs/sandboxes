@@ -22,14 +22,14 @@ import threading
 import time
 import unittest
 
-from ucloud_sandboxes import cli
-from ucloud_sandboxes.agent import HeartbeatPostResult, build_heartbeat, fetch_node_agent_heartbeat
-from ucloud_sandboxes.heartbeat_sender import HeartbeatSenderConfig, NodeHeartbeatSender
-from ucloud_sandboxes.images import DockerImageRuntime
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.node_agent import build_builder_node_agent_server
-from ucloud_sandboxes.registry import heartbeat_to_dict
-from ucloud_sandboxes.vm_init import render_vm_init_script
+from sandboxes import cli
+from sandboxes.agent import HeartbeatPostResult, build_heartbeat, fetch_node_agent_heartbeat
+from sandboxes.heartbeat_sender import HeartbeatSenderConfig, NodeHeartbeatSender
+from sandboxes.images import DockerImageRuntime
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.node_agent import build_builder_node_agent_server
+from sandboxes.registry import heartbeat_to_dict
+from sandboxes.vm_init import render_vm_init_script
 
 from tests import test_vm_init
 
@@ -160,7 +160,7 @@ class HeartbeatSenderTests(unittest.TestCase):
                     HeartbeatPostResult(408, {}), ValueError("bad sample"),
                     HeartbeatPostResult(500, {}), busy, ok, busy, HeartbeatPostResult(401, {}),
                     busy, ok, HeartbeatPostResult(409, {}), ok]
-        with self.assertLogs("ucloud_sandboxes.heartbeat_sender", "WARNING") as logs:
+        with self.assertLogs("sandboxes.heartbeat_sender", "WARNING") as logs:
             delays = [sender._next_delay(outcome) for outcome in outcomes]
         self.assertEqual(delays, [1, 2, 4, 8, 16, 20, 20, 20, 1, 20, 4, 20, 20, 20])
         self.assertIn("(7 in a row, next in 20.0 s): HTTP 503", logs.output[6])

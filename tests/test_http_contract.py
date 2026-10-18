@@ -1,6 +1,6 @@
 import unittest
 
-from ucloud_sandboxes.http_contract import match_sandbox_http_route
+from sandboxes.http_contract import match_sandbox_http_route
 
 
 class SandboxHttpContractTests(unittest.TestCase):

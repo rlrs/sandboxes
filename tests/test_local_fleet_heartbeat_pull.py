@@ -16,9 +16,9 @@ from unittest.mock import Mock, patch
 
 from tests.harness import LocalFleet
 from tests.harness.fleet import DEFAULT_IMAGE
-from ucloud_sandboxes.agent import build_heartbeat
-from ucloud_sandboxes.gateway import heartbeats
-from ucloud_sandboxes.gateway.heartbeats import PULL_TIMEOUT_SECONDS, HeartbeatIngest, HeartbeatOutcome
+from sandboxes.agent import build_heartbeat
+from sandboxes.gateway import heartbeats
+from sandboxes.gateway.heartbeats import PULL_TIMEOUT_SECONDS, HeartbeatIngest, HeartbeatOutcome
 
 TEST_TIER = "contract"
 

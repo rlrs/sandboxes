@@ -1,5 +1,5 @@
 //! Phase 3b's gate (docs/architecture.md): the daemon's
-//! resident sampler against the agent's own (`ucloud_sandboxes.resident_memory.
+//! resident sampler against the agent's own (`sandboxes.resident_memory.
 //! ResidentMemorySampler`, the oracle) on the same fake cgroup trees, and the
 //! agent's reader of the daemon's `resident.json` (`PublishedResidentMemory`).
 //! Every field must be equal, `sampled_at` aside (each process reads at its
@@ -39,7 +39,7 @@ fn python() -> Option<PathBuf> {
 const SCRIPT: &str = r#"
 import dataclasses, json, sys, time
 from pathlib import Path
-from ucloud_sandboxes.resident_memory import PublishedResidentMemory, ResidentMemorySampler
+from sandboxes.resident_memory import PublishedResidentMemory, ResidentMemorySampler
 
 request = json.load(sys.stdin)
 sampler = ResidentMemorySampler(cgroup_root=Path(request["cgroup_root"]), proc_root=Path(request["proc_root"]))

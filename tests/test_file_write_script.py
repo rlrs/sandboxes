@@ -4,7 +4,7 @@ import os
 import stat
 import subprocess
 import unittest
-from ucloud_sandboxes.direct_service import sandbox_file_write_script
+from sandboxes.direct_service import sandbox_file_write_script
 
 TEST_TIER = "contract"
 

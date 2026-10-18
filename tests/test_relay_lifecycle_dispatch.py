@@ -9,8 +9,8 @@ from aiohttp import web
 from aiohttp import ClientSession
 from aiohttp.test_utils import TestServer
 
-from ucloud_sandboxes import relay_lifecycle as lifecycle
-from ucloud_sandboxes.model_relay import RelayLifecycleDeferred
+from sandboxes import relay_lifecycle as lifecycle
+from sandboxes.model_relay import RelayLifecycleDeferred
 
 TEST_TIER = "contract"
 
@@ -156,7 +156,7 @@ class RelayLifecycleDispatchTests(unittest.IsolatedAsyncioTestCase):
                 await dispatcher.close()
 
     async def test_durable_deferral_releases_dispatch_without_sleep(self):
-        from ucloud_sandboxes.model_relay import RelayLifecycleDeferred
+        from sandboxes.model_relay import RelayLifecycleDeferred
 
         dispatcher = lifecycle.RelayLifecycleDispatcher("http://gateway", "token")
         with patch.object(
@@ -179,7 +179,7 @@ class RelayLifecycleDispatchTests(unittest.IsolatedAsyncioTestCase):
                 await dispatcher.close()
 
     async def test_completed_response_supersedes_next_durable_park_retry(self):
-        from ucloud_sandboxes.model_relay import RelayLifecycleDeferred
+        from sandboxes.model_relay import RelayLifecycleDeferred
 
         dispatcher = lifecycle.RelayLifecycleDispatcher("http://gateway", "token")
         request = SimpleNamespace(completed_at=None, response_committed=asyncio.Event())
@@ -277,7 +277,7 @@ class RelayLifecycleDispatchTests(unittest.IsolatedAsyncioTestCase):
             await dispatcher.close()
 
     async def test_capacity_deferral_releases_slots_and_preserves_retry_identity(self):
-        from ucloud_sandboxes.model_relay import RelayLifecycleDeferred
+        from sandboxes.model_relay import RelayLifecycleDeferred
 
         dispatcher = lifecycle.RelayLifecycleDispatcher("http://gateway", "token")
         attempts = {}

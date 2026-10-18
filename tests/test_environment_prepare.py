@@ -6,9 +6,9 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import MagicMock, patch
 
-from ucloud_sandboxes import environment_prepare as prepare
-from ucloud_sandboxes.managed_registry import RegistryClient
-from ucloud_sandboxes.oci_layer_materialize import UnsupportedLayer
+from sandboxes import environment_prepare as prepare
+from sandboxes.managed_registry import RegistryClient
+from sandboxes.oci_layer_materialize import UnsupportedLayer
 
 TEST_TIER = "contract"
 

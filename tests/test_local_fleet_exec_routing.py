@@ -13,7 +13,7 @@ import signal
 import unittest
 
 from tests.harness import LocalFleet
-from ucloud_sandboxes import routing
+from sandboxes import routing
 
 
 def _exec_paths(node) -> list[tuple[str, str]]:

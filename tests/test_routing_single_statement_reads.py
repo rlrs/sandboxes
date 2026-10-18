@@ -20,7 +20,7 @@ DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
 @unittest.skipUnless(DSN, "requires isolated PostgreSQL")
 class SingleStatementRoutingTests(unittest.TestCase):
     def setUp(self):
-        from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
         self.temp = TemporaryDirectory()
         self.path = Path(self.temp.name) / "routes"
@@ -76,7 +76,7 @@ class SingleStatementRoutingTests(unittest.TestCase):
         self.assertTrue(statements[0].strip().startswith("SELECT"))
         self.assertEqual(transactions, [])
 
-        from ucloud_sandboxes.routing import ExecRoute
+        from sandboxes.routing import ExecRoute
 
         exec_route = ExecRoute(
             session_id="exec-single", sandbox_id="single", node_id="n",

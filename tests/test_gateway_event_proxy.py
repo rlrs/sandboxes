@@ -10,10 +10,10 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.control_plane import build_server
-from ucloud_sandboxes.gateway_response_proxy import encode_response
-from ucloud_sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
-from ucloud_sandboxes.routing import ExecRoute, SandboxRoute
+from sandboxes.control_plane import build_server
+from sandboxes.gateway_response_proxy import encode_response
+from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
+from sandboxes.routing import ExecRoute, SandboxRoute
 
 TEST_TIER = "contract"
 
@@ -319,7 +319,7 @@ class AsyncSocketOwnershipTests(unittest.TestCase):
     def test_shutdown_during_failed_handoff_releases_registered_socket(self):
         from urllib.error import URLError
         from unittest.mock import Mock
-        from ucloud_sandboxes.gateway_response_proxy import AsyncGatewayResponses
+        from sandboxes.gateway_response_proxy import AsyncGatewayResponses
 
         entered, cancel_queued, release = Event(), Event(), Event()
 
@@ -381,12 +381,12 @@ class AsyncSocketOwnershipTests(unittest.TestCase):
         import asyncio
         import socket
         from threading import current_thread
-        from ucloud_sandboxes.gateway_response_proxy import AsyncGatewayResponses
-        from ucloud_sandboxes.node_http_async import (
+        from sandboxes.gateway_response_proxy import AsyncGatewayResponses
+        from sandboxes.node_http_async import (
             AsyncNodeHttpPool,
             BufferedNodeResponse,
         )
-        from ucloud_sandboxes.telemetry import Telemetry
+        from sandboxes.telemetry import Telemetry
 
         pool = AsyncNodeHttpPool()
         self.addCleanup(pool.close)
@@ -473,9 +473,9 @@ class AsyncSocketOwnershipTests(unittest.TestCase):
         import socket
         from threading import current_thread
         from unittest.mock import Mock
-        from ucloud_sandboxes.gateway_response_proxy import AsyncGatewayResponses
-        from ucloud_sandboxes.node_http_async import AsyncNodeHttpPool
-        from ucloud_sandboxes.telemetry import Telemetry
+        from sandboxes.gateway_response_proxy import AsyncGatewayResponses
+        from sandboxes.node_http_async import AsyncNodeHttpPool
+        from sandboxes.telemetry import Telemetry
 
         pool = AsyncNodeHttpPool()
         self.addCleanup(pool.close)

@@ -1,5 +1,5 @@
 //! Client for the storage-native node service (`StorageNativeNodeClient` in
-//! ucloud_sandboxes/storage_native_daemon.py), the agent's only storage protocol.
+//! sandboxes/storage_native_daemon.py), the agent's only storage protocol.
 //!
 //! One request per connection: a 4-byte big-endian length, then JSON, each way
 //! (at most 1 MiB). Requests carry `"schema": 4` and always `trace_context`;

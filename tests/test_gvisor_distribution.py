@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from ucloud_sandboxes.gvisor_distribution import (
+from sandboxes.gvisor_distribution import (
     GVISOR_COMMIT,
     GVISOR_SIDECARS,
     distribution_files,
@@ -110,17 +110,17 @@ class GvisorDistributionTests(unittest.TestCase):
 
     def test_service_fences_same_runsc_with_changed_companion(self):
         from unittest.mock import patch
-        from ucloud_sandboxes.direct_runtime import build_direct_runtime_service
+        from sandboxes.direct_runtime import build_direct_runtime_service
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runsc = self.fixture(root)
             with (
                 patch(
-                    "ucloud_sandboxes.direct_runtime._cpu_features_sha256",
+                    "sandboxes.direct_runtime._cpu_features_sha256",
                     return_value="a" * 64,
                 ),
-                patch("ucloud_sandboxes.direct_runtime.StorageNativeNodeClient"),
+                patch("sandboxes.direct_runtime.StorageNativeNodeClient"),
             ):
 
                 def assemble(name):

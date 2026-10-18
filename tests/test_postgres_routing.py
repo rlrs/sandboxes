@@ -29,7 +29,7 @@ class PostgresRoutingContracts(unittest.TestCase):
             return self._store(path)
 
     def _store(self, path):
-        from ucloud_sandboxes.shared_control.routing_repository import (
+        from sandboxes.shared_control.routing_repository import (
             PostgresRoutingStore,
         )
 

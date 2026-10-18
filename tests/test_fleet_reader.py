@@ -8,12 +8,12 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.test_registry import build_heartbeat
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.control_plane import _sandbox_list_bytes
-from ucloud_sandboxes.fleet_reader import FleetResponseRenderer, FleetSnapshotReader
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
-from ucloud_sandboxes.registry import heartbeat_to_dict
-from ucloud_sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.control_state import ControlStateStore
+from sandboxes.control_plane import _sandbox_list_bytes
+from sandboxes.fleet_reader import FleetResponseRenderer, FleetSnapshotReader
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
+from sandboxes.registry import heartbeat_to_dict
+from sandboxes.routing import RoutingStore, SandboxRoute
 
 TEST_TIER = "contract"
 

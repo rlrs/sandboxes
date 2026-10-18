@@ -8,15 +8,15 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.direct_service import DirectExecTimeoutError, DirectSandboxService
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.managed_process import (
+from sandboxes.direct_service import DirectExecTimeoutError, DirectSandboxService
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.hibernation import HibernationState
+from sandboxes.managed_process import (
     ManagedProcessError,
     ManagedProcessReadUnavailable,
 )
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.sandbox import SandboxConflictError
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.sandbox import SandboxConflictError
 
 
 class ManagedControlAdmissionTests(unittest.TestCase):
@@ -90,7 +90,7 @@ class ManagedControlAdmissionTests(unittest.TestCase):
     def test_queue_does_not_hold_owner_and_expires_before_dispatch(self):
         self.service._management_read_slots.acquire()
         with patch(
-            "ucloud_sandboxes.direct_service._MANAGED_CONTROL_DEADLINE_SECONDS", 0.05
+            "sandboxes.direct_service._MANAGED_CONTROL_DEADLINE_SECONDS", 0.05
         ):
             with ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(self.call)
@@ -140,7 +140,7 @@ class ManagedControlAdmissionTests(unittest.TestCase):
             self.response({"ok": True}),
         ]
         with patch(
-            "ucloud_sandboxes.direct_service.time.sleep",
+            "sandboxes.direct_service.time.sleep",
             side_effect=lambda delay: self.assert_resources_released(),
         ):
             self.assertEqual(self.call("start", retry_not_ready=True), {"ok": True})

@@ -8,10 +8,10 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tests.test_images import _uploaded_context
-from ucloud_sandboxes import images
-from ucloud_sandboxes.build_cache import BuildCachePlan
-from ucloud_sandboxes.images import DockerImageRuntime, ImageBuildSpec, ImageManager, ImageStore, build_cache_affinity
-from ucloud_sandboxes.sandbox import CommandResult
+from sandboxes import images
+from sandboxes.build_cache import BuildCachePlan
+from sandboxes.images import DockerImageRuntime, ImageBuildSpec, ImageManager, ImageStore, build_cache_affinity
+from sandboxes.sandbox import CommandResult
 
 TEST_TIER = "contract"
 

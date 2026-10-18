@@ -13,13 +13,13 @@ import unittest
 from tempfile import TemporaryDirectory
 
 from tests.chunk_store_support import REPOSITORY, ChunkStoreFixture, ObjectServer, sample_images
-from ucloud_sandboxes.chunk_index import http_range, http_request
-from ucloud_sandboxes.chunk_store_node import (ChunkStoreClient, ChunkStoreNode, ChunkStoreServer, ExtentCache,
+from sandboxes.chunk_index import http_range, http_request
+from sandboxes.chunk_store_node import (ChunkStoreClient, ChunkStoreNode, ChunkStoreServer, ExtentCache,
                                                ReplicaMirror, S3Source, locator_objects)
-from ucloud_sandboxes.environment_artifact import load_environment
-from ucloud_sandboxes.environment_cache import VerifiedEnvironmentCache
-from ucloud_sandboxes.environment_rafs import load_rafs_image, store_access, store_locator
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.environment_artifact import load_environment
+from sandboxes.environment_cache import VerifiedEnvironmentCache
+from sandboxes.environment_rafs import load_rafs_image, store_access, store_locator
+from sandboxes.managed_registry import RegistryRequestError
 
 TEST_TIER = "contract"
 MIB = 1024 ** 2
@@ -114,7 +114,7 @@ class ChunkStoreNodeTests(unittest.TestCase):
         # A replica on a Volume: a cold read takes milliseconds. It is faulted in
         # on a read thread, never on the loop that serves every other request.
         from unittest import mock
-        from ucloud_sandboxes import chunk_store_node
+        from sandboxes import chunk_store_node
         store, (hot, cold) = StoreNode(self, self.objects, self.root), self.keys[:2]
         for key in (hot, cold):
             store.get(key, 0, 4096)
@@ -369,7 +369,7 @@ class StoreNodeConfigTests(unittest.TestCase):
                 "store_node": {**self.NODE, **changes}}
 
     def test_strict_off_by_default_and_round_trips(self):
-        from ucloud_sandboxes.environment_config import ChunkStoreConfig
+        from sandboxes.environment_config import ChunkStoreConfig
         from tests.test_chunk_store_formats import ChunkStoreConfigTests
         self.assertNotIn("store_node", ChunkStoreConfig.from_dict(ChunkStoreConfigTests.RAW).to_dict())
         store = ChunkStoreConfig.from_dict(self.raw())
@@ -412,8 +412,8 @@ class StoreNodeConfigTests(unittest.TestCase):
         import re
         import subprocess
         from tests import test_vm_init as vm_fixtures
-        from ucloud_sandboxes.environment_config import ChunkStoreConfig
-        from ucloud_sandboxes.vm_init import render_vm_init_script
+        from sandboxes.environment_config import ChunkStoreConfig
+        from sandboxes.vm_init import render_vm_init_script
         cache = {"listen": "10.42.0.10:3142", "url": "http://10.42.0.10:3142", "cache_dir": "/var/lib/ucloud-package-cache",
                  "max_bytes": 200 * 1024 ** 3, "upstreams": {"archive.ubuntu.com": "http://mirrors.dotsrc.org"}}
         store = ChunkStoreConfig.from_dict(self.raw(package_cache=cache))
@@ -439,8 +439,8 @@ class StoreNodeConfigTests(unittest.TestCase):
 
     def test_the_store_role_renders_a_node_without_fleet_services(self):
         from tests import test_vm_init as vm_fixtures
-        from ucloud_sandboxes.environment_config import ChunkStoreConfig
-        from ucloud_sandboxes.vm_init import render_vm_init_script
+        from sandboxes.environment_config import ChunkStoreConfig
+        from sandboxes.vm_init import render_vm_init_script
         store = ChunkStoreConfig.from_dict(self.raw())
         options = vm_fixtures.VmInitTests._options(
             role="store", chunk_store_config_json=json.dumps(store.to_dict()), chunk_store_read_token=READ,
@@ -483,7 +483,7 @@ class StoreNodeConfigTests(unittest.TestCase):
         syntax = subprocess.run(["bash", "-n"], input=script, text=True, capture_output=True)
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
         # ucloud-chunk-serve: only when pinned, checked against the pin, its own unit.
-        from ucloud_sandboxes.chunk_store_node import NATIVE_SERVER
+        from sandboxes.chunk_store_node import NATIVE_SERVER
         self.assertNotIn("ucloud-chunk-serve.service", units(script))
         self.assertIn("disable --now ucloud-chunk-serve.service", script)
         pin = "ab" * 32
@@ -511,9 +511,9 @@ class StoreNodeConfigTests(unittest.TestCase):
 
     def test_the_index_runs_only_where_serve_index_puts_it(self):
         from types import SimpleNamespace
-        from ucloud_sandboxes.chunk_convert import serve_chunk_index
+        from sandboxes.chunk_convert import serve_chunk_index
         from unittest import mock
-        from ucloud_sandboxes.environment_config import ChunkStoreConfig
+        from sandboxes.environment_config import ChunkStoreConfig
         with TemporaryDirectory() as directory:
             path = Path(directory) / "chunk-store.json"
             path.write_text(json.dumps(self.raw(serve_index=False) | {"index_url": "http://10.42.0.2:5090"}))
@@ -521,7 +521,7 @@ class StoreNodeConfigTests(unittest.TestCase):
             # On the gateway, with the index on the store node: make the tokens, then stop.
             tokens = {"read_token_file": f"{directory}/index/read.token", "write_token_file": f"{directory}/index/w"}
             store = ChunkStoreConfig.from_dict(self.raw() | tokens)
-            with mock.patch("ucloud_sandboxes.chunk_convert._chunk_store", return_value=store):
+            with mock.patch("sandboxes.chunk_convert._chunk_store", return_value=store):
                 self.assertEqual(serve_chunk_index(SimpleNamespace(chunk_store_config=None, config=path)), 78)
             self.assertEqual(oct(Path(tokens["read_token_file"]).stat().st_mode & 0o777), "0o600")
             self.assertTrue(Path(tokens["write_token_file"]).exists())

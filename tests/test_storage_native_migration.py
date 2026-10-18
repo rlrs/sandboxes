@@ -6,13 +6,13 @@ import shutil
 import time
 import unittest
 
-from ucloud_sandboxes.storage_native_migration import (
+from sandboxes.storage_native_migration import (
     StorageNativeMigration,
     StorageNativeMigrationStore,
     StorageNativeSandboxManifest,
 )
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistration
-from ucloud_sandboxes.hibernation import (
+from sandboxes.direct_registry import DirectSandboxRegistration
+from sandboxes.hibernation import (
     HibernationArtifactFile,
     HibernationArtifactStore,
     HibernationFileRole,
@@ -21,8 +21,8 @@ from ucloud_sandboxes.hibernation import (
     HibernationValidationError,
     LocalHibernationArtifactFile,
 )
-from ucloud_sandboxes.sandbox import SandboxSecuritySpec, SandboxSpec
-from ucloud_sandboxes.storage_native_registry import (
+from sandboxes.sandbox import SandboxSecuritySpec, SandboxSpec
+from sandboxes.storage_native_registry import (
     PublishedStorageLayer,
     StorageSnapshotPublication,
 )

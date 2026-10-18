@@ -15,7 +15,7 @@ from pathlib import Path
 import re
 import tempfile
 
-from ucloud_sandboxes.oci_flat_delta import index_flat_tar, plan_flat_delta, write_flat_delta
+from sandboxes.oci_flat_delta import index_flat_tar, plan_flat_delta, write_flat_delta
 
 
 class CheckedReader:

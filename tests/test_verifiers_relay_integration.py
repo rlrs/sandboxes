@@ -11,7 +11,7 @@ import unittest
 
 from aiohttp import web
 
-from ucloud_sandboxes.model_relay import create_model_relay_app
+from sandboxes.model_relay import create_model_relay_app
 from tests.postgres_fixture import postgres_database
 from tests.support import sdk_skip_reason
 

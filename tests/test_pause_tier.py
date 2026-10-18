@@ -16,15 +16,15 @@ from tests import test_direct_provisioner as provisioner_fixtures
 from tests import test_direct_warden as warden_fixtures
 from tests import test_managed_control_admission as managed_fixtures
 from tests import test_resident_memory as resident_fixtures
-from ucloud_sandboxes import pause_tier
-from ucloud_sandboxes.background_io import Pressure, PressureSampler
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.direct_warden import CommandResult, DirectRunscWarden, DirectWardenError
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.models import ResidentWaitMetrics
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.pause_tier import (
+from sandboxes import pause_tier
+from sandboxes.background_io import Pressure, PressureSampler
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.direct_warden import CommandResult, DirectRunscWarden, DirectWardenError
+from sandboxes.hibernation import HibernationState
+from sandboxes.models import ResidentWaitMetrics
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.pause_tier import (
     ESCALATION_CONCURRENCY,
     PREFETCH_MIN_SWAP_BYTES,
     RECLAIM_WINDOW_BYTES,
@@ -48,10 +48,10 @@ from ucloud_sandboxes.pause_tier import (
     ZSWAP_SHARE_OF_BOUND,
     cap_zswap,
 )
-from ucloud_sandboxes.resident_memory import ResidentMemoryReclaimer, ResidentReclaimResult
-from ucloud_sandboxes.sandbox import SandboxConflictError
-from ucloud_sandboxes.transition_admission import MemoryDemand
-from ucloud_sandboxes.warm_park import WarmParkDeferred, decide_resident_wait
+from sandboxes.resident_memory import ResidentMemoryReclaimer, ResidentReclaimResult
+from sandboxes.sandbox import SandboxConflictError
+from sandboxes.transition_admission import MemoryDemand
+from sandboxes.warm_park import WarmParkDeferred, decide_resident_wait
 
 GIB = 1024**3
 MIB = 1024**2
@@ -609,7 +609,7 @@ class ThawPrefetchWardenTests(unittest.TestCase):
     def test_failed_slow_or_foreign_prefetch_still_resumes(self):
         self._ram()
         with patch.object(pause_tier, "prefetch", side_effect=OSError(errno.EIO, "swap")), \
-                self.assertLogs("ucloud_sandboxes.direct_warden", "WARNING"):
+                self.assertLogs("sandboxes.direct_warden", "WARNING"):
             self.warden.exec(self.sandbox, ("/bin/true",))
         self.assertEqual((self.runner.status, self._paused(), self._stats()), ("running", False, (0, 0)))
         real = os.preadv
@@ -1022,7 +1022,7 @@ class PauseNodeRuntimeTests(unittest.TestCase):
         record, revision = runtime.park_with_activity_revision(
             "agent", operation_id="relay-park:1", generation=1, relay_request_id="r1")
         self.assertEqual((record.state, revision), ("running", 7))
-        with patch("ucloud_sandboxes.node_runtime.WarmParkPolicy.observe_phase") as observe:
+        with patch("sandboxes.node_runtime.WarmParkPolicy.observe_phase") as observe:
             runtime.park_with_activity_revision(
                 "agent", operation_id="relay-park:2", generation=1, relay_request_id="r2",
                 resource_phase=long_hint)

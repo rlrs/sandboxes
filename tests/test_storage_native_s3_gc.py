@@ -8,14 +8,14 @@ import unittest
 from hypothesis import given, settings, strategies as st
 
 from tests.test_storage_native_s3 import FakeExporter, FakeS3
-from ucloud_sandboxes.storage_native_s3 import S3SnapshotPublisher
-from ucloud_sandboxes.storage_native_s3_gc import (
+from sandboxes.storage_native_s3 import S3SnapshotPublisher
+from sandboxes.storage_native_s3_gc import (
     S3SnapshotGcPlan,
     _unreferenced_marker_for_target,
     execute_s3_snapshot_gc,
     plan_s3_snapshot_gc,
 )
-from ucloud_sandboxes.storage_native_registry import PublishedStorageLayer
+from sandboxes.storage_native_registry import PublishedStorageLayer
 
 
 def _publish_live_snapshot(root: Path, s3: FakeS3):

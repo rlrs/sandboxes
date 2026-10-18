@@ -15,31 +15,31 @@ from tests import test_storage_native_migration as migration_fixtures
 from tests import test_direct_provisioner as provisioner_fixtures
 from tests.support import make_dirs
 from tests.test_split_memory_lifecycle import FakeQuota
-from ucloud_sandboxes.checkpoint_components import WorkspaceCaptureRef
-from ucloud_sandboxes.checkpoint_registry import (
+from sandboxes.checkpoint_components import WorkspaceCaptureRef
+from sandboxes.checkpoint_registry import (
     RegistryCheckpointStore,
     OCI_IMAGE,
     canonical_bytes,
     sparse_extents,
 )
-from ucloud_sandboxes.gateway.registry_refs import (
+from sandboxes.gateway.registry_refs import (
     RegistryReferences,
     release_registry_snapshot_reference,
 )
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.direct_provisioner import DirectSandboxProvisioner
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.managed_process import load_parked_managed_state
-from ucloud_sandboxes.memory_backing import MemoryBackingStore
-from ucloud_sandboxes.storage_native_daemon import StorageVolumeState
-from ucloud_sandboxes.direct_warden import DirectWardenError
-from ucloud_sandboxes.hibernation import HibernationArtifactStore, HibernationState
-from ucloud_sandboxes.storage_native_migration import (
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.direct_provisioner import DirectSandboxProvisioner
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.managed_process import load_parked_managed_state
+from sandboxes.memory_backing import MemoryBackingStore
+from sandboxes.storage_native_daemon import StorageVolumeState
+from sandboxes.direct_warden import DirectWardenError
+from sandboxes.hibernation import HibernationArtifactStore, HibernationState
+from sandboxes.storage_native_migration import (
     StorageNativeMigration,
     StorageNativeMigrationStore,
 )
-from ucloud_sandboxes.storage_native_registry import (
+from sandboxes.storage_native_registry import (
     StorageSnapshotPublication,
     PublishedStorageLayer,
 )
@@ -147,7 +147,7 @@ class CheckpointRegistryTests(unittest.TestCase):
             )
 
         with patch(
-            "ucloud_sandboxes.checkpoint_registry.sparse_extents", side_effect=extents
+            "sandboxes.checkpoint_registry.sparse_extents", side_effect=extents
         ):
             snapshot = self.publish()
         self.assertEqual(StorageNativeMigration.from_dict(snapshot.to_dict()), snapshot)

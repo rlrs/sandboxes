@@ -3,11 +3,11 @@ import os
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes import cli
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.models import InstancePhase
-from ucloud_sandboxes.providers.base import InstanceCreateIntent, ProviderConfiguration
-from ucloud_sandboxes.providers.hetzner import (
+from sandboxes import cli
+from sandboxes.config import DeploymentConfig
+from sandboxes.models import InstancePhase
+from sandboxes.providers.base import InstanceCreateIntent, ProviderConfiguration
+from sandboxes.providers.hetzner import (
     HetznerClient,
     HetznerCreateProfile,
     HetznerError,

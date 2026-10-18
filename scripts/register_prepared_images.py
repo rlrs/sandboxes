@@ -7,8 +7,8 @@ registry blobs. Resolution acquires the usual registry lease before use.
 import argparse
 import json
 from pathlib import Path
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.prepared_images import PreparedImageCatalog, catalog_path
+from sandboxes.config import DeploymentConfig
+from sandboxes.prepared_images import PreparedImageCatalog, catalog_path
 
 
 def main():

@@ -1,4 +1,4 @@
-from ucloud_sandboxes.transition_admission import MemoryDemand
+from sandboxes.transition_admission import MemoryDemand
 from dataclasses import asdict, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,12 +7,12 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from tests.test_node_runtime import _WakeService
-from ucloud_sandboxes.background_io import Pressure, PressureSampler
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.models import ResidentWaitMetrics
-from ucloud_sandboxes.resident_memory import ResidentMemorySample
-from ucloud_sandboxes.resource_evidence import MemoryBackingCapacity
-from ucloud_sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy, decide_resident_wait
+from sandboxes.background_io import Pressure, PressureSampler
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.models import ResidentWaitMetrics
+from sandboxes.resident_memory import ResidentMemorySample
+from sandboxes.resource_evidence import MemoryBackingCapacity
+from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy, decide_resident_wait
 
 GIB = 1024**3
 
@@ -116,10 +116,10 @@ class ResidentMemoryBackingTests(TestCase):
             sampler = PressureSampler(proc, memory_backing_root=Path("/active-memory"))
             with (
                 patch(
-                    "ucloud_sandboxes.background_io.time.monotonic", return_value=100
+                    "sandboxes.background_io.time.monotonic", return_value=100
                 ),
                 patch(
-                    "ucloud_sandboxes.background_io.sample_memory_backing",
+                    "sandboxes.background_io.sample_memory_backing",
                     return_value=self.pressure().memory_backing,
                 ) as read,
             ):
@@ -128,10 +128,10 @@ class ResidentMemoryBackingTests(TestCase):
                 read.assert_called_once_with(Path("/active-memory"), proc_root=proc)
             with (
                 patch(
-                    "ucloud_sandboxes.background_io.time.monotonic", return_value=101
+                    "sandboxes.background_io.time.monotonic", return_value=101
                 ),
                 patch(
-                    "ucloud_sandboxes.background_io.sample_memory_backing",
+                    "sandboxes.background_io.sample_memory_backing",
                     return_value=MemoryBackingCapacity(),
                 ),
             ):
@@ -146,7 +146,7 @@ class ResidentMemoryBackingTests(TestCase):
         )
         runtime = DirectNodeRuntime(service)
         with patch(
-            "ucloud_sandboxes.background_io.sample_memory_backing",
+            "sandboxes.background_io.sample_memory_backing",
             return_value=self.pressure().memory_backing,
         ) as sample:
             observed = runtime._warm_parks.pressure()

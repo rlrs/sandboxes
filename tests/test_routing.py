@@ -13,11 +13,11 @@ from threading import Event
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes import routing as routing_module
-from ucloud_sandboxes.control_plane import _sandbox_transport_epoch
-from ucloud_sandboxes.models import SandboxInventoryEntry, ResourceQuantity, utc_now
-from ucloud_sandboxes.managed_process import ManagedProcessRecord
-from ucloud_sandboxes.routing import (
+from sandboxes import routing as routing_module
+from sandboxes.control_plane import _sandbox_transport_epoch
+from sandboxes.models import SandboxInventoryEntry, ResourceQuantity, utc_now
+from sandboxes.managed_process import ManagedProcessRecord
+from sandboxes.routing import (
     ExecRoute,
     PENDING_DEMAND_TTL_SECONDS,
     PendingSandboxDemand,
@@ -121,19 +121,19 @@ def seed_routing_state(store: RoutingStore, state: RoutingState) -> None:
 
     for route in state.sandboxes.values():
         with patch(
-            "ucloud_sandboxes.routing.utc_now",
+            "sandboxes.routing.utc_now",
             return_value=timestamp(route.updated_at),
         ):
             store.upsert_sandbox(route)
     for route in state.exec_sessions.values():
         with patch(
-            "ucloud_sandboxes.routing.utc_now",
+            "sandboxes.routing.utc_now",
             return_value=timestamp(route.updated_at),
         ):
             store.upsert_exec(route)
     for item in state.pending.values():
         with patch(
-            "ucloud_sandboxes.routing.utc_now",
+            "sandboxes.routing.utc_now",
             return_value=timestamp(item.updated_at),
         ):
             store.upsert_pending(
@@ -160,7 +160,7 @@ class RoutingStoreTests(unittest.TestCase):
             session = store.get_exec("retained-exec")
             resources = ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024)
             expired_at = utc_now() - timedelta(seconds=PENDING_DEMAND_TTL_SECONDS + 1)
-            with patch("ucloud_sandboxes.routing.utc_now", return_value=expired_at):
+            with patch("sandboxes.routing.utc_now", return_value=expired_at):
                 store.upsert_pending("expired", resources)
                 store.upsert_prepared_builder("expired-builder", count=1, ttl_seconds=1)
             store.upsert_pending("pending", resources)
@@ -287,7 +287,7 @@ class RoutingStoreTests(unittest.TestCase):
                     "migration-" + name, expected_phases={"routed"}, phase="complete",
                 )
             history = store.sandbox_migrations(active_only=False)
-            with patch("ucloud_sandboxes.routing._sandbox_migration_from_row",
+            with patch("sandboxes.routing._sandbox_migration_from_row",
                        wraps=routing_module._sandbox_migration_from_row) as decode:
                 scoped = store.sandbox_migrations(active_only=False, sandbox_id=moved.sandbox_id)
                 self.assertEqual(decode.call_count, 1)
@@ -306,7 +306,7 @@ class RoutingStoreTests(unittest.TestCase):
                     route, migration_id="move-" + name, destination_node_id="dest",
                     destination_job_id="dest-job", destination_node_url="http://dest",
                 )
-            with patch("ucloud_sandboxes.routing._sandbox_migration_from_row",
+            with patch("sandboxes.routing._sandbox_migration_from_row",
                        wraps=routing_module._sandbox_migration_from_row) as decode:
                 result = store.sandbox_migrations(active_only=True, sandbox_id="one")
                 self.assertEqual([migration.migration_id for migration in result], ["move-one"])
@@ -323,7 +323,7 @@ class RoutingStoreTests(unittest.TestCase):
                 ))
             identity = {"node_id": "node", "job_id": "job", "node_url": "http://node"}
             first = store.sandbox_routes_matching_node_identity(**identity)
-            with patch("ucloud_sandboxes.routing._sandbox_route_from_row",
+            with patch("sandboxes.routing._sandbox_route_from_row",
                        wraps=routing_module._sandbox_route_from_row) as decode:
                 again = store.sandbox_routes_matching_node_identity(**identity)
                 self.assertEqual(decode.call_count, 0)
@@ -373,7 +373,7 @@ class RoutingStoreTests(unittest.TestCase):
             subprocess.run([
                 sys.executable, "-c",
                 "from pathlib import Path; import sys; "
-                "from ucloud_sandboxes.routing import RoutingStore; "
+                "from sandboxes.routing import RoutingStore; "
                 "RoutingStore(Path(sys.argv[1])).delete_sandboxes_for_jobs_with_error"
                 "(['job'], terminal_error='node_lost')",
                 str(store.path),
@@ -401,7 +401,7 @@ class RoutingStoreTests(unittest.TestCase):
             reopened.upsert_sandbox(replace(route, generation=2, create_operation_id="new"))
             self.assertEqual(reopened.get_exec_loss("accepted"), loss)
             self.assertIsNone(reopened.get_exec_loss("unknown"))
-            with patch("ucloud_sandboxes.routing.utc_now", return_value=utc_now() + timedelta(days=8)):
+            with patch("sandboxes.routing.utc_now", return_value=utc_now() + timedelta(days=8)):
                 self.assertIsNone(reopened.get_exec_loss("accepted"))
                 reopened.load()
             with sqlite3.connect(store.path) as conn:
@@ -482,7 +482,7 @@ class RoutingStoreTests(unittest.TestCase):
             self.assertEqual(reopened.terminal_sandbox_incarnations({("deleted", 3)}), {})
             self.assertEqual(reopened.terminal_sandbox_incarnations(set()), {})
             with patch(
-                "ucloud_sandboxes.routing.utc_now",
+                "sandboxes.routing.utc_now",
                 return_value=utc_now() + timedelta(days=8),
             ):
                 self.assertIsNone(reopened.get_sandbox_loss("lost"))
@@ -2216,7 +2216,7 @@ class RoutingStoreTests(unittest.TestCase):
         for name, age_seconds, create, observe, expected, collection in cases:
             with self.subTest(signal=name), routing_store() as store:
                 with patch(
-                    "ucloud_sandboxes.routing.utc_now",
+                    "sandboxes.routing.utc_now",
                     return_value=now - timedelta(seconds=age_seconds),
                 ):
                     create(store)

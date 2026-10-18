@@ -4,11 +4,11 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from ucloud_sandboxes.registry_storage_migration import (
+from sandboxes.registry_storage_migration import (
     execute_filesystem_registry_to_s3,
     plan_filesystem_registry_to_s3,
 )
-from ucloud_sandboxes.storage_native_s3 import S3ObjectStat
+from sandboxes.storage_native_s3 import S3ObjectStat
 
 
 class FakeMigrationS3:

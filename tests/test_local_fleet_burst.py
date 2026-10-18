@@ -19,7 +19,7 @@ import threading
 import unittest
 
 from tests.harness import LocalFleet
-from ucloud_sandboxes import routing
+from sandboxes import routing
 
 SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 8192, "network": "none"}
 PER_NODE = 65536 // SPEC["disk_mb"]

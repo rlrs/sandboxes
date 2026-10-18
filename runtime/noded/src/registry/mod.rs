@@ -1,4 +1,4 @@
-//! The node registry, `direct-registry.sqlite` (ucloud_sandboxes/direct_registry.py,
+//! The node registry, `direct-registry.sqlite` (sandboxes/direct_registry.py,
 //! `DirectSandboxRegistry`): the SQLite ownership bridge from admission through
 //! create and delete. This port writes the same file Python reads: the same
 //! DDL text, metadata and byte-identical `record_json`, and it keeps every

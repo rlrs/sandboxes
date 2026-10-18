@@ -6,14 +6,14 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
-from ucloud_sandboxes.environment_artifact import ENVIRONMENT_ANNOTATION
-from ucloud_sandboxes.managed_registry import (
+from sandboxes.environment_artifact import ENVIRONMENT_ANNOTATION
+from sandboxes.managed_registry import (
     RegistryImageUsage,
     RegistryRequestError,
     RegistryTag,
     RegistryUsageStore,
 )
-from ucloud_sandboxes.registry_retention import (
+from sandboxes.registry_retention import (
     ENVIRONMENT_REASON,
     SNAPSHOT_REASON,
     EnvironmentBlobIndex,
@@ -490,8 +490,8 @@ class RunRegistryPruneTests(unittest.TestCase):
     deleted: list[tuple[str, str]] = []
 
     def test_unreferenced_old_snapshots_are_deleted_and_counted(self) -> None:
-        from ucloud_sandboxes import cli
-        from ucloud_sandboxes.config import DeploymentConfig
+        from sandboxes import cli
+        from sandboxes.config import DeploymentConfig
         from unittest.mock import patch
 
         with TemporaryDirectory() as raw:
@@ -534,10 +534,10 @@ class RunRegistryPruneTests(unittest.TestCase):
         self.assertNotIn(SNAPSHOTS, self.Client.tag_record_calls)
 
     def test_pressure_eviction_removes_lru_images_and_their_gateway_records(self) -> None:
-        from ucloud_sandboxes import cli
-        from ucloud_sandboxes.config import DeploymentConfig
-        from ucloud_sandboxes.images import ImageRecord, ImageStore
-        from ucloud_sandboxes.registry_disk import measure_registry_disk
+        from sandboxes import cli
+        from sandboxes.config import DeploymentConfig
+        from sandboxes.images import ImageRecord, ImageStore
+        from sandboxes.registry_disk import measure_registry_disk
         from unittest.mock import patch
 
         class Client(self.Client):

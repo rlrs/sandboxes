@@ -5,8 +5,8 @@ from tempfile import TemporaryDirectory
 from hypothesis import settings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import (
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import (
     RoutingStore,
     SandboxRoute,
     SandboxRouteAllocation,

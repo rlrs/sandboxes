@@ -20,36 +20,36 @@ import time
 from unittest.mock import patch
 
 from qualify_volume import Qualifier, GIB
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.checkpoint_registry import RegistryCheckpointStore
-from ucloud_sandboxes.direct_provisioner import DirectSandboxProvisioner
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.managed_registry import RegistryClient
-from ucloud_sandboxes.sandbox import (
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.checkpoint_registry import RegistryCheckpointStore
+from sandboxes.direct_provisioner import DirectSandboxProvisioner
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.managed_registry import RegistryClient
+from sandboxes.sandbox import (
     SandboxSpec,
     SandboxSecuritySpec,
     sandbox_spec_fingerprint,
 )
-from ucloud_sandboxes.storage_native_registry import RegistrySnapshotPublisher
-from ucloud_sandboxes.environment_manifest import (
+from sandboxes.storage_native_registry import RegistrySnapshotPublisher
+from sandboxes.environment_manifest import (
     EnvironmentManifest,
     DOCKER_OVERLAY2_ABI,
 )
-from ucloud_sandboxes.direct_warden import (
+from sandboxes.direct_warden import (
     DirectRunscWarden,
     DirectRunscWardenConfig,
     DirectWardenError,
 )
-from ucloud_sandboxes.hibernation import HibernationRuntimeFingerprint
-from ucloud_sandboxes.image_rootfs import (
+from sandboxes.hibernation import HibernationRuntimeFingerprint
+from sandboxes.image_rootfs import (
     DockerImageConfig,
     MaterializedRootfs,
     OverlayRootfsManager,
 )
-from ucloud_sandboxes.memory_backing import MemoryBackingStore
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.memory_backing import MemoryBackingStore
+from sandboxes.storage_native_daemon import (
     StorageNativeNodeClient,
     StorageNativeNodeConfig,
     StorageNativeNodeService,

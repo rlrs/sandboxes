@@ -1,4 +1,4 @@
-from ucloud_sandboxes.cli import main
+from sandboxes.cli import main
 
 
 if __name__ == "__main__":

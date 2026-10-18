@@ -6,7 +6,7 @@ from threading import Barrier
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.storage_native_daemon import StorageNativeJournal, StorageNativeNodeError
+from sandboxes.storage_native_daemon import StorageNativeJournal, StorageNativeNodeError
 
 TEST_TIER = "contract"
 
@@ -59,7 +59,7 @@ class StorageJournalPoolTests(unittest.TestCase):
     def test_replaced_database_and_fork_fail_closed(self):
         with self.journal._connection():
             pass
-        with patch('ucloud_sandboxes.storage_native_daemon.os.getpid', return_value=-1):
+        with patch('sandboxes.storage_native_daemon.os.getpid', return_value=-1):
             with self.assertRaisesRegex(StorageNativeNodeError, 'after fork'):
                 self.journal.load('absent')
         self.path.rename(self.path.with_suffix('.old'))

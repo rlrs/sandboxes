@@ -9,16 +9,16 @@ import unittest
 from tests import test_control_plane as fixtures
 from tests import test_direct_provisioner as direct_fixtures
 from tests.gateway_support import gateway_services
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.registry import heartbeat_to_dict
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.gateway import placement
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, SandboxInventoryEntry, utc_now
-from ucloud_sandboxes.routing import RoutingStore, wake_pending_demand_id
-from ucloud_sandboxes.wake_placement import WakeSnapshotPublicationRequired
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.sandbox import SandboxCapacityUnavailableError
+from sandboxes import control_plane
+from sandboxes.control_state import ControlStateStore
+from sandboxes.registry import heartbeat_to_dict
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.gateway import placement
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, SandboxInventoryEntry, utc_now
+from sandboxes.routing import RoutingStore, wake_pending_demand_id
+from sandboxes.wake_placement import WakeSnapshotPublicationRequired
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.sandbox import SandboxCapacityUnavailableError
 
 
 class WakeCapacityTests(unittest.TestCase):
@@ -371,7 +371,7 @@ class WakeCapacityTests(unittest.TestCase):
             fixture = direct_fixtures.DirectProvisionerTests()
             provisioner, *_ = fixture.make(Path(directory).resolve())
             service = DirectSandboxService(provisioner)
-            with patch("ucloud_sandboxes.direct_service.threading.Thread") as thread:
+            with patch("sandboxes.direct_service.threading.Thread") as thread:
                 thread.return_value.is_alive.return_value = True
                 for index in range(100):
                     service._start_storage_publication(SimpleNamespace(sandbox_id=str(index), sandbox_generation=1), operation_id="publish:test")

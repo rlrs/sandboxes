@@ -5,7 +5,7 @@ import unittest
 
 from hypothesis import given, settings, strategies as st
 
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     InstancePhase,
     LiveScaleSignals,
     NodeHeartbeat,
@@ -18,8 +18,8 @@ from ucloud_sandboxes.models import (
     ProviderInstance,
     utc_now,
 )
-from ucloud_sandboxes.policy import evaluate_scale
-from ucloud_sandboxes.reconcile import evaluate_builder_scale
+from sandboxes.policy import evaluate_scale
+from sandboxes.reconcile import evaluate_builder_scale
 
 
 _UNSET = object()

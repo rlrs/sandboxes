@@ -11,7 +11,7 @@ import shutil
 import unittest
 
 from tests.chunk_store_support import NYDUS, REPOSITORY, ChunkStoreFixture, sample_images
-from ucloud_sandboxes.chunk_convert import mount_verifier
+from sandboxes.chunk_convert import mount_verifier
 
 TEST_TIER = "linux"
 BINARY = NYDUS or shutil.which("nydus-image") or ""

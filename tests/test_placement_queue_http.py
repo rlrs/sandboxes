@@ -18,14 +18,14 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from tests.test_control_plane import _gateway_server, _running_server, build_heartbeat
-from ucloud_sandboxes.agent import post_heartbeat
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.shared_control.placement_queue import (
+from sandboxes.agent import post_heartbeat
+from sandboxes.models import ResourceQuantity
+from sandboxes.shared_control.placement_queue import (
     PlacementQueue,
     PlacementQueueWorker,
     placement_kinds,
 )
-from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
 TEST_TIER = "contract"
 
@@ -44,7 +44,7 @@ class PlacementQueueHTTPTests(TestCase):
         )
         self.routing.migrate()
         self.patch = patch(
-            "ucloud_sandboxes.control_plane.open_routing_store",
+            "sandboxes.control_plane.open_routing_store",
             return_value=self.routing,
         )
         self.patch.start()
@@ -395,7 +395,7 @@ class PlacementQueueHTTPTests(TestCase):
             )
 
     def test_route_parked_after_warm_check_returns_to_durable_queue(self):
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.control_plane import ControlPlaneHandler
 
         with self.pipeline() as public:
             route = self.running_route(public, "racing-one")

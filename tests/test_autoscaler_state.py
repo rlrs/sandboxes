@@ -4,14 +4,14 @@ import stat
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.autoscaler_state import (
+from sandboxes.autoscaler_state import (
     DEPLOYMENT_LABEL,
     PROVIDER_OPERATION_LABEL,
     AutoscalerStateStore,
     OperationConflictError,
     stable_provider_operation_id,
 )
-from ucloud_sandboxes.models import InstancePhase, ProviderInstance
+from sandboxes.models import InstancePhase, ProviderInstance
 
 TEST_TIER = "contract"
 

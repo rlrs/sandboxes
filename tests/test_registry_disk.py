@@ -10,20 +10,20 @@ import unittest
 from unittest.mock import Mock
 from urllib import error, request
 
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.gateway.image_resolution import RegistryManifestResolutionCache
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.deploy import (
+from sandboxes import control_plane
+from sandboxes.gateway.image_resolution import RegistryManifestResolutionCache
+from sandboxes.config import DeploymentConfig
+from sandboxes.deploy import (
     REGISTRY_STORAGE_SYSTEMD_UNITS,
     SYSTEMD_UNIT_NAMES,
     packaged_systemd_units,
 )
-from ucloud_sandboxes.image_import import import_image_id
-from ucloud_sandboxes.managed_registry import (
+from sandboxes.image_import import import_image_id
+from sandboxes.managed_registry import (
     RegistryMaintenanceBusy,
     registry_maintenance_lock,
 )
-from ucloud_sandboxes.registry_disk import (
+from sandboxes.registry_disk import (
     REGISTRY_DISK_PRESSURE_ERROR_CODE,
     RegistryDiskMonitor,
     RegistryDiskUsage,
@@ -34,8 +34,8 @@ from ucloud_sandboxes.registry_disk import (
     record_registry_prune,
     registry_disk_usage,
 )
-from ucloud_sandboxes.registry_sweep import RegistrySweepResult
-from ucloud_sandboxes.systemd import (
+from sandboxes.registry_sweep import RegistrySweepResult
+from sandboxes.systemd import (
     REGISTRY_BLOB_CACHE_ENV,
     registry_gc_command,
     registry_process_environment,
@@ -143,7 +143,7 @@ class RegistryDiskUsageTests(unittest.TestCase):
                 ("/registry",), cleanup_percent=70, refuse_percent=90,
                 maintenance_state_file=state, statvfs=statvfs, clock=lambda: now[0],
             )
-            with self.assertLogs("ucloud_sandboxes.registry_disk", level="WARNING"):
+            with self.assertLogs("sandboxes.registry_disk", level="WARNING"):
                 self.assertIsNotNone(monitor.refusal())
             monitor.usage()
             now[0] = 5.0

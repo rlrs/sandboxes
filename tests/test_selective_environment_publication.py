@@ -15,12 +15,12 @@ from unittest.mock import patch
 
 from tests.test_environment_layers import FORMAT, FakeDockerStore, Keys, LayerRegistry
 from tests.test_oci_layer_materialize import directory, layer, member
-from ucloud_sandboxes import environment_builder
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes import environment_builder
+from sandboxes.environment_artifact import (
     EnvironmentArtifactRegistry, canonical_bytes, content_digest, layer_chain_id,
     load_image_environment,
 )
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
+from sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
 
 
 class StreamingRegistry(LayerRegistry):
@@ -58,7 +58,7 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
             side_effect=lambda sizes, *, max_groups: planner(sizes, threshold=8192, max_groups=max_groups)))
         # Extraction is privileged in production. Test paths retain the caller's
         # ownership; signature/content/binding checks are not mocked.
-        self.stack.enter_context(patch("ucloud_sandboxes.oci_layer_materialize.os.chown"))
+        self.stack.enter_context(patch("sandboxes.oci_layer_materialize.os.chown"))
         self.base = layer([directory("base"), member("base/data", b"base" * 2048)], compressed=False)
         self.add_image("base", [self.base])
         _, base_environment = self.publish("base")
@@ -188,8 +188,8 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
         self.assertEqual(metrics["groups_built"], 1)
 
     def test_isolated_prepared_view_preserves_original_group_binding_and_phase_metrics(self):
-        from ucloud_sandboxes.environment_prepare import PreparationResult
-        from ucloud_sandboxes.oci_layer_materialize import materialize_layers
+        from sandboxes.environment_prepare import PreparationResult
+        from sandboxes.oci_layer_materialize import materialize_layers
         first = self.tail()
         second = layer([directory("app"), member("app/extra", b"additional file")])
         self.add_image("isolated", [self.base, first, second])
@@ -205,7 +205,7 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
             environment_builder.squash_layer_diffs(directories, view, consume_private_diffs=True)
             return PreparationResult((view,), {"selective_materialization_ms": 12.5,
                 "squash_ms": 3.25, "selective_subprocess_ms": 40.0})
-        with patch("ucloud_sandboxes.environment_prepare.prepare_in_subprocess", side_effect=prepare) as child, \
+        with patch("sandboxes.environment_prepare.prepare_in_subprocess", side_effect=prepare) as child, \
              patch.object(self.store, "_checked", side_effect=AssertionError("must not pull")), \
              publication_metrics() as metrics:
             _, environment = self.publish("isolated")
@@ -220,7 +220,7 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
 
     def test_complete_cache_hit_does_not_start_preparation_child(self):
         self.builder.preparation_subprocess = True
-        with patch("ucloud_sandboxes.environment_prepare.prepare_in_subprocess",
+        with patch("sandboxes.environment_prepare.prepare_in_subprocess",
                    side_effect=AssertionError("cache hit must not spawn")), publication_metrics() as metrics:
             _, environment = self.publish("base")
         self.assertEqual(environment.components, (self.base_component,))
@@ -228,10 +228,10 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
         self.assertNotIn("selective_subprocess_ms", metrics)
 
     def test_isolated_fallback_uses_docker_but_unexpected_failure_does_not_publish(self):
-        from ucloud_sandboxes.environment_prepare import PreparationError, PreparationResult
+        from sandboxes.environment_prepare import PreparationError, PreparationResult
         self.builder.preparation_subprocess = True
         self.add_image("isolated-fallback", [self.base, self.tail()])
-        with patch("ucloud_sandboxes.environment_prepare.prepare_in_subprocess",
+        with patch("sandboxes.environment_prepare.prepare_in_subprocess",
                    return_value=PreparationResult((), {"selective_materialization_ms": 2.0,
                        "squash_ms": 0.0, "selective_subprocess_ms": 30.0}, fallback=True)), \
              patch.object(self.store, "_checked", wraps=self.store._checked) as pull:
@@ -246,7 +246,7 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
             (args[-1] / "partial").write_bytes(b"discarded")
             raise PreparationError("child failed")
         self.client.puts.clear()
-        with patch("ucloud_sandboxes.environment_prepare.prepare_in_subprocess", side_effect=fail), \
+        with patch("sandboxes.environment_prepare.prepare_in_subprocess", side_effect=fail), \
              patch.object(self.store, "_checked", side_effect=AssertionError("must not pull")), \
              patch.object(environment_builder, "sign_layer_component", side_effect=AssertionError("must not sign")), \
              self.assertRaises(PreparationError):
@@ -272,8 +272,8 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
                 original_tags = dict(self.client.tags)
                 self.client.puts.clear()
                 with patch.object(self.store, "_checked", side_effect=AssertionError("must fail closed")), \
-                     patch("ucloud_sandboxes.environment_builder.sign_layer_component", side_effect=AssertionError("must not sign")), \
-                     patch("ucloud_sandboxes.environment_artifact.publish_environment", side_effect=AssertionError("must not sign root")), \
+                     patch("sandboxes.environment_builder.sign_layer_component", side_effect=AssertionError("must not sign")), \
+                     patch("sandboxes.environment_artifact.publish_environment", side_effect=AssertionError("must not sign root")), \
                      self.assertRaisesRegex(ValueError, "identity mismatch"):
                     self.publish(tag)
                 self.assertEqual(self.client.manifests, original_manifests)
@@ -289,8 +289,8 @@ class SelectiveEnvironmentPublicationTests(unittest.TestCase):
         self.add_image("two-tails", [self.base, first, second])
         original_tags = dict(self.client.tags)
         with patch.object(self.store, "_checked", side_effect=AssertionError("must fail closed")), \
-             patch("ucloud_sandboxes.environment_builder.sign_layer_component", side_effect=AssertionError("must not sign")), \
-             patch("ucloud_sandboxes.environment_artifact.publish_environment", side_effect=AssertionError("must not sign root")), \
+             patch("sandboxes.environment_builder.sign_layer_component", side_effect=AssertionError("must not sign")), \
+             patch("sandboxes.environment_artifact.publish_environment", side_effect=AssertionError("must not sign root")), \
              self.assertRaisesRegex(ValueError, "uncompressed layer identity mismatch"):
             self.publish("two-tails")
         self.assertEqual(self.client.tags, original_tags)

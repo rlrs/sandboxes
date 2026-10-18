@@ -33,7 +33,7 @@ import stat
 import threading
 import uuid
 
-from ucloud_sandboxes.storage_native import StorageNativeDevice, StorageNativeDeviceOwner
+from sandboxes.storage_native import StorageNativeDevice, StorageNativeDeviceOwner
 
 LAYER_FORMAT = "fake-storage-layer-v1"
 SEALED = ".fake-sealed"

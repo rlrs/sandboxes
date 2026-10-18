@@ -10,17 +10,17 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from uuid import uuid4
 
-from ucloud_sandboxes.models import ResourceQuantity, utc_now
-from ucloud_sandboxes.routing import SandboxRouteAllocation
-from ucloud_sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
-from ucloud_sandboxes.shared_control import placement_queue
-from ucloud_sandboxes.shared_control.placement_queue import (
+from sandboxes.models import ResourceQuantity, utc_now
+from sandboxes.routing import SandboxRouteAllocation
+from sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
+from sandboxes.shared_control import placement_queue
+from sandboxes.shared_control.placement_queue import (
     PlacementHints,
     PlacementQueue,
     PlacementQueueClient,
     PlacementQueueWorker,
 )
-from ucloud_sandboxes.shared_control.routing_repository import (
+from sandboxes.shared_control.routing_repository import (
     PlacementCommandRejected,
     PostgresRoutingStore,
 )
@@ -450,7 +450,7 @@ class PlacementDeferralTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_group_answer_that_delivered_members_finishes_its_command(self):
         # Only the answer that created members carries their records; the client
         # starts them and repeats the request for the rest.
-        from ucloud_sandboxes.gateway.groups import GROUP_DELIVERED_HEADER
+        from sandboxes.gateway.groups import GROUP_DELIVERED_HEADER
         self.assertEqual(GROUP_DELIVERED_HEADER, placement_queue.GROUP_DELIVERED_HEADER)
         store = Mock(defer=AsyncMock(), complete=AsyncMock(), renew=AsyncMock(return_value=True))
         worker = PlacementQueueWorker(store, origin="http://gateway", token="t")

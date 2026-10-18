@@ -1,12 +1,14 @@
-# ucloud-sandboxes
+# sandboxes
 
 A self-hosted service for running AI agents and their tools in isolated Linux
 sandboxes. Each coding agent, evaluation task or RL rollout gets its own
 environment: pick an image and CPU, memory and disk, then run commands and move
 files through a Python SDK or HTTP API.
 
-The service runs a shared pool of VMs. Production runs on **SDU UCloud**; a Hetzner
-Cloud provider is also built in. Clients use one gateway URL and an API token;
+The service runs a shared pool of VMs on any cloud with a provider plugin: **SDU
+UCloud** (where production runs) and **Hetzner Cloud** are built in, and another
+cloud needs one class implementing the `ComputeProvider` interface
+([operations](docs/operations.md#adding-a-provider)). Clients use one gateway URL and an API token;
 the service handles placement, routing, image builds and scaling.
 
 > **This repository is the server.** Clients install
@@ -37,7 +39,7 @@ flowchart LR
     Gateway --> Builders["Image builders"]
     Builders --> Store["Registry and chunk store"]
     Store --> Workers
-    Autoscaler["Autoscaler"] --> Provider["UCloud (or Hetzner)"]
+    Autoscaler["Autoscaler"] --> Provider["Cloud provider<br/>(UCloud, Hetzner, …)"]
     Provider --> Workers
     Workers --> Relay["Model relay"]
     Relay --> Models["Your model workers"]

@@ -9,12 +9,12 @@ from dataclasses import asdict
 from pathlib import Path
 import time
 
-from ucloud_sandboxes.resident_memory import (
+from sandboxes.resident_memory import (
     ResidentMemorySampler,
     ResidentMemoryReclaimer,
 )
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.resource_evidence import disk_rates, read_leaf_disks
+from sandboxes.hibernation import HibernationState
+from sandboxes.resource_evidence import disk_rates, read_leaf_disks
 
 
 def qualify_live_wait(

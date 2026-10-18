@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from urllib.request import Request
 from urllib.error import HTTPError
 
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.managed_registry import RegistryRequestError
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 with patch.object(sys, 'path', [str(SCRIPTS), *sys.path]):

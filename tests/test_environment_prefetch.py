@@ -17,19 +17,19 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from tests.test_environment_artifact import MemoryRegistry
 from tests.test_erofs_metadata import LAYOUT_TWO, NEEDS_LAYOUT_TWO, build_tree, builder_image, scattered_tree
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes.environment_artifact import (
     CHUNK_BYTES, EnvironmentArtifactRegistry, content_digest, sign_component,
 )
-from ucloud_sandboxes.environment_backend import (
+from sandboxes.environment_backend import (
     EnvironmentBackend, EnvironmentBackendClient, EnvironmentBackendServer, PrefetchPolicy, serve_backend,
 )
-from ucloud_sandboxes.environment_cache import VerifiedEnvironmentCache
-from ucloud_sandboxes.environment_metadata import sign_hint, sign_metadata_hint
-from ucloud_sandboxes.environment_rootfs import EnvironmentRootfsStore
-from ucloud_sandboxes.environment_trace import (TRACE_ANNOTATION, LocalTraceStore, RegistryTraceStore,
+from sandboxes.environment_cache import VerifiedEnvironmentCache
+from sandboxes.environment_metadata import sign_hint, sign_metadata_hint
+from sandboxes.environment_rootfs import EnvironmentRootfsStore
+from sandboxes.environment_trace import (TRACE_ANNOTATION, LocalTraceStore, RegistryTraceStore,
                                                 trace_order)
-from ucloud_sandboxes.managed_registry import RegistryRequestError
-from ucloud_sandboxes.models import ENVIRONMENT_IO_METRICS, NodeRuntimeMetrics, utc_now
+from sandboxes.managed_registry import RegistryRequestError
+from sandboxes.models import ENVIRONMENT_IO_METRICS, NodeRuntimeMetrics, utc_now
 
 CHUNKS = 40
 
@@ -344,7 +344,7 @@ class StartupTraceTests(PrefetchFixture):
                               ("oversized", b" " * (65 * 1024) + json.dumps(good).encode())):
             with self.subTest(name=name):
                 path.write_bytes(payload)
-                with self.assertLogs("ucloud_sandboxes.environment_trace", "WARNING"):
+                with self.assertLogs("sandboxes.environment_trace", "WARNING"):
                     self.assertEqual(store.load(self.component), ("invalid", None))
                 self.assertFalse(path.exists())
         os.symlink(self.image, path)
@@ -434,7 +434,7 @@ class BackendPrefetchTests(PrefetchFixture):
         self.assertEqual(other.metrics()["metadata_prefetch_failed_chunks"], 2)
         other.drop(digest)
         with patch.object(other.cache, "prefetch", side_effect=RuntimeError("scheduler broken")), \
-             self.assertLogs("ucloud_sandboxes.environment_backend", "WARNING"):
+             self.assertLogs("sandboxes.environment_backend", "WARNING"):
             other.ensure(digest)
         self.assertEqual(other.metrics()["prefetch_start_failures"], 1)
 
@@ -602,7 +602,7 @@ class BackendPrefetchTests(PrefetchFixture):
         self.assertIs(backend.metrics()["prefetch_enabled"], False)
 
     def test_service_command_passes_the_off_switch_to_the_backend(self):
-        from ucloud_sandboxes import cli, environment_backend
+        from sandboxes import cli, environment_backend
         common = ["serve-environment-io", "--root", "/state/environment-io", "--socket", "/run/io.sock"]
         for argv, prefetch in ((common, True), ([*common, "--disable-prefetch"], False)):
             with self.subTest(prefetch=prefetch), patch.object(environment_backend, "serve_backend") as serve:

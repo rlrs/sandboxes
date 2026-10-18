@@ -17,11 +17,11 @@ from urllib.request import Request, urlopen
 
 from tests import test_storage_native_daemon as storage_fixtures
 from tests.test_image_rootfs import Overlay2Runner
-from ucloud_sandboxes.direct_runtime import build_direct_runtime_service
-from ucloud_sandboxes.direct_warden import DirectSandbox
-from ucloud_sandboxes.sandbox import SandboxSpec
-from ucloud_sandboxes.node_agent import build_direct_node_agent_server
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.direct_runtime import build_direct_runtime_service
+from sandboxes.direct_warden import DirectSandbox
+from sandboxes.sandbox import SandboxSpec
+from sandboxes.node_agent import build_direct_node_agent_server
+from sandboxes.storage_native_daemon import (
     StorageNativeNodeServer,
     StorageVolumeOwner,
 )
@@ -64,30 +64,30 @@ class DirectRuntimeAssemblyTests(unittest.TestCase):
                     active.mkdir(mode=0o700)
                 stack.enter_context(
                     patch(
-                        "ucloud_sandboxes.direct_runtime.require_capture_barrier_runtime"
+                        "sandboxes.direct_runtime.require_capture_barrier_runtime"
                     )
                 )
                 stack.enter_context(
-                    patch("ucloud_sandboxes.direct_runtime.require_ram_backing_runtime")
+                    patch("sandboxes.direct_runtime.require_ram_backing_runtime")
                 )
                 reflink_gate = stack.enter_context(
-                    patch("ucloud_sandboxes.direct_runtime.require_reflink_restore_runtime")
+                    patch("sandboxes.direct_runtime.require_reflink_restore_runtime")
                 )
                 stack.enter_context(
                     patch(
-                        "ucloud_sandboxes.direct_runtime.installed_sidecar_fingerprints",
+                        "sandboxes.direct_runtime.installed_sidecar_fingerprints",
                         return_value={},
                     )
                 )
                 stack.enter_context(
                     patch(
-                        "ucloud_sandboxes.direct_runtime._cpu_features_sha256",
+                        "sandboxes.direct_runtime._cpu_features_sha256",
                         return_value="1" * 64,
                     )
                 )
                 stack.enter_context(
                     patch(
-                        "ucloud_sandboxes.memory_backing.XfsMemoryQuota.validate_root"
+                        "sandboxes.memory_backing.XfsMemoryQuota.validate_root"
                     )
                 )
                 if ram:
@@ -102,7 +102,7 @@ class DirectRuntimeAssemblyTests(unittest.TestCase):
 
                     stack.enter_context(
                         patch(
-                            "ucloud_sandboxes.memory_backing.subprocess.run",
+                            "sandboxes.memory_backing.subprocess.run",
                             side_effect=filesystem_probe,
                         )
                     )

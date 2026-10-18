@@ -12,7 +12,7 @@ StateDirectoryMode=0700
 # HETZNER_S3_* (or the names chunk_store configures); only this service and
 # builders hold the key, workers get presigned URLs.
 EnvironmentFile=-/etc/ucloud-sandboxes/chunk-store.env
-ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/ucloud-sandboxes serve-chunk-index --config /etc/ucloud-sandboxes/deployment.json
+ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/sandboxes serve-chunk-index --config /etc/ucloud-sandboxes/deployment.json
 Restart=always
 RestartSec=2
 # Exit 78: chunk_store is not configured; stay stopped until it is.

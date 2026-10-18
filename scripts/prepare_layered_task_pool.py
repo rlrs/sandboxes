@@ -67,8 +67,8 @@ def main():
     if (os.getuid() != 0 or not args.root.is_absolute()
             or not 1 <= args.max_delta_mib <= 1024 or min(args.growth_limit_gib, args.free_floor_gib) < 1):
         parser.error('requires root, an absolute work directory and valid storage bounds')
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.registry_disk import registry_disk_usage
     config = DeploymentConfig.from_file(args.config)
     account = pwd.getpwnam(args.service_user)
     uid, gid = account.pw_uid, account.pw_gid

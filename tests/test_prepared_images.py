@@ -7,10 +7,10 @@ import tarfile
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.build_context_store import BuildContextBlobStore
-from ucloud_sandboxes.image_foundations import openswe_foundation, tmax_foundation, tmax_inline_foundation, terminal_foundation
-from ucloud_sandboxes.images import ImageBuildSpec
-from ucloud_sandboxes.prepared_images import PreparedImageCatalog, resolve_build, read_context, SMITH_TAIL
+from sandboxes.build_context_store import BuildContextBlobStore
+from sandboxes.image_foundations import openswe_foundation, tmax_foundation, tmax_inline_foundation, terminal_foundation
+from sandboxes.images import ImageBuildSpec
+from sandboxes.prepared_images import PreparedImageCatalog, resolve_build, read_context, SMITH_TAIL
 
 TEST_TIER = "contract"
 

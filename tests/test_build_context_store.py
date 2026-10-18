@@ -9,7 +9,7 @@ import stat
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.build_context_store import (
+from sandboxes.build_context_store import (
     BuildContextBlobStore,
     ContentLengthReader,
 )

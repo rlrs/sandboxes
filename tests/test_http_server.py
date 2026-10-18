@@ -7,8 +7,8 @@ from threading import Event, Thread, current_thread
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.http_server import HighBacklogThreadingHTTPServer, UnixSocketServerMixin
-from ucloud_sandboxes.http_server import JsonHttpHandler, RequestBodyTooLargeError
+from sandboxes.http_server import HighBacklogThreadingHTTPServer, UnixSocketServerMixin
+from sandboxes.http_server import JsonHttpHandler, RequestBodyTooLargeError
 
 TEST_TIER = "contract"
 
@@ -144,7 +144,7 @@ class HttpServerTests(unittest.TestCase):
     def test_worker_start_failure_releases_admission_and_removes_queued_socket(self):
         server = HighBacklogThreadingHTTPServer(('127.0.0.1', 0), _NoopHandler, max_request_threads=1)
         try:
-            with patch('ucloud_sandboxes.http_server.Thread.start', side_effect=RuntimeError('start failed')):
+            with patch('sandboxes.http_server.Thread.start', side_effect=RuntimeError('start failed')):
                 with self.assertRaisesRegex(RuntimeError, 'start failed'):
                     server.process_request(object(), ('127.0.0.1', 1))
             self.assertFalse(server._request_work)
@@ -250,7 +250,7 @@ class HttpServerTests(unittest.TestCase):
         server = HighBacklogThreadingHTTPServer(("127.0.0.1", 0), _NoopHandler)
         sender, receiver = socket.socketpair()
         try:
-            with patch("ucloud_sandboxes.http_server.HTTP_OVERLOAD_DRAIN_SECONDS", 0):
+            with patch("sandboxes.http_server.HTTP_OVERLOAD_DRAIN_SECONDS", 0):
                 server._reject_overload(receiver)
             self.assertEqual(len(server._overload_drains), 1)
             server.service_actions()

@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 
-from ucloud_sandboxes.dashboard import (
+from sandboxes.dashboard import (
     DASHBOARD_HTML,
     DASHBOARD_JS,
 )

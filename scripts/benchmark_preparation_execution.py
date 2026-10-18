@@ -31,7 +31,7 @@ def participant(connection, source_root, fixture_root, work_root, process_mode):
     """Each worker owns fresh private trees for its entire bounded lifetime."""
     try:
         sys.path.insert(0, str(source_root))
-        from ucloud_sandboxes import environment_builder as builder, oci_layer_materialize as materializer
+        from sandboxes import environment_builder as builder, oci_layer_materialize as materializer
         sources = {}
         for module in (builder, materializer):
             path = Path(module.__file__).resolve()

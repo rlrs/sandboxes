@@ -1,4 +1,4 @@
-//! The per-incarnation lifecycle journal (ucloud_sandboxes/hibernation.py,
+//! The per-incarnation lifecycle journal (sandboxes/hibernation.py,
 //! `HibernationJournalStore`): one canonical-JSON record per sandbox generation.
 //! Phase 1 writes only the running record a create commits; every later
 //! transition stays with the Python agent, which reads these files unchanged.

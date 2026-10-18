@@ -752,7 +752,7 @@ class NodeAgentHandler(BuildContextHttpHandler):
             self._write_json({"job_id": (intent.job_id if intent is not None else "") or ""})
 
     def _internal_create_route(self, path: str) -> None:
-        """runtime/noded's create handoff (ucloud_sandboxes/create_handoff.py)."""
+        """runtime/noded's create handoff (sandboxes/create_handoff.py)."""
         handoff = self.create_handoff
         finish = path.startswith("/internal/v1/creates/") and path.endswith("/finish")
         if path not in ("/internal/v1/creates/admit", "/internal/v1/images/materialize") and not finish:

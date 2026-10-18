@@ -5,18 +5,18 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import unittest
 
-from ucloud_sandboxes.config import SandboxPoolConfig
-from ucloud_sandboxes.gateway.placement import _sandbox_required_capabilities
-from ucloud_sandboxes.direct_network import DirectNetworkError, DirectNetworkManager
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder, DirectOciConfigError
-from ucloud_sandboxes.direct_provisioner import DirectSandboxProvisioner
-from ucloud_sandboxes.network_policy import SandboxNetworkPolicy
-from ucloud_sandboxes.relay_network import (
+from sandboxes.config import SandboxPoolConfig
+from sandboxes.gateway.placement import _sandbox_required_capabilities
+from sandboxes.direct_network import DirectNetworkError, DirectNetworkManager
+from sandboxes.direct_oci import DirectOciConfigBuilder, DirectOciConfigError
+from sandboxes.direct_provisioner import DirectSandboxProvisioner
+from sandboxes.network_policy import SandboxNetworkPolicy
+from sandboxes.relay_network import (
     NetworkRelay,
     relay_policy_rules,
     relay_table_rules,
 )
-from ucloud_sandboxes.sandbox import (
+from sandboxes.sandbox import (
     SandboxSpec,
     SandboxSshSpec,
     sandbox_spec_fingerprint,
@@ -100,7 +100,7 @@ class NetworkPolicyContractTests(unittest.TestCase):
         )
         provisioner.ensure_network(registration)
         self.assertEqual(manager.ensure.call_args.kwargs["network_policy"], RELAY)
-        from ucloud_sandboxes.storage_native_migration import (
+        from sandboxes.storage_native_migration import (
             MIGRATION_CONNECTION_POLICY_DISCONNECT,
         )
 

@@ -3,8 +3,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.gateway import image_recipes
-from ucloud_sandboxes.gateway.image_recipes import (FAILURE_ATTEMPTS, FAILURE_BACKOFF_SECONDS, INFRASTRUCTURE_ATTEMPTS,
+from sandboxes.gateway import image_recipes
+from sandboxes.gateway.image_recipes import (FAILURE_ATTEMPTS, FAILURE_BACKOFF_SECONDS, INFRASTRUCTURE_ATTEMPTS,
                                                     INFRASTRUCTURE_BACKOFF_SECONDS, LOST_BUILD_SECONDS,
                                                     SETTLE_INTERVAL_SECONDS, ImageRecipeStore, RecipeEnsurer,
                                                     RecipeError, Submission, build_payload, validate_recipe)
@@ -347,8 +347,8 @@ class PinnedReferenceTests(unittest.TestCase):
         # the reference moves (it refused, "digest is immutable", and ensure
         # answered 503 for every name in the call).
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.gateway.registry_refs import RegistryReferences
-        from ucloud_sandboxes.managed_registry import RegistryUsageStore
+        from sandboxes.gateway.registry_refs import RegistryReferences
+        from sandboxes.managed_registry import RegistryUsageStore
         with TemporaryDirectory() as directory:
             store = RegistryUsageStore(Path(directory) / "usage.sqlite")
             refs = RegistryReferences(registry_url="http://10.0.0.1:5000", registry_worker_url="http://10.0.0.1:5000",

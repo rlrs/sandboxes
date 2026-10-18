@@ -8,12 +8,12 @@ from threading import Event
 from unittest.mock import Mock, patch
 from urllib.request import Request
 
-from ucloud_sandboxes import control_plane as cp
-from ucloud_sandboxes.gateway import node_rpc
+from sandboxes import control_plane as cp
+from sandboxes.gateway import node_rpc
 from tests import test_control_plane as helpers
 from tests.gateway_support import gateway_services
-from ucloud_sandboxes.routing import RoutingStore
-from ucloud_sandboxes.models import ResourceQuantity
+from sandboxes.routing import RoutingStore
+from sandboxes.models import ResourceQuantity
 from tests.test_control_plane import (
     _gateway_server,
     _running_server,

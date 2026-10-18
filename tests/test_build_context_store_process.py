@@ -5,7 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.build_context_store import BuildContextBlobStore
+from sandboxes.build_context_store import BuildContextBlobStore
 
 TEST_TIER = "contract"
 

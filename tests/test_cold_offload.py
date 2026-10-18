@@ -3,10 +3,10 @@ from datetime import timedelta
 from types import SimpleNamespace
 import unittest
 
-from ucloud_sandboxes.capabilities import STORAGE_NATIVE_CAPABILITY, STORAGE_NATIVE_DETACH_CAPABILITY
-from ucloud_sandboxes.cold_offload import plan_cold_offload
-from ucloud_sandboxes.models import NodeHeartbeat, NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.routing import ProgramRequestState, SandboxRoute
+from sandboxes.capabilities import STORAGE_NATIVE_CAPABILITY, STORAGE_NATIVE_DETACH_CAPABILITY
+from sandboxes.cold_offload import plan_cold_offload
+from sandboxes.models import NodeHeartbeat, NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.routing import ProgramRequestState, SandboxRoute
 from tests.test_control_plane import _portable_snapshot
 
 
@@ -104,7 +104,7 @@ class ColdOffloadTests(unittest.TestCase):
     def test_conditional_detach_checks_wake_and_exact_snapshot_under_writer_fence(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.routing import RoutingStore, wake_pending_demand_id
+        from sandboxes.routing import RoutingStore, wake_pending_demand_id
         with TemporaryDirectory() as root:
             store = RoutingStore(Path(root) / 'routing.sqlite')
             route = store.upsert_sandbox(self.route('cold'))
@@ -132,8 +132,8 @@ class ColdOffloadTests(unittest.TestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
         from unittest.mock import Mock
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
-        from ucloud_sandboxes.routing import RoutingStore, cold_offload_fence
+        from sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.routing import RoutingStore, cold_offload_fence
         from tests.gateway_support import gateway_services
         with TemporaryDirectory() as root:
             store = RoutingStore(Path(root) / 'routing.sqlite')

@@ -2,11 +2,11 @@ from dataclasses import replace
 from datetime import timedelta
 import unittest
 
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     LiveScaleSignals, NodeRuntimeMetrics, ResourceQuantity, SandboxDemand,
     SandboxInventoryEntry, SandboxPlacementRequest, ScalePolicy, utc_now,
 )
-from ucloud_sandboxes.policy import evaluate_scale
+from sandboxes.policy import evaluate_scale
 from tests.test_policy import node
 
 

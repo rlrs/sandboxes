@@ -14,7 +14,7 @@ import sqlite3
 import tarfile
 
 from prepare_shared_task_image import encode, read_flat_index
-from ucloud_sandboxes.oci_flat_delta import plan_flat_delta
+from sandboxes.oci_flat_delta import plan_flat_delta
 
 MIN_FILE_BYTES = 16 * 1024
 

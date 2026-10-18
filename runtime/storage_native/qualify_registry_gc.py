@@ -14,11 +14,11 @@ import subprocess
 import sys
 import time
 
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.environment_artifact import OCI_IMAGE, canonical_bytes, content_digest
-from ucloud_sandboxes.managed_registry import RegistryClient
-from ucloud_sandboxes.registry_sweep import DistributionTree
-from ucloud_sandboxes.systemd import (
+from sandboxes.config import DeploymentConfig
+from sandboxes.environment_artifact import OCI_IMAGE, canonical_bytes, content_digest
+from sandboxes.managed_registry import RegistryClient
+from sandboxes.registry_sweep import DistributionTree
+from sandboxes.systemd import (
     REGISTRY_MAINTENANCE_LOCK, registry_restart_marker, REGISTRY_WRITER_LOCK,
     run_registry_sweep, wait_for_http,
 )
@@ -94,7 +94,7 @@ def main():
         # Exercise the actual packaged ExecStopPost after SIGKILL, where Python's
         # finally block cannot run. Never install this override on a real fleet.
         crash = args.output.with_suffix(".crash.py")
-        crash.write_text("import os, signal\nfrom ucloud_sandboxes.systemd import stopped_registry\n"
+        crash.write_text("import os, signal\nfrom sandboxes.systemd import stopped_registry\n"
                          "with stopped_registry():\n    os.kill(os.getpid(), signal.SIGKILL)\n")
         override = Path("/etc/systemd/system/ucloud-sandbox-registry-gc.service.d/qualification.conf")
         override.parent.mkdir(parents=True, exist_ok=True)

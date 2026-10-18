@@ -17,7 +17,7 @@ TEST_TIER = "contract"
 @unittest.skipUnless(DSN, "requires isolated PostgreSQL")
 class PostgresGatewayContracts(control_plane.ControlPlaneTests):
     def setUp(self):
-        from ucloud_sandboxes.shared_control.routing_repository import (
+        from sandboxes.shared_control.routing_repository import (
             PostgresRoutingStore,
         )
 
@@ -31,7 +31,7 @@ class PostgresGatewayContracts(control_plane.ControlPlaneTests):
         )
         self.gateway_patches = [
             patch("tests.test_control_plane.RoutingStore", self.factory),
-            patch("ucloud_sandboxes.control_plane.open_routing_store", self.factory),
+            patch("sandboxes.control_plane.open_routing_store", self.factory),
         ]
         for item in self.gateway_patches:
             item.start()
@@ -70,8 +70,8 @@ class PostgresGatewayContracts(control_plane.ControlPlaneTests):
     def test_postgres_placement_does_not_wait_for_legacy_process_lock(self):
         from tempfile import TemporaryDirectory
         from tests.gateway_support import gateway_services
-        from ucloud_sandboxes.gateway.placement import _GATEWAY_SCHEDULING_LOCK
-        from ucloud_sandboxes.models import ResourceQuantity
+        from sandboxes.gateway.placement import _GATEWAY_SCHEDULING_LOCK
+        from sandboxes.models import ResourceQuantity
 
         with TemporaryDirectory() as directory:
             placement = gateway_services(

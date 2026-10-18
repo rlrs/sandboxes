@@ -1,4 +1,4 @@
-//! The per-sandbox overlay, as ucloud_sandboxes/image_rootfs.py
+//! The per-sandbox overlay, as sandboxes/image_rootfs.py
 //! `OverlayRootfsManager` makes it (`discard_unregistered`, `prepare`):
 //! create-pipeline spec S7. Python's park, wake and delete read what this
 //! writes: `<bundle>/config.json` and `<bundle>/.ucloud-overlay.json`.

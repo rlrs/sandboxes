@@ -85,7 +85,7 @@ class RetryEvidenceTests(unittest.IsolatedAsyncioTestCase):
 
 class PrimaryCompletionTests(unittest.IsolatedAsyncioTestCase):
     def record(self, **changes):
-        from ucloud_sandboxes.managed_process import ManagedProcessRecord
+        from sandboxes.managed_process import ManagedProcessRecord
         return ManagedProcessRecord(
             sandbox_id='agent', sandbox_generation=1, job_id='primary',
             spec_sha256='a' * 64, sequence=2,

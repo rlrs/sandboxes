@@ -1,6 +1,6 @@
 import unittest
 
-from ucloud_sandboxes.providers.ucloud.payloads import (
+from sandboxes.providers.ucloud.payloads import (
     PrivateNetworkAttachment,
     PublicLinkAttachment,
     apply_private_network_attachment,

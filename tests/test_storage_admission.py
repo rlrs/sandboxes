@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_storage_native_daemon as fixtures
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.storage_native_daemon import (
     StorageNativeConflictError, StorageNativeNodeClient, StorageNativeNodeServer, StorageVolumeOwner, StorageVolumeState,
 )
 
@@ -190,8 +190,8 @@ class CreateAdmissionClassTests(unittest.TestCase):
 
 class PrepareBoundFlagTests(unittest.TestCase):
     def test_daemon_flag_defaults_to_the_production_create_target(self):
-        from ucloud_sandboxes.storage_native_daemon import DEFAULT_MAX_CONCURRENT_PREPARES, StorageNativeNodeConfig
-        from ucloud_sandboxes.storage_native_service import parse_args
+        from sandboxes.storage_native_daemon import DEFAULT_MAX_CONCURRENT_PREPARES, StorageNativeNodeConfig
+        from sandboxes.storage_native_service import parse_args
         required = [
             '--socket', '/run/s.sock', '--deployment-id', 'd', '--node-id', 'n',
             '--backend-socket', '/run/b.sock', '--backend-global-config', '/etc/g.json',

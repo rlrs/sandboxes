@@ -8,9 +8,9 @@ from unittest.mock import patch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder, DirectOciConfigError
-from ucloud_sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
-from ucloud_sandboxes.sandbox import (
+from sandboxes.direct_oci import DirectOciConfigBuilder, DirectOciConfigError
+from sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
+from sandboxes.sandbox import (
     SandboxFilesystemSpec,
     SandboxSecuritySpec,
     SandboxSpec,
@@ -60,7 +60,7 @@ def reported_file_uid(path: Path, uid: int):
 
     with (
         patch.object(Path, "stat", stat_with_fixture_uid),
-        patch("ucloud_sandboxes.direct_oci.os.fstat", fstat_with_fixture_uid),
+        patch("sandboxes.direct_oci.os.fstat", fstat_with_fixture_uid),
     ):
         yield
 

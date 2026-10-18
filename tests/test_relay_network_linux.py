@@ -47,8 +47,8 @@ class RelayNetworkPacketTests(unittest.TestCase):
 
 def worker():
     assert os.readlink("/proc/self/ns/net") != os.environ["UCLOUD_TEST_PARENT_NETNS"]
-    from ucloud_sandboxes.direct_network import DirectNetworkManager
-    from ucloud_sandboxes.network_policy import SandboxNetworkPolicy
+    from sandboxes.direct_network import DirectNetworkManager
+    from sandboxes.network_policy import SandboxNetworkPolicy
 
     def run(*args):
         return subprocess.run(

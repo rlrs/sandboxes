@@ -5,8 +5,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.gateway.registry_refs import _persist_registry_image_protection
-from ucloud_sandboxes.managed_registry import (
+from sandboxes.gateway.registry_refs import _persist_registry_image_protection
+from sandboxes.managed_registry import (
     RegistryImageLeaseNotFound, RegistryUsageStateError, RegistryUsageStore,
 )
 

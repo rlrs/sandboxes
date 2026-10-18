@@ -10,11 +10,11 @@ from unittest.mock import patch
 
 from tests.test_registry_disk import filesystem_config
 from tests.test_registry_sweep import FakeDistribution
-from ucloud_sandboxes.systemd import (
+from sandboxes.systemd import (
     run_registry_process, run_registry_sweep, registry_restart_marker,
     main,
 )
-from ucloud_sandboxes.registry_sweep import RegistrySweepResult
+from sandboxes.registry_sweep import RegistrySweepResult
 
 TEST_TIER = "contract"
 
@@ -27,8 +27,8 @@ class RegistryWriterFenceTests(unittest.TestCase):
     def test_failure_recovery_only_starts_a_registry_stopped_by_collection(self):
         with TemporaryDirectory() as raw:
             writer = Path(raw) / "writer"
-            with patch("ucloud_sandboxes.systemd.REGISTRY_WRITER_LOCK", writer), \
-                    patch("ucloud_sandboxes.systemd.subprocess.run") as runner:
+            with patch("sandboxes.systemd.REGISTRY_WRITER_LOCK", writer), \
+                    patch("sandboxes.systemd.subprocess.run") as runner:
                 self.assertEqual(main(["registry-recover"]), 0)
                 runner.assert_not_called()
                 registry_restart_marker(writer).touch()

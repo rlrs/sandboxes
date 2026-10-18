@@ -14,16 +14,16 @@ from unittest import mock
 # Import the modules, not their TestCases: discovery would rerun them here.
 from tests import test_oci_release as oci_fixtures
 from tests.chunk_store_support import REPOSITORY, Registry, layer
-from ucloud_sandboxes import chunk_convert
-from ucloud_sandboxes.chunk_convert import unpack_environment, verify_regeneration
-from ucloud_sandboxes.chunk_migrate import read_jsonl, regenerate_image, release_oci, verify_regenerations
-from ucloud_sandboxes.environment_artifact import OCI_IMAGE, canonical_bytes, content_digest
-from ucloud_sandboxes.environment_config import EnvironmentDeploymentConfig
-from ucloud_sandboxes.gateway.base_regeneration import (
+from sandboxes import chunk_convert
+from sandboxes.chunk_convert import unpack_environment, verify_regeneration
+from sandboxes.chunk_migrate import read_jsonl, regenerate_image, release_oci, verify_regenerations
+from sandboxes.environment_artifact import OCI_IMAGE, canonical_bytes, content_digest
+from sandboxes.environment_config import EnvironmentDeploymentConfig
+from sandboxes.gateway.base_regeneration import (
     REGENERATED_REPOSITORY, BaseRegenerating, BaseRegeneration, BaseReleased, regenerated_tag, regeneration_claim)
-from ucloud_sandboxes.gateway.image_roots import ImageRootsStore
-from ucloud_sandboxes.images import DockerImageRuntime, ImageBuildSpec, image_build_fingerprint
-from ucloud_sandboxes.managed_registry import RegistryClient, RegistryUsageStore
+from sandboxes.gateway.image_roots import ImageRootsStore
+from sandboxes.images import DockerImageRuntime, ImageBuildSpec, image_build_fingerprint
+from sandboxes.managed_registry import RegistryClient, RegistryUsageStore
 
 TEST_TIER = "contract"
 D = {name: "sha256:" + name * 64 for name in "123456789"}
@@ -327,7 +327,7 @@ class StoreReadRetryTests(unittest.TestCase):
         return read, calls
 
     def test_transient_store_errors_are_retried(self):
-        from ucloud_sandboxes.managed_registry import RegistryRequestError
+        from sandboxes.managed_registry import RegistryRequestError
         read, calls = self.flaky([RegistryRequestError(503, "GET", "/v1/objects/p", "fill failed"),
                                   ConnectionResetError()])
         slept = []
@@ -335,7 +335,7 @@ class StoreReadRetryTests(unittest.TestCase):
         self.assertEqual((len(calls), slept), (3, [2, 4]))
 
     def test_a_client_error_or_an_exhausted_budget_is_final(self):
-        from ucloud_sandboxes.managed_registry import RegistryRequestError
+        from sandboxes.managed_registry import RegistryRequestError
         read, calls = self.flaky([RegistryRequestError(404, "GET", "/v1/objects/p", "missing")])
         with self.assertRaises(RegistryRequestError):
             chunk_convert._retrying(read, sleep=lambda _: None)("u", 0, 5)

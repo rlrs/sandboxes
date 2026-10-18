@@ -17,7 +17,7 @@ DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
 @unittest.skipUnless(DSN, "requires isolated PostgreSQL")
 class PostgresRoutingSnapshotTests(unittest.TestCase):
     def setUp(self):
-        from ucloud_sandboxes.shared_control.routing_repository import (
+        from sandboxes.shared_control.routing_repository import (
             PostgresRoutingStore,
         )
 
@@ -42,7 +42,7 @@ class PostgresRoutingSnapshotTests(unittest.TestCase):
         self.directory.cleanup()
 
     def test_gc_roots_use_the_snapshot_that_passed_completeness(self):
-        from ucloud_sandboxes.shared_control.routing_repository import _Connection
+        from sandboxes.shared_control.routing_repository import _Connection
 
         first = {"root": "already-published"}
         later = {"root": "not-in-the-checked-snapshot"}

@@ -26,17 +26,17 @@ from tests import test_direct_provisioner as direct_fixtures
 from tests.harness import LocalFleet
 from tests.harness.assembly import fixed_metrics
 from tests.test_placement_choice import heartbeat
-from ucloud_sandboxes.admission import ADMISSION_WAIT_HEADER, CREATE_ADMISSION_WAIT, parse_admission_wait
-from ucloud_sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.gateway.create import CreatePlacement
-from ucloud_sandboxes.gateway.node_rpc import ProxiedResponse
-from ucloud_sandboxes.gateway.registry_refs import RegistryReferences
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import RoutingStore, SandboxRouteAllocation, SandboxRouteConflictError
-from ucloud_sandboxes.sandbox import SandboxSpec, SandboxStartupBusyError
-from ucloud_sandboxes.telemetry import Telemetry
+from sandboxes.admission import ADMISSION_WAIT_HEADER, CREATE_ADMISSION_WAIT, parse_admission_wait
+from sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
+from sandboxes.config import DeploymentConfig
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.gateway.create import CreatePlacement
+from sandboxes.gateway.node_rpc import ProxiedResponse
+from sandboxes.gateway.registry_refs import RegistryReferences
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import RoutingStore, SandboxRouteAllocation, SandboxRouteConflictError
+from sandboxes.sandbox import SandboxSpec, SandboxStartupBusyError
+from sandboxes.telemetry import Telemetry
 
 TEST_TIER = "contract"
 DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
@@ -402,7 +402,7 @@ class SqliteIntentFenceTests(IntentFences, unittest.TestCase):
 @unittest.skipUnless(DSN, "requires real PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)")
 class PostgresIntentFenceTests(IntentFences, unittest.TestCase):
     def setUp(self):
-        from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
         self.temp = TemporaryDirectory()
         self.schema = "ucloud_routing_intent_" + uuid4().hex

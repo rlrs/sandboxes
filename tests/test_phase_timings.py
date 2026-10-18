@@ -2,7 +2,7 @@ import threading
 import unittest
 from unittest import mock
 
-from ucloud_sandboxes import phase_timings
+from sandboxes import phase_timings
 
 
 class PhaseTimingsTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class PhaseTimingsTests(unittest.TestCase):
     def test_node_create_reports_phases_recorded_below_the_service(self) -> None:
         from types import SimpleNamespace
 
-        from ucloud_sandboxes.node_runtime import DirectNodeRuntime
+        from sandboxes.node_runtime import DirectNodeRuntime
 
         def create(spec, *, operation):
             with phase_timings.phase("runsc_create"):

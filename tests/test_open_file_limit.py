@@ -2,7 +2,7 @@ import resource
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.cli import raise_open_file_limit
+from sandboxes.cli import raise_open_file_limit
 
 
 class OpenFileLimitTests(unittest.TestCase):

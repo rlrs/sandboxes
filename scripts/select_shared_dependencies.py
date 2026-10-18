@@ -14,7 +14,7 @@ from prepare_shared_task_image import (
     save, source_identity, verified_tar,
 )
 from shared_dependency_index import rank_anchors
-from ucloud_sandboxes.oci_flat_delta import index_flat_tar, plan_flat_delta
+from sandboxes.oci_flat_delta import index_flat_tar, plan_flat_delta
 
 
 def request_identity(args):
@@ -60,9 +60,9 @@ def dependency_selection(args):
     save(request_path, requested)
     with sqlite3.connect(args.dependency_index.resolve().as_uri() + '?mode=ro', uri=True) as db:
         candidates = [json.loads(row[0]) for row in db.execute('SELECT payload FROM anchors')]
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.managed_registry import RegistryClient, registry_repository_tag_from_image_ref
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.managed_registry import RegistryClient, registry_repository_tag_from_image_ref
+    from sandboxes.registry_disk import registry_disk_usage
     config = DeploymentConfig.from_file(args.config)
     baseline = next((r for r in candidates if r['reference'] == args.anchor), None)
     if baseline is None and not args.anchor_filesystem_source:

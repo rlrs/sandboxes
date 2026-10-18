@@ -1,4 +1,4 @@
-//! `SandboxSpec` (ucloud_sandboxes/sandbox.py) as the registry stores it.
+//! `SandboxSpec` (sandboxes/sandbox.py) as the registry stores it.
 //!
 //! `from_dict` ports Python's `SandboxSpec.from_dict` (defaults, profile
 //! merges, exact JSON types) and keeps the result's `to_dict()` and its

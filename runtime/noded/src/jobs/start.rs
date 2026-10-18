@@ -1,5 +1,5 @@
 //! A managed start's request as Python reads it (`ManagedProcessStart` in
-//! ucloud_sandboxes/managed_process.py) and the control payload and launch
+//! sandboxes/managed_process.py) and the control payload and launch
 //! identity it sends (`control_payload`, `control_request_bytes`): the same
 //! checks in the same order with the same messages, and the same bytes.
 

@@ -1,4 +1,4 @@
-//! `TransitionLedger` (ucloud_sandboxes/transition_admission.py), ported
+//! `TransitionLedger` (sandboxes/transition_admission.py), ported
 //! exactly: typed in-flight transition evidence, owned by the admission lock.
 //!
 //! This is accounting, not another scheduler. Unknown byte quantities stay

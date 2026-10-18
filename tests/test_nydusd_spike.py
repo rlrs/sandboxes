@@ -12,11 +12,11 @@ from tempfile import TemporaryDirectory
 import shutil
 
 from tests.chunk_store_support import NYDUS, REPOSITORY, ChunkStoreFixture, sample_images
-from ucloud_sandboxes.chunk_index import MissingChunks, http_range, http_request
-from ucloud_sandboxes.chunk_store_node import (ChunkStoreClient, ChunkStoreNode, ChunkStoreServer, ExtentCache,
+from sandboxes.chunk_index import MissingChunks, http_range, http_request
+from sandboxes.chunk_store_node import (ChunkStoreClient, ChunkStoreNode, ChunkStoreServer, ExtentCache,
                                                S3Source, VirtualBlobs, locator_objects)
-from ucloud_sandboxes.environment_artifact import load_environment
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.environment_artifact import load_environment
+from sandboxes.managed_registry import RegistryRequestError
 
 TEST_TIER = "contract"
 READ, WRITE = "r" * 32, "w" * 32
@@ -105,7 +105,7 @@ class VirtualBlobTests(unittest.TestCase):
         # 8 s each under load. nydusd needs the verified bootstrap and regions.
         from dataclasses import replace
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.environment_rafs import load_nydusd_image, load_rafs_image, store_access
+        from sandboxes.environment_rafs import load_nydusd_image, load_rafs_image, store_access
         self.store.index.service.store_url = self.url
         component_digest = load_environment(self.store.registry, self.roots[0]).components[0]
         loaded = self.store.registry.load(component_digest)
@@ -145,7 +145,7 @@ class VirtualBlobTests(unittest.TestCase):
 
     def test_head_sizes_a_blob_larger_than_one_response(self):
         component, blob = max(self.blobs_kept(), key=lambda item: (self.kept / item[1]).stat().st_size)
-        with mock.patch("ucloud_sandboxes.chunk_store_node.MAX_RESPONSE_BYTES", 4096):
+        with mock.patch("sandboxes.chunk_store_node.MAX_RESPONSE_BYTES", 4096):
             status, headers, _ = http_request("HEAD", f"{self.url}/v2/virtual/{component}/blobs/sha256:{blob}",
                                               headers={"Authorization": "Bearer " + READ}, max_bytes=0)
         self.assertEqual((status, int(headers["Content-Length"])), (200, (self.kept / blob).stat().st_size))
@@ -183,7 +183,7 @@ class NydusdDeviceTests(unittest.TestCase):
     def test_a_refused_device_raises_its_own_error(self):
         """Attach skips leased devices on EBUSY: a refusal must keep its type."""
         from types import SimpleNamespace
-        from ucloud_sandboxes.environment_nydusd import NydusdDevice
+        from sandboxes.environment_nydusd import NydusdDevice
         with TemporaryDirectory() as directory:
             path = Path(directory, "not-a-device")
             path.write_bytes(b"")
@@ -192,7 +192,7 @@ class NydusdDeviceTests(unittest.TestCase):
                 NydusdDevice(path, image, None, trusted_keys={})
 
     def test_a_shared_cache_keeps_a_blob_until_its_last_image_detaches(self):
-        from ucloud_sandboxes.environment_nydusd import NydusdFactory
+        from sandboxes.environment_nydusd import NydusdFactory
         with TemporaryDirectory() as directory:
             binary = Path(directory, "nydusd-bin")
             binary.write_bytes(b"pinned")
@@ -215,7 +215,7 @@ class NydusdDeviceTests(unittest.TestCase):
 
     def test_only_a_blobs_first_daemon_starts_alone(self):
         # M2 wave 1: one lock for every daemon start cost a 20-sandbox burst about 14 s.
-        from ucloud_sandboxes.environment_nydusd import NydusdFactory
+        from sandboxes.environment_nydusd import NydusdFactory
         with TemporaryDirectory() as directory:
             binary = Path(directory, "nydusd-bin")
             binary.write_bytes(b"pinned")
@@ -298,7 +298,7 @@ class ReencodedChunkTests(unittest.TestCase):
                 self.assertEqual(self.rebuilt(blob.name), blob.read_bytes())
 
     def test_a_reused_layer_with_a_misencoded_chunk_is_converted_again(self):
-        from ucloud_sandboxes.chunk_convert import RafsConverter
+        from sandboxes.chunk_convert import RafsConverter
         # With a store node, registration stores each blob's layout, as production's did for the broken blob.
         self.store.index.service.store_url = "http://store-node"
         before = set(self.kept.iterdir())

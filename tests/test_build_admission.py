@@ -1,12 +1,12 @@
 import unittest
 
-from ucloud_sandboxes.build_admission import (
+from sandboxes.build_admission import (
     BUILD_ADMISSION_CAPACITY_LABEL,
     build_admission_capacity,
 )
-from ucloud_sandboxes.images import DEFAULT_MAX_ACTIVE_IMAGE_BUILDS
-from ucloud_sandboxes.models import NodeHeartbeat, utc_now
-from ucloud_sandboxes.registry import heartbeat_from_dict, heartbeat_to_dict
+from sandboxes.images import DEFAULT_MAX_ACTIVE_IMAGE_BUILDS
+from sandboxes.models import NodeHeartbeat, utc_now
+from sandboxes.registry import heartbeat_from_dict, heartbeat_to_dict
 
 
 class BuildAdmissionContractTests(unittest.TestCase):

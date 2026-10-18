@@ -6,7 +6,7 @@ from threading import Event
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.metrics import (
+from sandboxes.metrics import (
     BufferedMetricsStore, MetricEvent, MetricsStore, _EncodedMetricEvent,
 )
 
@@ -120,7 +120,7 @@ class BufferedMetricsTests(unittest.TestCase):
                 def fail(events):
                     store._sqlite_connection.execute("INSERT INTO metric_events(timestamp,timestamp_epoch,kind,data_json,payload_bytes) VALUES ('bad',0,'uncommitted','{}',2)")
                     raise RuntimeError('injected')
-                with patch.object(store, '_append_events', side_effect=fail), self.assertLogs('ucloud_sandboxes.metrics', level='ERROR'):
+                with patch.object(store, '_append_events', side_effect=fail), self.assertLogs('sandboxes.metrics', level='ERROR'):
                     store.append('lost')
                     self.assertTrue(store.flush())
                 store.append('recovered')

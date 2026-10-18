@@ -12,8 +12,8 @@ import tempfile
 import threading
 import time
 
-from ucloud_sandboxes.routing import ExecRoute, RoutingStore, SandboxRoute
-from ucloud_sandboxes.models import ResourceQuantity
+from sandboxes.routing import ExecRoute, RoutingStore, SandboxRoute
+from sandboxes.models import ResourceQuantity
 
 
 def run(root, grouped, delay, count=512):

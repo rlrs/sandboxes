@@ -13,7 +13,7 @@ async def postgres_database():
         raise SkipTest("requires real PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)")
     import psycopg
     from psycopg import sql
-    from ucloud_sandboxes.shared_control.database import PostgresDatabase
+    from sandboxes.shared_control.database import PostgresDatabase
 
     schema = "ucloud_shared_contract_" + uuid4().hex
     database = PostgresDatabase(dsn, "contract", schema=schema, max_connections=4)

@@ -6,12 +6,12 @@ import unittest
 from uuid import uuid4
 
 from tests.test_routing import sandbox_route
-from ucloud_sandboxes.routing import (
+from sandboxes.routing import (
     RoutingStore,
     open_routing_store,
     SandboxRouteAllocation,
 )
-from ucloud_sandboxes.models import ResourceQuantity
+from sandboxes.models import ResourceQuantity
 
 TEST_TIER = "contract"
 
@@ -32,7 +32,7 @@ class RoutingCutoverTests(unittest.TestCase):
     def tearDown(self):
         import psycopg
         from psycopg import sql
-        from ucloud_sandboxes.routing import _POSTGRES_ROUTING_STORES
+        from sandboxes.routing import _POSTGRES_ROUTING_STORES
 
         for key, store in list(_POSTGRES_ROUTING_STORES.items()):
             if key[1] == self.path.resolve():
@@ -46,7 +46,7 @@ class RoutingCutoverTests(unittest.TestCase):
             )
 
     def test_idle_cutover_preserves_generation_and_fences_old_authority(self):
-        from ucloud_sandboxes.shared_control.routing_cutover import cutover
+        from sandboxes.shared_control.routing_cutover import cutover
 
         route = sandbox_route(
             sandbox_id="reused",
@@ -83,7 +83,7 @@ class RoutingCutoverTests(unittest.TestCase):
             self.old.upsert_pending("stale", ResourceQuantity(memory_mb=1))
 
     def test_import_hash_order_is_independent_of_database_collation(self):
-        from ucloud_sandboxes.shared_control.routing_cutover import cutover
+        from sandboxes.shared_control.routing_cutover import cutover
 
         identities = [
             "a-1",
@@ -111,7 +111,7 @@ class RoutingCutoverTests(unittest.TestCase):
             )
 
     def test_active_fleet_refuses_cutover(self):
-        from ucloud_sandboxes.shared_control.routing_cutover import cutover
+        from sandboxes.shared_control.routing_cutover import cutover
 
         self.old.upsert_sandbox(
             sandbox_route(

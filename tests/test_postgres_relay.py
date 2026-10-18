@@ -12,9 +12,9 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from tests.support import requires_sdk
-from ucloud_sandboxes import model_relay as api
-from ucloud_sandboxes.shared_control import relay
-from ucloud_sandboxes.shared_control.model import cancel_until_done
+from sandboxes import model_relay as api
+from sandboxes.shared_control import relay
+from sandboxes.shared_control.model import cancel_until_done
 
 TEST_TIER = "contract"
 
@@ -23,9 +23,9 @@ if DSN:
     import psycopg
     from psycopg import sql
     from psycopg_pool import PoolTimeout
-    from ucloud_sandboxes.shared_control.database import PostgresDatabase
-    from ucloud_sandboxes.shared_control.model import DatabaseAdmissionUnavailable
-    from ucloud_sandboxes.shared_control.relay import (
+    from sandboxes.shared_control.database import PostgresDatabase
+    from sandboxes.shared_control.model import DatabaseAdmissionUnavailable
+    from sandboxes.shared_control.relay import (
         PostgresRelayState,
         RESPONSE_RESERVATION,
     )
@@ -97,7 +97,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import SimpleSpanProcessor
         from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-        from ucloud_sandboxes.telemetry import Telemetry
+        from sandboxes.telemetry import Telemetry
         exporter = InMemorySpanExporter()
         provider = TracerProvider()
         provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -335,7 +335,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
     async def test_live_migration_creates_only_relay_tables_and_status_is_read_only(self):
         from pathlib import Path
         from types import SimpleNamespace
-        from ucloud_sandboxes.shared_control.__main__ import run
+        from sandboxes.shared_control.__main__ import run
 
         async with self.state.store.transaction("test_live_tables") as conn:
             rows = await (await conn.execute(
@@ -347,7 +347,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
             command="status", dsn_file=Path("/unused-test-dsn"),
             deployment_id="not-running", schema=self.schema,
         )
-        with patch("ucloud_sandboxes.shared_control.credentials.read_private_dsn", return_value=DSN):
+        with patch("sandboxes.shared_control.credentials.read_private_dsn", return_value=DSN):
             status = await run(args)
         self.assertEqual(status["authority"], "relay")
         self.assertEqual(status["inflight"], 0)
@@ -376,7 +376,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
             await database.close()
 
     async def test_ready_wait_does_not_swallow_concurrent_cancellation(self):
-        from ucloud_sandboxes.shared_control.relay import _wait_cancellable
+        from sandboxes.shared_control.relay import _wait_cancellable
 
         future = asyncio.get_running_loop().create_future()
         waiter = asyncio.create_task(_wait_cancellable(future, 5))
@@ -1408,7 +1408,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
     ):
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.shared_control.migration import (
+        from sandboxes.shared_control.migration import (
             import_idle_relay,
             assert_relay_cutover,
         )
@@ -1445,7 +1445,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(summary, await import_idle_relay(store, path))
                 assert_relay_cutover(path, "import", self.schema)
                 import sqlite3
-                from ucloud_sandboxes.shared_control.legacy_relay import SQLITE_RELAY_VERSION
+                from sandboxes.shared_control.legacy_relay import SQLITE_RELAY_VERSION
                 with closing(sqlite3.connect(path)) as source:
                     self.assertEqual(int(source.execute("SELECT value FROM relay_meta WHERE key='version'").fetchone()[0]), SQLITE_RELAY_VERSION + 1)
                 with self.assertRaisesRegex(ValueError, "0.5.114 requires PostgreSQL"):
@@ -1477,7 +1477,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
     async def test_import_refuses_active_requests_without_changing_source(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.shared_control.migration import import_idle_relay
+        from sandboxes.shared_control.migration import import_idle_relay
 
         with TemporaryDirectory() as raw:
             path = (Path(raw) / "relay.sqlite").resolve()
@@ -1499,7 +1499,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
         from tests.legacy_relay_fixture import write_legacy_journal
-        from ucloud_sandboxes.shared_control.migration import import_idle_relay, assert_relay_cutover
+        from sandboxes.shared_control.migration import import_idle_relay, assert_relay_cutover
         with TemporaryDirectory() as raw:
             path = Path(raw) / 'old.sqlite'
             registration = await self.state.register_rollout('offline-import')
@@ -1709,7 +1709,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
                 yield conn
 
         with patch.object(self.state._delivery_store, "transaction", fail_once):
-            with self.assertLogs("ucloud_sandboxes.shared_control.relay", "WARNING"):
+            with self.assertLogs("sandboxes.shared_control.relay", "WARNING"):
                 response = await self.state.wait_for_response(request, timeout_seconds=2)
         self.assertTrue(failed)
         self.assertEqual(response.body, b"answer")
@@ -1801,7 +1801,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
     async def test_source_fence_cannot_activate_an_empty_other_database(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.shared_control.migration import import_idle_relay
+        from sandboxes.shared_control.migration import import_idle_relay
 
         with TemporaryDirectory() as raw:
             path = (Path(raw) / "relay.sqlite").resolve()
@@ -2069,7 +2069,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["accepted"])
 
     async def test_resource_phase_is_advice_on_existing_park_not_new_lifecycle_work(self):
-        from ucloud_sandboxes.relay_phase import transport_phase
+        from sandboxes.relay_phase import transport_phase
         arrived = asyncio.Event()
         hints = []
         async def park(request):
@@ -2296,7 +2296,7 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         from pathlib import Path
         from tempfile import TemporaryDirectory
         from scripts.serve_relay_qualification import combined_app
-        from ucloud_sandboxes.config import DeploymentConfig
+        from sandboxes.config import DeploymentConfig
 
         with TemporaryDirectory() as directory:
             config = replace(DeploymentConfig.default(), data_root=directory)

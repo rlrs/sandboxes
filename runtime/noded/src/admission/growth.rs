@@ -1,4 +1,4 @@
-//! Managed primary-process growth (ucloud_sandboxes/direct_service.py
+//! Managed primary-process growth (sandboxes/direct_service.py
 //! `_growth_sample` .. `_update_growth_forecast_locked`, `_growth_turn`):
 //! the cost functions, the in-memory intents and provisional claims, credit
 //! expiry, and per-key turns.

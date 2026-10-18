@@ -1,5 +1,5 @@
 //! The exec fence shared with the Python agent through the kernel (phase 2a;
-//! ucloud_sandboxes/exec_fence.py). Per sandbox id, in the Warden's lock
+//! sandboxes/exec_fence.py). Per sandbox id, in the Warden's lock
 //! directory:
 //!
 //! - `.<id>.transition` (T): Python holds it exclusively for a lifecycle

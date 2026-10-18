@@ -8,9 +8,9 @@ from unittest.mock import patch
 
 from scripts.environment_producer_key import provision
 from tests import test_vm_init as vm_fixtures
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.environment_config import EnvironmentDeploymentConfig, environment_publisher_from_args
-from ucloud_sandboxes.vm_init import render_vm_init_script
+from sandboxes.config import DeploymentConfig
+from sandboxes.environment_config import EnvironmentDeploymentConfig, environment_publisher_from_args
+from sandboxes.vm_init import render_vm_init_script
 
 TEST_TIER = "contract"
 
@@ -18,7 +18,7 @@ TEST_TIER = "contract"
 class EnvironmentBootstrapTests(unittest.TestCase):
     def test_configured_publisher_isolates_preparation_and_keeps_signing_key_in_parent(self):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder
+        from sandboxes.environment_builder import FreshEnvironmentBuilder
 
         self.assertIsNone(environment_publisher_from_args(SimpleNamespace()))
         with TemporaryDirectory() as temporary:
@@ -47,10 +47,10 @@ class EnvironmentBootstrapTests(unittest.TestCase):
 
     def test_node_advertises_actual_runtime_restore_identity_and_selected_adapter(self):
         from tests import test_direct_provisioner as fixtures
-        from ucloud_sandboxes.capabilities import HOST_EROFS_CAPABILITY, RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX
-        from ucloud_sandboxes.direct_service import DirectSandboxService
-        from ucloud_sandboxes.environment_manifest import HOST_EROFS_ABI
-        from ucloud_sandboxes.models import ResourceQuantity
+        from sandboxes.capabilities import HOST_EROFS_CAPABILITY, RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX
+        from sandboxes.direct_service import DirectSandboxService
+        from sandboxes.environment_manifest import HOST_EROFS_ABI
+        from sandboxes.models import ResourceQuantity
         with TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             provisioner, _, _, _, warden = fixtures.DirectProvisionerTests().make(root)
@@ -92,8 +92,8 @@ class EnvironmentBootstrapTests(unittest.TestCase):
                 EnvironmentDeploymentConfig.from_dict({"trusted_keys_file": "/etc/producers.json", **change})
 
     def test_layout_two_publication_is_an_explicit_builder_switch(self):
-        from ucloud_sandboxes.cli import build_parser
-        from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder
+        from sandboxes.cli import build_parser
+        from sandboxes.environment_builder import FreshEnvironmentBuilder
         base = {"trusted_keys_file": "/etc/producers.json"}
         self.assertFalse(EnvironmentDeploymentConfig.from_dict(base).preserve_mtimes)
         raw = DeploymentConfig.default().to_dict()
@@ -146,7 +146,7 @@ class EnvironmentBootstrapTests(unittest.TestCase):
                 render_vm_init_script(vm_fixtures.VmInitTests._options(environment_preserve_mtimes=True))
 
     def test_layout_two_builder_bootstrap_reads_the_whole_mkfs_usage(self):
-        from ucloud_sandboxes.environment_bootstrap import settings
+        from sandboxes.environment_bootstrap import settings
         options = SimpleNamespace(role="builder", environment_registry_url="http://registry:5000",
                                   environment_repository="environments", environment_trusted_keys_json="{}",
                                   environment_signing_key_pem="key", environment_allow_paths=("*",),
@@ -177,7 +177,7 @@ class EnvironmentBootstrapTests(unittest.TestCase):
     def test_deployment_off_switch_reaches_the_worker_backend_command(self):
         from dataclasses import replace
         from tests.test_policy import node
-        from ucloud_sandboxes import cli
+        from sandboxes import cli
         with TemporaryDirectory() as temporary:
             trust = provision(Path(temporary) / "key")["public_trust_file"]
             base = DeploymentConfig.default(scope_id="test")
@@ -255,7 +255,7 @@ class EnvironmentBootstrapTests(unittest.TestCase):
                           + "9" * 64, render_vm_init_script(vm_fixtures.VmInitTests._options(
                               **common, **chunk, **nydusd, environment_chunk_store_url="http://10.42.0.200:5091")))
             self.assertNotIn("--nydusd", node)
-            from ucloud_sandboxes.environment_config import NYDUSD_INSTALL_PATH
+            from sandboxes.environment_config import NYDUSD_INSTALL_PATH
             bundled = render_vm_init_script(vm_fixtures.VmInitTests._options(
                 **common, **chunk, environment_chunk_store_url="http://10.42.0.200:5091",
                 environment_chunk_nydusd=NYDUSD_INSTALL_PATH, environment_chunk_nydusd_sha256="9" * 64))

@@ -10,9 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_storage_native_daemon as fixtures
-from ucloud_sandboxes.storage_native import AgentEnvUblkClient, StorageNativeLayer
-from ucloud_sandboxes.storage_native_compaction import LocalCheckpointCompactor
-from ucloud_sandboxes.storage_native_daemon import StorageVolumeOwner, StorageVolumeState
+from sandboxes.storage_native import AgentEnvUblkClient, StorageNativeLayer
+from sandboxes.storage_native_compaction import LocalCheckpointCompactor
+from sandboxes.storage_native_daemon import StorageVolumeOwner, StorageVolumeState
 
 TEST_TIER = "contract"
 # Bounds only a broken test. Outcomes follow events and joins, never a deadline.
@@ -229,7 +229,7 @@ class LocalCompactionTests(unittest.TestCase):
         with TemporaryDirectory(dir="/tmp") as raw:
             service, owner, entered, resume = self.fixture(Path(raw).resolve(), blocked=True)
             compactor = service._local_compactor
-            with patch("ucloud_sandboxes.storage_native_compaction.LOGGER.exception"):
+            with patch("sandboxes.storage_native_compaction.LOGGER.exception"):
                 try:
                     self.park_cycles(service, owner)
                     self.assertTrue(entered.wait(HANG_SECONDS))
@@ -291,7 +291,7 @@ class LocalCompactionTests(unittest.TestCase):
                 return replace(descriptor, digest="sha256:" + "0" * 64)
 
             service.backend.export_compacted_image = corrupt
-            with patch("ucloud_sandboxes.storage_native_compaction.LOGGER.exception"):
+            with patch("sandboxes.storage_native_compaction.LOGGER.exception"):
                 old = self.park_cycles(service, owner)
                 service._local_compactor.wait(HANG_SECONDS)
             self.assertEqual(service._local_compactor.metrics()["local_compaction_failed"], 1)
@@ -329,7 +329,7 @@ class LocalCompactionTests(unittest.TestCase):
     def test_disk_headroom_and_damaged_candidate_keep_original_checkpoint(self):
         with TemporaryDirectory(dir="/tmp") as raw:
             service, owner, _, _ = self.fixture(Path(raw).resolve())
-            with patch("ucloud_sandboxes.storage_native_compaction.shutil.disk_usage") as usage:
+            with patch("sandboxes.storage_native_compaction.shutil.disk_usage") as usage:
                 usage.return_value.free = 1024
                 old = self.park_cycles(service, owner)
                 service._local_compactor.wait(HANG_SECONDS)

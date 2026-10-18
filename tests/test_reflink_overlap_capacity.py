@@ -6,11 +6,11 @@ import sqlite3
 from threading import Barrier
 import unittest
 
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     DirectRegistryCapacityUnavailable, DirectRegistryConflictError,
     DirectSandboxRegistry,
 )
-from ucloud_sandboxes.direct_warden import DirectSandbox
+from sandboxes.direct_warden import DirectSandbox
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_direct_registry as registry_fixtures
 

@@ -9,12 +9,12 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tests.support import make_dirs
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.guest_identity import resolve_identity
-from ucloud_sandboxes.guest_paths import validate_guest_path, validate_workspace_path
-from ucloud_sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
-from ucloud_sandboxes.sandbox import SandboxSpec, linux_host_entrypoint_script
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.guest_identity import resolve_identity
+from sandboxes.guest_paths import validate_guest_path, validate_workspace_path
+from sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
+from sandboxes.sandbox import SandboxSpec, linux_host_entrypoint_script
 
 
 class GuestEnvironmentTests(unittest.TestCase):

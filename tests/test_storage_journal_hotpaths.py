@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_storage_native_daemon as fixtures
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.storage_native_daemon import (
     StorageNativeJournal, StorageVolumeOwner, StorageVolumeState,
 )
 

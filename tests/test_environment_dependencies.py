@@ -6,13 +6,13 @@ from unittest.mock import patch
 
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
-from ucloud_sandboxes.environment_artifact import OCI_IMAGE, attach_environment_to_image, canonical_bytes, publish_environment
-from ucloud_sandboxes.environment_dependencies import EnvironmentDependencyResolver
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest
+from sandboxes.environment_artifact import OCI_IMAGE, attach_environment_to_image, canonical_bytes, publish_environment
+from sandboxes.environment_dependencies import EnvironmentDependencyResolver
+from sandboxes.environment_manifest import EnvironmentManifest
 
-from ucloud_sandboxes.gateway.registry_refs import (
+from sandboxes.gateway.registry_refs import (
     _persist_registry_image_protection, _registry_lease_coordination, _release_registry_reference_keys)
-from ucloud_sandboxes.managed_registry import RegistryUsageStore, digest_protection_tag
+from sandboxes.managed_registry import RegistryUsageStore, digest_protection_tag
 
 
 class EnvironmentDependencyTests(unittest.TestCase):
@@ -98,7 +98,7 @@ class EnvironmentCachedDependencyTests(artifact_fixtures.EnvironmentArtifactTest
         self.assertEqual(set(tags.values()), {root, self.digest})
         store.release_owner("first:environment")
         tags.clear()  # Registry deletes expired protection tags before the new claim.
-        with patch("ucloud_sandboxes.environment_dependencies.load_image_environment",
+        with patch("sandboxes.environment_dependencies.load_image_environment",
                    side_effect=AssertionError("immutable closure should already be cached")):
             _persist_registry_image_protection(store, image, "second", touch=True,
                 persistent=True, dependency_resolver=resolver)

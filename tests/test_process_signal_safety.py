@@ -8,8 +8,8 @@ import sys
 import unittest
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.direct_service import DirectProcessRunner
-from ucloud_sandboxes.direct_warden import (
+from sandboxes.direct_service import DirectProcessRunner
+from sandboxes.direct_warden import (
     DirectWardenError,
     LinuxPidfdFencer,
     LinuxPidfdHandle,
@@ -29,7 +29,7 @@ class ProcessFenceSignalTests(unittest.TestCase):
     def test_stale_identity_never_opens_a_pidfd(self):
         with (
             patch(
-                "ucloud_sandboxes.direct_warden.hibernation_process_identity_matches",
+                "sandboxes.direct_warden.hibernation_process_identity_matches",
                 return_value=False,
             ),
             patch.object(os, "pidfd_open", create=True) as open_pidfd,
@@ -41,7 +41,7 @@ class ProcessFenceSignalTests(unittest.TestCase):
     def test_identity_change_while_opening_closes_fence(self):
         with (
             patch(
-                "ucloud_sandboxes.direct_warden.hibernation_process_identity_matches",
+                "sandboxes.direct_warden.hibernation_process_identity_matches",
                 side_effect=[True, False],
             ),
             patch.object(os, "pidfd_open", return_value=99, create=True),
@@ -56,9 +56,9 @@ class ProcessFenceSignalTests(unittest.TestCase):
         poller.poll.side_effect = [[], [(99, 1)]]
         handle = LinuxPidfdHandle(4242, 123, 99, proc_root=Path("/proc"))
         with (
-            patch("ucloud_sandboxes.direct_warden.select.poll", return_value=poller),
+            patch("sandboxes.direct_warden.select.poll", return_value=poller),
             patch(
-                "ucloud_sandboxes.direct_warden.hibernation_process_identity_matches",
+                "sandboxes.direct_warden.hibernation_process_identity_matches",
                 return_value=True,
             ),
             patch.object(signal, "pidfd_send_signal", create=True) as send,
@@ -75,7 +75,7 @@ class ProcessFenceSignalTests(unittest.TestCase):
         poller.poll.return_value = [(99, 1)]
         handle = LinuxPidfdHandle(4242, 123, 99, proc_root=Path("/proc"))
         with (
-            patch("ucloud_sandboxes.direct_warden.select.poll", return_value=poller),
+            patch("sandboxes.direct_warden.select.poll", return_value=poller),
             patch.object(signal, "pidfd_send_signal", create=True) as send,
         ):
             handle.terminate(timeout=1)

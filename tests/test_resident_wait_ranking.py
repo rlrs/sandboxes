@@ -1,8 +1,8 @@
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.background_io import Pressure
-from ucloud_sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
+from sandboxes.background_io import Pressure
+from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
 
 
 class ResidentWaitRankingTests(TestCase):
@@ -12,7 +12,7 @@ class ResidentWaitRankingTests(TestCase):
         self.now = 0.0
         self.pressure = Pressure(0.8, 0, 0, 80 * self.GIB)
         self.clock = patch(
-            "ucloud_sandboxes.warm_park.time.monotonic", side_effect=lambda: self.now
+            "sandboxes.warm_park.time.monotonic", side_effect=lambda: self.now
         )
         self.clock.start()
         self.addCleanup(self.clock.stop)
@@ -48,7 +48,7 @@ class ResidentWaitRankingTests(TestCase):
         self.pressure = Pressure(0.04, 0, 0, 4 * self.GIB)
 
     def test_response_burst_can_settle_without_checkpointing(self):
-        from ucloud_sandboxes.transition_admission import MemoryDemand
+        from sandboxes.transition_admission import MemoryDemand
         key = self.retain("agent")
         demand = [MemoryDemand(79 * self.GIB)]
         self.policy.demand = lambda: demand[0]
@@ -63,7 +63,7 @@ class ResidentWaitRankingTests(TestCase):
         self.assertFalse(self.policy.ready(key, memory_bytes=self.GIB))
 
     def test_persistent_forecast_probes_then_rechecks_instead_of_mass_parking(self):
-        from ucloud_sandboxes.transition_admission import MemoryDemand
+        from sandboxes.transition_admission import MemoryDemand
         first = self.retain("first", memory=self.GIB)
         self.now += .1
         second = self.retain("second", memory=self.GIB)
@@ -81,7 +81,7 @@ class ResidentWaitRankingTests(TestCase):
             self.assertFalse(self.policy.ready(second, memory_bytes=self.GIB))
 
     def test_physical_shortage_bypasses_forecast_grace_and_probe_serialization(self):
-        from ucloud_sandboxes.transition_admission import MemoryDemand
+        from sandboxes.transition_admission import MemoryDemand
         first = self.retain("first", memory=self.GIB)
         self.now += .1
         second = self.retain("second", memory=self.GIB)
@@ -94,7 +94,7 @@ class ResidentWaitRankingTests(TestCase):
 
     def test_synchronized_small_heap_burst_does_not_launch_a_checkpoint_wave(self):
         from contextlib import ExitStack
-        from ucloud_sandboxes.transition_admission import MemoryDemand
+        from sandboxes.transition_admission import MemoryDemand
         # One worker's share of 256 agents on eight workers. Actual heaps fit;
         # simultaneous continuations temporarily reserve much larger bounds.
         keys = [self.retain(str(i), memory=self.GIB) for i in range(32)]
@@ -122,8 +122,8 @@ class ResidentWaitRankingTests(TestCase):
 
     def test_backing_shortage_bypasses_forecast_grace(self):
         from dataclasses import replace
-        from ucloud_sandboxes.resource_evidence import MemoryBackingCapacity
-        from ucloud_sandboxes.transition_admission import MemoryDemand
+        from sandboxes.resource_evidence import MemoryBackingCapacity
+        from sandboxes.transition_admission import MemoryDemand
         key = self.retain("agent")
         self.policy.demand = lambda: MemoryDemand(85 * self.GIB)
         self.assertFalse(self.policy.ready(key, memory_bytes=self.GIB))
@@ -287,7 +287,7 @@ class ResidentWaitRankingTests(TestCase):
 
     def test_runtime_records_restore_cost_only_after_success(self):
         from tests.test_node_runtime import _WakeService
-        from ucloud_sandboxes.node_runtime import DirectNodeRuntime
+        from sandboxes.node_runtime import DirectNodeRuntime
 
         service = _WakeService()
         service.provisioner.registry.relay_wake_fence = Mock(return_value=False)
@@ -327,7 +327,7 @@ class ResidentWaitRankingTests(TestCase):
         near = self.retain("near")
         self.now += 97
         fresh = self.retain("fresh")
-        with patch("ucloud_sandboxes.warm_park.time.time", return_value=1000):
+        with patch("sandboxes.warm_park.time.time", return_value=1000):
             self.policy.observe_phase(near, self.hint(ttl=0.1, remaining=300))
         self.assertFalse(self.policy.ready(near, memory_bytes=4 * self.GIB))
         self.pressure_on()
@@ -340,10 +340,10 @@ class ResidentWaitRankingTests(TestCase):
     def test_replayed_or_older_phase_does_not_extend_monotonic_lifetime(self):
         key = self.retain("agent")
         hint = self.hint(sequence=2)
-        with patch("ucloud_sandboxes.warm_park.time.time", return_value=1000):
+        with patch("sandboxes.warm_park.time.time", return_value=1000):
             self.policy.observe_phase(key, hint)
         self.now += 8
-        with patch("ucloud_sandboxes.warm_park.time.time", return_value=900):
+        with patch("sandboxes.warm_park.time.time", return_value=900):
             self.policy.observe_phase(key, hint)
             self.policy.observe_phase(
                 key, self.hint(sequence=1, ttl=300, remaining=300)
@@ -354,7 +354,7 @@ class ResidentWaitRankingTests(TestCase):
 
     def test_new_non_wait_phase_clears_advice_and_generation_keys_do_not_share_it(self):
         key = self.retain("agent")
-        with patch("ucloud_sandboxes.warm_park.time.time", return_value=1000):
+        with patch("sandboxes.warm_park.time.time", return_value=1000):
             self.policy.observe_phase(key, self.hint())
             self.assertIsNone(
                 self.policy._advised_remaining(("agent", 2, key[2]), self.now)

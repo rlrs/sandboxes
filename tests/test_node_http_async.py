@@ -9,7 +9,7 @@ from threading import Event, Thread, current_thread
 import unittest
 from unittest.mock import patch
 from urllib.error import URLError
-from ucloud_sandboxes.node_http_async import AsyncNodeHttpPool
+from sandboxes.node_http_async import AsyncNodeHttpPool
 
 TEST_TIER = "contract"
 

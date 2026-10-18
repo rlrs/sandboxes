@@ -5,8 +5,8 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.storage_native_publisher_support import FakeExporter, digest
-from ucloud_sandboxes.storage_native_registry import PublishedStorageLayer
-from ucloud_sandboxes.storage_native_s3 import (
+from sandboxes.storage_native_registry import PublishedStorageLayer
+from sandboxes.storage_native_s3 import (
     S3ObjectStat,
     S3SnapshotPublisher,
 )
@@ -222,7 +222,7 @@ class Boto3ClientTimeoutTests(unittest.TestCase):
     def test_heads_use_short_timeouts_and_transfers_keep_long_ones(self):
         from unittest.mock import MagicMock
 
-        from ucloud_sandboxes.storage_native_s3 import (
+        from sandboxes.storage_native_s3 import (
             HEAD_CONNECT_TIMEOUT,
             HEAD_READ_TIMEOUT,
             Boto3S3ObjectClient,

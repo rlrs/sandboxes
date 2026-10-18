@@ -1,5 +1,5 @@
 //! The exec fence against the agent's own implementation
-//! (ucloud_sandboxes/exec_fence.py), across processes.
+//! (sandboxes/exec_fence.py), across processes.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -37,8 +37,8 @@ fn python_transitions_and_rust_execs_exclude_each_other() {
     let script = r#"
 import sys
 from pathlib import Path
-from ucloud_sandboxes.exec_fence import ExecFence
-from ucloud_sandboxes.sandbox import SandboxBusyError
+from sandboxes.exec_fence import ExecFence
+from sandboxes.sandbox import SandboxBusyError
 fence = ExecFence(Path(sys.argv[1]))
 try:
     with fence.transition("box", allow_shared=False):
@@ -54,7 +54,7 @@ with fence.transition("box", allow_shared=True):
     let holder = r#"
 import sys, time
 from pathlib import Path
-from ucloud_sandboxes.exec_fence import ExecFence
+from sandboxes.exec_fence import ExecFence
 fence = ExecFence(Path(sys.argv[1]))
 with fence.transition("box", allow_shared=False):
     print("held", flush=True)

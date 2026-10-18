@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 import time
 
-from ucloud_sandboxes.hibernation import (
+from sandboxes.hibernation import (
     HibernationArtifactStore,
     HibernationAuthority,
     HibernationFileRole,

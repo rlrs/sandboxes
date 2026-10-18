@@ -18,42 +18,42 @@ from tests import test_direct_provisioner as direct_fixtures
 from tests import test_storage_native_daemon as storage_fixtures
 from tests import test_storage_native_s3 as s3_fixtures
 from tests import test_storage_native_s3_gc as gc_fixtures
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     DirectRegistryConflictError,
     DirectRegistryError,
 )
-from ucloud_sandboxes.direct_service import DirectProcessRunner, DirectSandboxService
-from ucloud_sandboxes.direct_warden import DirectWardenError
-from ucloud_sandboxes.images import (
+from sandboxes.direct_service import DirectProcessRunner, DirectSandboxService
+from sandboxes.direct_warden import DirectWardenError
+from sandboxes.images import (
     DockerImageRuntime,
     ImageBuildSpec,
     ImageManager,
     ImageStore,
     MaterializedBuildContext,
 )
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.models import SandboxInventoryEntry
-from ucloud_sandboxes.routing import RoutingStore
-from ucloud_sandboxes.sandbox import (
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.models import SandboxInventoryEntry
+from sandboxes.routing import RoutingStore
+from sandboxes.sandbox import (
     CommandResult,
     SandboxAdmissionClosedError,
     SandboxCapacityUnavailableError,
     SandboxFileTooLargeError,
     SandboxRestoreBusyError,
 )
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.storage_native_daemon import (
     StorageNativeNodeClient,
     StorageVolumeState,
     _StorageNativeUnixServer,
 )
-from ucloud_sandboxes.storage_native_migration import StorageNativeMigration
-from ucloud_sandboxes.storage_native_s3_gc import (
+from sandboxes.storage_native_migration import StorageNativeMigration
+from sandboxes.storage_native_s3_gc import (
     plan_s3_snapshot_gc,
     execute_s3_snapshot_gc,
 )
-from ucloud_sandboxes.telemetry import Telemetry
+from sandboxes.telemetry import Telemetry
 
 TEST_TIER = "contract"
 
@@ -446,8 +446,8 @@ class StorageBoundaryTests(unittest.TestCase):
                     storage_snapshot=migration.to_dict(),
                 )
             )
-            from ucloud_sandboxes.lifecycle_commit import LifecycleCommitter, SnapshotReferences
-            from ucloud_sandboxes.models import NodeHeartbeat
+            from sandboxes.lifecycle_commit import LifecycleCommitter, SnapshotReferences
+            from sandboxes.models import NodeHeartbeat
             committer = LifecycleCommitter(store,
                 heartbeat=lambda _: NodeHeartbeat(node_id="node", job_id="job",
                     node_url="http://node", deployment_id="test", updated_at=utc_now(),

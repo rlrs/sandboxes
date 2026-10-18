@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from tests.test_images import _uploaded_context
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, allowlisted_build_view, publication_metrics
-from ucloud_sandboxes.image_rootfs import DockerOverlay2RootfsStore
-from ucloud_sandboxes.images import DockerImageRuntime, ImageBuildSpec, ImageManager, ImageStore
-from ucloud_sandboxes.sandbox import CommandResult
+from sandboxes.environment_builder import FreshEnvironmentBuilder, allowlisted_build_view, publication_metrics
+from sandboxes.image_rootfs import DockerOverlay2RootfsStore
+from sandboxes.images import DockerImageRuntime, ImageBuildSpec, ImageManager, ImageStore
+from sandboxes.sandbox import CommandResult
 
 TEST_TIER = "contract"
 
@@ -64,8 +64,8 @@ class EnvironmentBuilderTests(unittest.TestCase):
                     calls.append("collected")
             store = Store()
             builder = FreshEnvironmentBuilder(store, None, None, root / "scratch")
-            with patch("ucloud_sandboxes.environment_builder.allowlisted_build_view"), \
-                 patch("ucloud_sandboxes.environment_builder.subprocess.run", side_effect=OSError("mkfs failed")), \
+            with patch("sandboxes.environment_builder.allowlisted_build_view"), \
+                 patch("sandboxes.environment_builder.subprocess.run", side_effect=OSError("mkfs failed")), \
                  self.assertRaisesRegex(OSError, "mkfs failed"):
                 builder.build("image", allowlist=("bin",), tag="test")
             self.assertEqual(calls, ["leased", "released", "collected"])
@@ -86,8 +86,8 @@ class EnvironmentBuilderTests(unittest.TestCase):
             builder = FreshEnvironmentBuilder(Store(), None, None, root / "scratch")
             for allowlist, direct in ((("*",), True), (("bin",), False)):
                 with self.subTest(allowlist=allowlist), \
-                     patch("ucloud_sandboxes.environment_builder.allowlisted_build_view") as view, \
-                     patch("ucloud_sandboxes.environment_builder.subprocess.run",
+                     patch("sandboxes.environment_builder.allowlisted_build_view") as view, \
+                     patch("sandboxes.environment_builder.subprocess.run",
                            side_effect=OSError("stop after mkfs")) as run, \
                      self.assertRaises(OSError):
                     builder.build("image", allowlist=allowlist, tag="test")

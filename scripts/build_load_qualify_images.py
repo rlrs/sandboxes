@@ -21,11 +21,11 @@ def records(root, phase=None):
 
 
 def inventory(root, config):
-    from ucloud_sandboxes.build_cache import RegistryBuildCache
-    from ucloud_sandboxes.environment_artifact import load_image_environment
-    from ucloud_sandboxes.environment_config import environment_registry_from_deployment
-    from ucloud_sandboxes.managed_registry import RegistryClient, registry_repository_tag_from_image_ref
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.build_cache import RegistryBuildCache
+    from sandboxes.environment_artifact import load_image_environment
+    from sandboxes.environment_config import environment_registry_from_deployment
+    from sandboxes.managed_registry import RegistryClient, registry_repository_tag_from_image_ref
+    from sandboxes.registry_disk import registry_disk_usage
     registry = RegistryClient(config.registry_url)
     environments = environment_registry_from_deployment(config)
     oci_blobs, erofs_blobs, cache_blobs = {}, {}, {}

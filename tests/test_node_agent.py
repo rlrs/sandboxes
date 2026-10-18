@@ -12,16 +12,16 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 from urllib import error, request
 
-from ucloud_sandboxes.images import DockerImageRuntime
-from ucloud_sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL
-from ucloud_sandboxes.memory_backing import MemoryBackingBusyError
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.node_agent import (
+from sandboxes.images import DockerImageRuntime
+from sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL
+from sandboxes.memory_backing import MemoryBackingBusyError
+from sandboxes.models import ResourceQuantity
+from sandboxes.node_agent import (
     NodeAgentHandler,
     _host_boot_epoch,
     build_builder_node_agent_server,
 )
-from ucloud_sandboxes.sandbox import (
+from sandboxes.sandbox import (
     SandboxDeleteBusyError,
     CommandResult,
     SandboxOperation,

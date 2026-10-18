@@ -30,8 +30,8 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ucloud_sandboxes.guest_agent import ExecExit, ExecOutput, GuestAgentListener  # noqa: E402
-from ucloud_sandboxes.sandbox_exec import ExecSessionManager, SandboxExecSpec  # noqa: E402
+from sandboxes.guest_agent import ExecExit, ExecOutput, GuestAgentListener  # noqa: E402
+from sandboxes.sandbox_exec import ExecSessionManager, SandboxExecSpec  # noqa: E402
 
 UID, GID = os.getuid(), os.getgid()
 

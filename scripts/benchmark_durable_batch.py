@@ -16,7 +16,7 @@ import tempfile
 import threading
 import time
 
-from ucloud_sandboxes.durable_batch import DurableSqliteBatch
+from sandboxes.durable_batch import DurableSqliteBatch
 
 
 def connect(path):

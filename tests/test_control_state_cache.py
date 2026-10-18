@@ -7,9 +7,9 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_registry import build_heartbeat
-from ucloud_sandboxes import control_state
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.models import (
+from sandboxes import control_state
+from sandboxes.control_state import ControlStateStore
+from sandboxes.models import (
     NODE_RUNTIME_METRIC_DEFAULTS, NodeRuntimeMetrics, SandboxInventoryEntry, utc_now,
 )
 
@@ -44,8 +44,8 @@ class ControlStateCacheTests(unittest.TestCase):
 
     def test_nested_additive_metrics_survive_durable_read_and_receive(self):
         from copy import deepcopy
-        from ucloud_sandboxes.resource_evidence import DeviceIO, ResourceEvidence
-        from ucloud_sandboxes.models import ResidentWaitMetrics
+        from sandboxes.resource_evidence import DeviceIO, ResourceEvidence
+        from sandboxes.models import ResidentWaitMetrics
         from scripts.verify_heartbeat_upgrade import verify
 
         for old_cpu, old_device in ((True, False), (False, True), (True, True)):
@@ -367,8 +367,8 @@ class ControlStateCacheTests(unittest.TestCase):
             self.assertFalse(errors)
 
     def test_exec_absence_check_only_loads_inventory_for_an_empty_worker(self):
-        from ucloud_sandboxes.exec_routing import ExecRoutingService, heartbeat_proves_route_absent
-        from ucloud_sandboxes.routing import ExecRoute
+        from sandboxes.exec_routing import ExecRoutingService, heartbeat_proves_route_absent
+        from sandboxes.routing import ExecRoute
         with TemporaryDirectory() as raw:
             store = ControlStateStore(Path(raw) / 'control.sqlite')
             heartbeat = replace(self.heartbeat(), received_at=utc_now(), active_sandboxes=1)
@@ -411,8 +411,8 @@ class ControlStateCacheTests(unittest.TestCase):
 
     def test_body_pooling_requires_fresh_capability_on_the_observed_origin(self):
         from datetime import timedelta
-        from ucloud_sandboxes.capabilities import REQUEST_BODY_KEEPALIVE_CAPABILITY
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.capabilities import REQUEST_BODY_KEEPALIVE_CAPABILITY
+        from sandboxes.control_plane import ControlPlaneHandler
         from tests.gateway_support import gateway_services
         with TemporaryDirectory() as directory:
             store = ControlStateStore(Path(directory) / 'control.sqlite')

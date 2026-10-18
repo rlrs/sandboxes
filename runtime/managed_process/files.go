@@ -17,7 +17,7 @@ import (
 const maxFileOperationBytes = 256 * 1024 * 1024
 
 // The node validates and re-serializes an uploaded archive before it reaches
-// `files extract` (ucloud_sandboxes/upload_archive.py); these repeat its bounds.
+// `files extract` (sandboxes/upload_archive.py); these repeat its bounds.
 const (
 	maxArchiveMembers   = 10000
 	maxArchiveNameBytes = 4096

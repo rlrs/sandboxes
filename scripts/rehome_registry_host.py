@@ -112,7 +112,7 @@ def main() -> int:
     parser.add_argument("--to", dest="new", required=True, help="new registry authority, host:port")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args()
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_file(args.config)
     expected = f"{config.registry_endpoint_host}:{config.registry_port}"
     if args.new != expected:

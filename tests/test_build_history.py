@@ -7,7 +7,7 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.build_history import BuildHistoryStore, terminal_build_summary
+from sandboxes.build_history import BuildHistoryStore, terminal_build_summary
 
 TEST_TIER = "contract"
 

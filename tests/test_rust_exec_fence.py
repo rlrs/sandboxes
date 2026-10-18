@@ -2,7 +2,7 @@
 
 runtime/noded runs execs on running sandboxes without asking the agent. The
 agent's lifecycle transitions fence them through two flock files per sandbox
-and read their activity from one file's mtime (ucloud_sandboxes/exec_fence.py).
+and read their activity from one file's mtime (sandboxes/exec_fence.py).
 A subprocess plays noded here: it takes the locks exactly as noded does.
 """
 
@@ -22,13 +22,13 @@ from unittest.mock import patch
 
 from tests import test_direct_provisioner as fixtures
 from tests import test_vm_init as vm_init_fixtures
-from ucloud_sandboxes import exec_fence
-from ucloud_sandboxes.cli import build_parser, vm_init_options_to_dict
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.sandbox import SandboxBusyError
-from ucloud_sandboxes.vm_init import render_vm_init_script
+from sandboxes import exec_fence
+from sandboxes.cli import build_parser, vm_init_options_to_dict
+from sandboxes.config import DeploymentConfig
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.sandbox import SandboxBusyError
+from sandboxes.vm_init import render_vm_init_script
 
 TEST_TIER = "contract"
 TOKEN = "node-secret"

@@ -16,12 +16,12 @@ from unittest.mock import patch
 import tests.test_direct_provisioner as fixtures
 from tests.test_control_plane import _gateway_server, _running_server, _seed_gateway_node
 from tests.test_guest_agent import build_agent
-from ucloud_sandboxes.capabilities import ARCHIVE_UPLOAD_CAPABILITY
-from ucloud_sandboxes.direct_service import DirectExecResult, DirectSandboxService
-from ucloud_sandboxes.http_server import TRANSFER_CHUNK_BYTES
-from ucloud_sandboxes.sandbox import SandboxFileTooLargeError, SandboxFilesystemSpec
-from ucloud_sandboxes import upload_archive
-from ucloud_sandboxes.upload_archive import (
+from sandboxes.capabilities import ARCHIVE_UPLOAD_CAPABILITY
+from sandboxes.direct_service import DirectExecResult, DirectSandboxService
+from sandboxes.http_server import TRANSFER_CHUNK_BYTES
+from sandboxes.sandbox import SandboxFileTooLargeError, SandboxFilesystemSpec
+from sandboxes import upload_archive
+from sandboxes.upload_archive import (
     ArchivePlan, archive_helper_unsupported, normalized_archive, plan_archive, sandbox_archive_extract_script,
 )
 

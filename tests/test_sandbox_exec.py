@@ -7,8 +7,8 @@ from threading import Condition, Event, Thread
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.models import utc_now
-from ucloud_sandboxes.sandbox_exec import (
+from sandboxes.models import utc_now
+from sandboxes.sandbox_exec import (
     ExecSession,
     ExecSessionCapacityError,
     ExecSessionManager,
@@ -105,7 +105,7 @@ class SandboxExecProtocolTests(unittest.TestCase):
         self.assertEqual(len(manager.events_after(session.id, after=100)), 50)
 
     def test_node_rejects_invalid_initial_wait_before_starting_command(self):
-        from ucloud_sandboxes.node_agent import NodeAgentHandler
+        from sandboxes.node_agent import NodeAgentHandler
         for value in ("nan", "inf", "-1", "100", "oops"):
             handler = object.__new__(NodeAgentHandler)
             handler.exec_manager = Mock()
@@ -136,8 +136,8 @@ class SandboxExecProtocolTests(unittest.TestCase):
                     self.assertEqual(session.events[-1].stream, "exit")
 
     def test_node_returns_safe_admission_response_for_session_capacity(self) -> None:
-        from ucloud_sandboxes.node_agent import NodeAgentHandler
-        from ucloud_sandboxes.telemetry import Telemetry
+        from sandboxes.node_agent import NodeAgentHandler
+        from sandboxes.telemetry import Telemetry
 
         handler = object.__new__(NodeAgentHandler)
         handler.headers = {}
@@ -218,7 +218,7 @@ class SandboxExecProtocolTests(unittest.TestCase):
         sandbox_manager = FakeSandboxManager()
         manager = ExecSessionManager(sandbox_manager, max_sessions=1)
         _install_session(manager, BlockingStdin())
-        with patch("ucloud_sandboxes.sandbox_exec.subprocess.Popen") as popen:
+        with patch("sandboxes.sandbox_exec.subprocess.Popen") as popen:
             with self.assertRaises(ExecSessionCapacityError):
                 manager.start(SandboxExecSpec(sandbox_id="sandbox-two", command=("echo", "ok")))
         popen.assert_not_called()
@@ -306,7 +306,7 @@ class SandboxExecProtocolTests(unittest.TestCase):
         )
 
         with patch(
-            "ucloud_sandboxes.sandbox_exec.subprocess.Popen",
+            "sandboxes.sandbox_exec.subprocess.Popen",
             side_effect=ValueError("embedded null byte"),
         ):
             session = manager.start(spec)
@@ -487,11 +487,11 @@ class SandboxExecProtocolTests(unittest.TestCase):
 
         with (
             patch(
-                "ucloud_sandboxes.sandbox_exec.subprocess.Popen",
+                "sandboxes.sandbox_exec.subprocess.Popen",
                 return_value=process,
             ),
             patch(
-                "ucloud_sandboxes.sandbox_exec.Thread.start",
+                "sandboxes.sandbox_exec.Thread.start",
                 new=fail_second_start,
             ),
         ):

@@ -22,7 +22,7 @@ import threading
 import time
 
 from qualify_volume import GIB, MIB, Qualifier
-from ucloud_sandboxes.resource_evidence import disk_rates, read_leaf_disks
+from sandboxes.resource_evidence import disk_rates, read_leaf_disks
 
 
 def sync_filesystem(path: Path) -> None:

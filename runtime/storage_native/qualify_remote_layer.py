@@ -13,7 +13,7 @@ import time
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from ucloud_sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
+from sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

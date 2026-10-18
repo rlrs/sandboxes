@@ -8,12 +8,12 @@ import unittest
 
 from tests.gateway_support import gateway_services
 from tests.test_control_plane import build_heartbeat, _sandbox_route
-from ucloud_sandboxes.gateway.placement import _node_can_fit_available
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.deployment import package_version
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.resource_admission import node_pressure_score
-from ucloud_sandboxes.runtime_metrics import sample_node_runtime_metrics
+from sandboxes.gateway.placement import _node_can_fit_available
+from sandboxes.control_state import ControlStateStore
+from sandboxes.deployment import package_version
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.resource_admission import node_pressure_score
+from sandboxes.runtime_metrics import sample_node_runtime_metrics
 
 
 class IoPressurePlacementTests(unittest.TestCase):

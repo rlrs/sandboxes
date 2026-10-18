@@ -11,7 +11,7 @@ sdk_project_venv="$check_root/sdk-project-venv"
 # PostgreSQL modules import psycopg; without a DSN their tests skip.
 UV_PROJECT_ENVIRONMENT="$root_project_venv" uv sync --locked --extra postgres
 UV_PROJECT_ENVIRONMENT="$root_project_venv" \
-  uv run --extra postgres ruff check ucloud_sandboxes tests scripts
+  uv run --extra postgres ruff check sandboxes tests scripts
 
 for script in scripts/*.sh; do
   bash -n "$script"

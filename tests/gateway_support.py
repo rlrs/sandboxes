@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ucloud_sandboxes.gateway.services import GatewayServices, build_services
-from ucloud_sandboxes.models import ScalePolicy
-from ucloud_sandboxes.telemetry import Telemetry
+from sandboxes.gateway.services import GatewayServices, build_services
+from sandboxes.models import ScalePolicy
+from sandboxes.telemetry import Telemetry
 
 
 def gateway_services(

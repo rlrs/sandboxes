@@ -332,7 +332,7 @@ class RemoteCommandResult:
 
 
 def packaged_systemd_units() -> dict[str, str]:
-    root = resources.files("ucloud_sandboxes").joinpath("systemd")
+    root = resources.files("sandboxes").joinpath("systemd")
     units: dict[str, str] = {}
     for name in SYSTEMD_UNIT_NAMES:
         units[name] = root.joinpath(name).read_text(encoding="utf-8")
@@ -778,6 +778,9 @@ def render_remote_deploy_script(
         ('"$VENV_DIR/bin/pip" install --force-reinstall "$REMOTE_WHEEL[postgres]"'
          if plan.config.relay_postgres is not None else
          '"$VENV_DIR/bin/pip" install --force-reinstall "$REMOTE_WHEEL"'),
+        # Releases before the rename shipped as "ucloud-sandboxes"; drop it so the
+        # venv holds one copy of the package.
+        '"$VENV_DIR/bin/pip" uninstall --yes --quiet ucloud-sandboxes 2>/dev/null || true',
         "",
         "for unit in \\",
         "  ucloud-sandbox-registry-prune.timer \\",
@@ -876,7 +879,7 @@ def render_remote_deploy_script(
             script_parts.append(f"sudo rm -f {shlex.quote(dropin_path)}")
     script_parts.extend(
         [
-            'sudo "$VENV_DIR/bin/python" -m ucloud_sandboxes.systemd '
+            'sudo "$VENV_DIR/bin/python" -m sandboxes.systemd '
             "gateway-reconcile --config /etc/ucloud-sandboxes/deployment.json",
         ]
     )

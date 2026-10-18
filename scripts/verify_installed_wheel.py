@@ -3,23 +3,23 @@
 from importlib.metadata import version
 from importlib.resources import files
 
-from ucloud_sandboxes.cli import build_parser
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.deployment import package_version
+from sandboxes.cli import build_parser
+from sandboxes.config import DeploymentConfig
+from sandboxes.deployment import package_version
 
 
 def main() -> None:
-    assert package_version() == version("ucloud-sandboxes")
+    assert package_version() == version("sandboxes")
     raw_config = DeploymentConfig.default(scope_id="wheel-smoke-project").to_dict()
     raw_config["deployment_id"] = "wheel-smoke"
     config = DeploymentConfig.from_dict(raw_config)
     assert config.to_dict()["deployment_id"] == "wheel-smoke"
     assert build_parser().prog
-    unit = files("ucloud_sandboxes").joinpath("systemd/ucloud-sandbox-gateway.service")
+    unit = files("sandboxes").joinpath("systemd/ucloud-sandbox-gateway.service")
     assert unit.is_file(), "systemd units are missing from the wheel"
-    schema = files("ucloud_sandboxes.shared_control").joinpath("routing_schema.sql")
+    schema = files("sandboxes.shared_control").joinpath("routing_schema.sql")
     assert schema.is_file(), "shared-control migrations are missing from the wheel"
-    assert files("ucloud_sandboxes.shared_control").joinpath("relay_schema.sql").is_file()
+    assert files("sandboxes.shared_control").joinpath("relay_schema.sql").is_file()
 
 
 if __name__ == "__main__":

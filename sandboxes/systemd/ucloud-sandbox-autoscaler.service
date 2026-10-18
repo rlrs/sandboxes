@@ -8,7 +8,7 @@ Type=simple
 User=ucloud
 Group=ucloud
 WorkingDirectory=/work/ucloud-sandboxes
-ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/ucloud-sandboxes autoscaler --config /etc/ucloud-sandboxes/deployment.json --execute
+ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/sandboxes autoscaler --config /etc/ucloud-sandboxes/deployment.json --execute
 Restart=always
 RestartSec=5
 

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import orjson
 
 from tests.test_control_plane import _sandbox_route
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.routing import RoutingStore
 
 
 class FleetJsonDecoderTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class FleetJsonDecoderTests(unittest.TestCase):
             )
             store.upsert_sandbox(route)
             native = store._sandbox_route_rows_readonly()
-            with patch('ucloud_sandboxes.routing.orjson.loads', json.loads):
+            with patch('sandboxes.routing.orjson.loads', json.loads):
                 standard = store._sandbox_route_rows_readonly()
             self.assertEqual(native, standard)
             self.assertEqual(native[0]['generation'], 2**63 - 1)
@@ -38,6 +38,6 @@ class FleetJsonDecoderTests(unittest.TestCase):
     def test_native_rejection_preserves_standard_decoder_fallback(self):
         with TemporaryDirectory() as directory:
             store = RoutingStore(Path(directory) / 'routes.sqlite')
-            with patch('ucloud_sandboxes.routing.orjson.loads',
+            with patch('sandboxes.routing.orjson.loads',
                        side_effect=orjson.JSONDecodeError('rejected', '', 0)):
                 self.assertEqual(store.sandbox_routes_readonly(), [])

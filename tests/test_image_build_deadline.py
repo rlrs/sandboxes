@@ -9,20 +9,20 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_images import _uploaded_context
-from ucloud_sandboxes.build_deadline import (
+from sandboxes.build_deadline import (
     ImageBuildTimeoutError,
     build_execution_deadline,
     remaining_build_execution_seconds,
     without_build_execution_deadline,
 )
-from ucloud_sandboxes.images import (
+from sandboxes.images import (
     DockerImageRuntime,
     ImageBuildSpec,
     ImageBuildStore,
     ImageManager,
     ImageStore,
 )
-from ucloud_sandboxes.sandbox import CommandResult
+from sandboxes.sandbox import CommandResult
 
 TEST_TIER = "contract"
 
@@ -30,7 +30,7 @@ TEST_TIER = "contract"
 class BuildDeadlineTests(unittest.TestCase):
     def test_nested_stages_share_budget_and_finalizers_restore_it(self):
         clock = [100.0]
-        with patch("ucloud_sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
+        with patch("sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
             self.assertIsNone(remaining_build_execution_seconds())
             self.assertEqual(remaining_build_execution_seconds(60), 60)
             with build_execution_deadline(10):
@@ -123,7 +123,7 @@ class BuildProcessDeadlineTests(unittest.TestCase):
             owned.append(process)
             return process
 
-        with patch("ucloud_sandboxes.images.subprocess.Popen", side_effect=spawn):
+        with patch("sandboxes.images.subprocess.Popen", side_effect=spawn):
             with self.assertRaises(ImageBuildTimeoutError), build_execution_deadline(0.2):
                 DockerImageRuntime()._run((sys.executable, "-c",
                     "import os,time; os.close(1); os.close(2); time.sleep(60)"))
@@ -195,7 +195,7 @@ class BuildProcessDeadlineTests(unittest.TestCase):
         now = [1000.0]
         clock = SimpleNamespace(monotonic=lambda: now[0])
         with TemporaryDirectory() as raw, patch(
-            "ucloud_sandboxes.build_deadline.time", clock
+            "sandboxes.build_deadline.time", clock
         ):
             class Runtime(DockerImageRuntime):
                 def build(self, spec, **kwargs):
@@ -243,7 +243,7 @@ class BuildProcessDeadlineTests(unittest.TestCase):
         def callback(*_):
             raise ValueError("fixture callback failed")
 
-        with patch("ucloud_sandboxes.images.subprocess.Popen", side_effect=spawn):
+        with patch("sandboxes.images.subprocess.Popen", side_effect=spawn):
             with self.assertRaisesRegex(ValueError, "fixture callback failed"), build_execution_deadline(2):
                 DockerImageRuntime()._run_streaming((sys.executable, "-c",
                     "import time; print('ready',flush=True); time.sleep(60)"), on_output=callback)

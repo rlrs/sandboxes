@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.relay_dispatch_ab import dispatcher_with_park_concurrency
-from ucloud_sandboxes import relay_lifecycle as lifecycle
+from sandboxes import relay_lifecycle as lifecycle
 
 
 class DispatchQualificationTests(unittest.IsolatedAsyncioTestCase):

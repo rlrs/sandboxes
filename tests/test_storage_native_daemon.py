@@ -16,11 +16,11 @@ import unittest.mock
 from unittest.mock import patch
 from typing import Callable
 
-from ucloud_sandboxes.storage_native import (
+from sandboxes.storage_native import (
     StorageNativeDevice,
     StorageNativeDeviceOwner,
 )
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.storage_native_daemon import (
     LinuxStorageHostOperations,
     StorageNativeCapacityError,
     StorageNativeConflictError,
@@ -35,7 +35,7 @@ from ucloud_sandboxes.storage_native_daemon import (
     StorageVolumeRecord,
     StorageVolumeState,
 )
-from ucloud_sandboxes.storage_native_registry import (
+from sandboxes.storage_native_registry import (
     PublishedStorageLayer,
     StorageSnapshotPublication,
 )
@@ -54,7 +54,7 @@ class LinuxVolumeReadaheadTests(unittest.TestCase):
             with self.subTest(log_help=log_help):
                 host = LinuxStorageHostOperations()
                 result = subprocess.CompletedProcess(("mkfs.xfs",), 1, "", log_help)
-                with (patch("ucloud_sandboxes.storage_native_daemon.subprocess.run", return_value=result) as probe,
+                with (patch("sandboxes.storage_native_daemon.subprocess.run", return_value=result) as probe,
                       patch.object(host, "_run") as run):
                     host.format_xfs(Path("/dev/ublkb17"))
                     host.format_xfs(Path("/dev/ublkb18"))
@@ -66,7 +66,7 @@ class LinuxVolumeReadaheadTests(unittest.TestCase):
     def test_reused_and_restored_mounts_configure_readahead_before_opening_files(self):
         host = LinuxStorageHostOperations()
         calls = []
-        with (patch("ucloud_sandboxes.storage_native_daemon.os.sysconf", return_value=4096),
+        with (patch("sandboxes.storage_native_daemon.os.sysconf", return_value=4096),
               patch.object(host, "_set_readahead", side_effect=lambda *args: calls.append(("readahead", *args))),
               patch.object(host, "_mount_xfs", side_effect=lambda *args: calls.append(("mount", *args))),
               patch.object(host, "_run") as run):
@@ -79,7 +79,7 @@ class LinuxVolumeReadaheadTests(unittest.TestCase):
 
     def test_failed_device_configuration_never_mounts(self):
         host = LinuxStorageHostOperations()
-        with (patch("ucloud_sandboxes.storage_native_daemon.os.open", side_effect=FileNotFoundError(2, "No such file or directory")),
+        with (patch("sandboxes.storage_native_daemon.os.open", side_effect=FileNotFoundError(2, "No such file or directory")),
               patch.object(host, "_mount_xfs") as mount):
             with self.assertRaisesRegex(StorageNativeNodeError, r"^blockdev failed with 2: No such file or directory$"):
                 host.mount(Path("/dev/ublkb17"), Path("/volumes/first"))
@@ -88,11 +88,11 @@ class LinuxVolumeReadaheadTests(unittest.TestCase):
     def test_readahead_and_mount_are_the_syscalls_blockdev_and_mount_made(self):
         host = LinuxStorageHostOperations()
         mount = unittest.mock.Mock(return_value=0)
-        with (patch("ucloud_sandboxes.storage_native_daemon.os.open", return_value=91) as opened,
-              patch("ucloud_sandboxes.storage_native_daemon.os.close") as closed,
-              patch("ucloud_sandboxes.storage_native_daemon.fcntl.ioctl") as ioctl,
-              patch("ucloud_sandboxes.storage_native_daemon._libc_mount", return_value=mount),
-              patch("ucloud_sandboxes.storage_native_daemon.os.sysconf", return_value=4096)):
+        with (patch("sandboxes.storage_native_daemon.os.open", return_value=91) as opened,
+              patch("sandboxes.storage_native_daemon.os.close") as closed,
+              patch("sandboxes.storage_native_daemon.fcntl.ioctl") as ioctl,
+              patch("sandboxes.storage_native_daemon._libc_mount", return_value=mount),
+              patch("sandboxes.storage_native_daemon.os.sysconf", return_value=4096)):
             host.mount(Path("/dev/ublkb17"), Path("/volumes/first"))
         self.assertEqual(opened.call_args.args[0], Path("/dev/ublkb17"))
         ioctl.assert_called_once_with(91, 0x1262, 8)  # BLKRASET, 4 KiB in sectors
@@ -102,13 +102,13 @@ class LinuxVolumeReadaheadTests(unittest.TestCase):
 
     def test_mount_failure_keeps_the_error_shape(self):
         host = LinuxStorageHostOperations()
-        with (patch("ucloud_sandboxes.storage_native_daemon._libc_mount", return_value=lambda *args: -1),
-              patch("ucloud_sandboxes.storage_native_daemon.ctypes.get_errno", return_value=22)):
+        with (patch("sandboxes.storage_native_daemon._libc_mount", return_value=lambda *args: -1),
+              patch("sandboxes.storage_native_daemon.ctypes.get_errno", return_value=22)):
             with self.assertRaisesRegex(StorageNativeNodeError, r"^mount failed with 22: Invalid argument$"):
                 host._mount_xfs(Path("/dev/ublkb17"), Path("/volumes/first"))
 
     def test_libc_mount_binding_passes_flags_as_unsigned_long(self):
-        from ucloud_sandboxes import storage_native_daemon as daemon
+        from sandboxes import storage_native_daemon as daemon
         import ctypes
         function = daemon._libc_mount()
         self.assertIs(daemon._libc_mount(), function)
@@ -721,7 +721,7 @@ class StorageNativeNodeServiceTests(unittest.TestCase):
             service.config = replace(service.config, trim_before_seal_bytes=1 << 20)
             # The fake mount is a plain directory: report an empty filesystem.
             empty = SimpleNamespace(f_blocks=256, f_bfree=256, f_frsize=4096)
-            statvfs = patch("ucloud_sandboxes.storage_native_daemon.os.statvfs", return_value=empty)
+            statvfs = patch("sandboxes.storage_native_daemon.os.statvfs", return_value=empty)
             statvfs.start()
             self.addCleanup(statvfs.stop)
             captured = service.prepare_capture(**owner.request_fields(), operation_id="c1",
@@ -1101,7 +1101,7 @@ class StorageNativeNodeServiceTests(unittest.TestCase):
             with self.subTest(pooled=pooled), TemporaryDirectory() as raw:
                 service, _backend, _host = self._service(Path(raw), pooled=pooled)
                 span = unittest.mock.Mock()
-                with patch("ucloud_sandboxes.storage_native_daemon.get_current_span", return_value=span):
+                with patch("sandboxes.storage_native_daemon.get_current_span", return_value=span):
                     service.converge_volume(
                         StorageVolumeOwner("vol", "sandbox", 1), action="prepare",
                         operation_id="create", virtual_size=1 << 30)

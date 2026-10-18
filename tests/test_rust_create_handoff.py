@@ -2,7 +2,7 @@
 
 runtime/noded owns the registry and runs creates; the agent is a foreign
 registry process with a revalidated read cache, and holds each create's
-admission between two Unix-socket requests (ucloud_sandboxes/create_handoff.py).
+admission between two Unix-socket requests (sandboxes/create_handoff.py).
 """
 
 import copy
@@ -22,12 +22,12 @@ from unittest.mock import DEFAULT, patch
 from tests import test_direct_provisioner as fixtures
 from tests import test_vm_init as vm_init_fixtures
 from tests.admission_backends import AdmissionBackendCase
-from ucloud_sandboxes.cli import vm_init_options_to_dict
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.sandbox import sandbox_spec_fingerprint
-from ucloud_sandboxes.vm_init import render_vm_init_script
+from sandboxes.cli import vm_init_options_to_dict
+from sandboxes.config import DeploymentConfig
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.sandbox import sandbox_spec_fingerprint
+from sandboxes.vm_init import render_vm_init_script
 
 TEST_TIER = "contract"
 REPO = Path(__file__).resolve().parents[1]
@@ -105,7 +105,7 @@ class ForeignRegistryIndexTests(unittest.TestCase):
             "import sys\n"
             "from dataclasses import replace\n"
             "from pathlib import Path\n"
-            "from ucloud_sandboxes.direct_registry import DirectSandboxRegistry\n"
+            "from sandboxes.direct_registry import DirectSandboxRegistry\n"
             "from tests.test_direct_provisioner import DirectProvisionerTests\n"
             "owner = DirectSandboxRegistry(Path(sys.argv[1]), owner=True)\n"
             "owner.plan(spec=replace(DirectProvisionerTests.spec(), id='child'), sandbox_generation=1,\n"

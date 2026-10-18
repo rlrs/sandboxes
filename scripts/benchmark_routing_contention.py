@@ -12,8 +12,8 @@ import statistics
 import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from ucloud_sandboxes.routing import RoutingStore, SandboxRoute
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
+from sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
 
 with tempfile.TemporaryDirectory() as tmp:
     s = RoutingStore(Path(tmp) / "routing.sqlite")

@@ -38,7 +38,7 @@ def discover_database(expected_job_id):
     pid = int(result.stdout)
     require(pid > 1, "Builder service is not running")
     argv = Path(f"/proc/{pid}/cmdline").read_bytes().decode().rstrip("\0").split("\0")
-    require(argv[1:4] == ["-m", "ucloud_sandboxes.cli", "serve-builder-agent"], "Unexpected service")
+    require(argv[1:4] == ["-m", "sandboxes.cli", "serve-builder-agent"], "Unexpected service")
     for flag in ("--job-id", "--image-file"):
         require(argv.count(flag) == 1 and argv.index(flag) + 1 < len(argv), "Service identity absent")
     require(argv[argv.index("--job-id") + 1] == expected_job_id, "Unexpected owned node")

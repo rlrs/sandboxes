@@ -18,7 +18,7 @@ DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
 @unittest.skipUnless(DSN, "requires isolated PostgreSQL")
 class PlacementWorkerTurnTests(unittest.TestCase):
     def setUp(self):
-        from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
         self.temp = TemporaryDirectory()
         self.schema = "ucloud_routing_turns_" + uuid4().hex
@@ -81,7 +81,7 @@ class PlacementWorkerTurnTests(unittest.TestCase):
         import psycopg
         from unittest.mock import patch
         from tests.test_routing import sandbox_route
-        from ucloud_sandboxes.models import SandboxInventoryEntry, utc_now
+        from sandboxes.models import SandboxInventoryEntry, utc_now
 
         route = self.store.upsert_sandbox(sandbox_route(
             sandbox_id="resident", node_id="node-1", job_id="job-1",

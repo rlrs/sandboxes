@@ -3,7 +3,7 @@ from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from ucloud_sandboxes.providers.ucloud.api import (
+from sandboxes.providers.ucloud.api import (
     MAX_UCLOUD_ERROR_PREVIEW_BYTES,
     MAX_UCLOUD_JSON_RESPONSE_BYTES,
     UCloudClient,
@@ -13,7 +13,7 @@ from ucloud_sandboxes.providers.ucloud.api import (
     SessionState,
     SessionStore,
 )
-from ucloud_sandboxes.providers.ucloud.adapter import (
+from sandboxes.providers.ucloud.adapter import (
     UCloudCreateProfile,
     UCloudProvider,
 )
@@ -127,7 +127,7 @@ class UCloudClientTests(unittest.TestCase):
 
         client = FakeUCloudClient()
         with patch(
-            "ucloud_sandboxes.providers.ucloud.api.request.urlopen",
+            "sandboxes.providers.ucloud.api.request.urlopen",
             return_value=Response(b"x" * (MAX_UCLOUD_JSON_RESPONSE_BYTES + 1)),
         ):
             with self.assertRaisesRegex(UCloudTransportError, "exceeded"):
@@ -145,7 +145,7 @@ class UCloudClientTests(unittest.TestCase):
             BytesIO(b"x" * (MAX_UCLOUD_ERROR_PREVIEW_BYTES + 1)),
         )
         with patch(
-            "ucloud_sandboxes.providers.ucloud.api.request.urlopen",
+            "sandboxes.providers.ucloud.api.request.urlopen",
             side_effect=http_error,
         ):
             with self.assertRaisesRegex(UCloudTransportError, "exceeded"):

@@ -12,7 +12,7 @@ from hypothesis import settings
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
 from tests.postgres_fixture import postgres_database
-from ucloud_sandboxes.model_relay import RelayWorkerResponse
+from sandboxes.model_relay import RelayWorkerResponse
 
 TEST_TIER = "contract"
 
@@ -49,8 +49,8 @@ class ModelRelayStateMachine(RuleBasedStateMachine):
         self.stale_lease: tuple[str, str, str] | None = None
 
     def _new_state(self, database=None):
-        from ucloud_sandboxes.shared_control.database import PostgresDatabase
-        from ucloud_sandboxes.shared_control.relay import PostgresRelayState
+        from sandboxes.shared_control.database import PostgresDatabase
+        from sandboxes.shared_control.relay import PostgresRelayState
         if database is None:
             dsn, deployment, schema = self._database_identity
             database = PostgresDatabase(dsn, deployment, schema=schema, max_connections=4)

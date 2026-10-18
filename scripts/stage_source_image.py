@@ -14,14 +14,14 @@ import time
 from contextlib import closing
 from urllib import error as urlerror, parse, request
 
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.managed_registry import RegistryRequestError
 
 REPOSITORY = "ucloud-upstream"
 
 
 def publication_repositories(image_id, registry_url, cache_ref=""):
-    from ucloud_sandboxes.gateway.registry_refs import _managed_registry_build_tag
-    from ucloud_sandboxes.managed_registry import registry_repository_tag_from_image_ref
+    from sandboxes.gateway.registry_refs import _managed_registry_build_tag
+    from sandboxes.managed_registry import registry_repository_tag_from_image_ref
     target, _ = registry_repository_tag_from_image_ref(_managed_registry_build_tag(image_id, registry_url))
     repositories = [target]
     if cache_ref:
@@ -63,7 +63,7 @@ def mount_source_layers(client, source_repository, layers, target_repositories, 
 
 
 def mount_prepared_base(client, reference, target_repositories):
-    from ucloud_sandboxes.managed_registry import (
+    from sandboxes.managed_registry import (
         MANIFEST_ACCEPT, _read_response_bytes, registry_repository_tag_from_image_ref,
     )
     started = time.monotonic()

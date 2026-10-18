@@ -3,10 +3,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.environment_contract import describe_environment
-from ucloud_sandboxes.sandbox import SandboxSpec
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.guest_identity import resolve_groups
+from sandboxes.environment_contract import describe_environment
+from sandboxes.sandbox import SandboxSpec
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.guest_identity import resolve_groups
 
 
 class EnvironmentContractTests(unittest.TestCase):
@@ -16,8 +16,8 @@ class EnvironmentContractTests(unittest.TestCase):
         )
 
     def test_new_contracts_require_capable_nodes_during_placement(self):
-        from ucloud_sandboxes.gateway.placement import _sandbox_required_capabilities
-        from ucloud_sandboxes.capabilities import (
+        from sandboxes.gateway.placement import _sandbox_required_capabilities
+        from sandboxes.capabilities import (
             ENVIRONMENT_CONTRACT_CAPABILITY,
             STATIC_FILE_MANAGEMENT_CAPABILITY,
         )
@@ -138,7 +138,7 @@ class EnvironmentContractTests(unittest.TestCase):
         with (
             patch.object(DirectOciConfigBuilder, "_validate_init_binary"),
             patch(
-                "ucloud_sandboxes.direct_oci.subprocess.run",
+                "sandboxes.direct_oci.subprocess.run",
                 return_value=SimpleNamespace(returncode=1),
             ),
         ):
@@ -148,7 +148,7 @@ class EnvironmentContractTests(unittest.TestCase):
     def test_static_file_dispatch_never_uses_image_shell_tools(self):
         from types import SimpleNamespace
         from unittest.mock import Mock
-        from ucloud_sandboxes.direct_service import DirectSandboxService
+        from sandboxes.direct_service import DirectSandboxService
 
         service = object.__new__(DirectSandboxService)
         service.startup_admission = nullcontext
@@ -169,7 +169,7 @@ class EnvironmentContractTests(unittest.TestCase):
         )
 
     def test_omitted_job_cwd_requires_resolved_environment(self):
-        from ucloud_sandboxes.managed_process import ManagedProcessStart
+        from sandboxes.managed_process import ManagedProcessStart
 
         job = ManagedProcessStart.from_dict({"job_id": "test", "argv": ["true"]})
         with self.assertRaises(ValueError):

@@ -7,21 +7,21 @@ from types import SimpleNamespace
 import unittest
 
 from tests import test_direct_warden as warden_fixtures
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     DirectSandboxRegistry,
     DirectSandboxRegistration,
 )
-from ucloud_sandboxes.direct_service import (
+from sandboxes.direct_service import (
     DirectSandboxInventoryItem,
     DirectServiceInventorySnapshot,
     DirectServiceActivitySnapshot,
 )
-from ucloud_sandboxes.direct_provisioner import DirectSandboxProvisioner
-from ucloud_sandboxes.direct_warden import DirectWardenError
-from ucloud_sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.sandbox import SandboxRecord, SandboxSpec
-from ucloud_sandboxes.storage_native_daemon import StorageVolumeState
+from sandboxes.direct_provisioner import DirectSandboxProvisioner
+from sandboxes.direct_warden import DirectWardenError
+from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.sandbox import SandboxRecord, SandboxSpec
+from sandboxes.storage_native_daemon import StorageVolumeState
 
 TEST_TIER = "contract"
 

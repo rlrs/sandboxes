@@ -3,7 +3,7 @@ from threading import Event, Thread
 import time
 import unittest
 
-from ucloud_sandboxes.admission import FairRLock
+from sandboxes.admission import FairRLock
 
 
 class FairReservationLockTests(unittest.TestCase):
@@ -63,9 +63,9 @@ class FairReservationLockTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
         from pathlib import Path
         from tests.gateway_support import gateway_services
-        from ucloud_sandboxes.gateway.placement import _GATEWAY_SCHEDULING_LOCK
-        from ucloud_sandboxes.models import ResourceQuantity
-        from ucloud_sandboxes.routing import RoutingStore
+        from sandboxes.gateway.placement import _GATEWAY_SCHEDULING_LOCK
+        from sandboxes.models import ResourceQuantity
+        from sandboxes.routing import RoutingStore
 
         entered = Event()
         with TemporaryDirectory() as directory:

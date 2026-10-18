@@ -13,7 +13,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes import oci_layer_materialize as materialize
+from sandboxes import oci_layer_materialize as materialize
 
 
 OCI_TAR = "application/vnd.oci.image.layer.v1.tar"
@@ -567,7 +567,7 @@ class MaterializeLayersTests(unittest.TestCase):
                 extraction.assert_not_called()
 
     def test_deadline_after_network_read_stops_without_decompression_or_extract(self):
-        from ucloud_sandboxes import build_deadline
+        from sandboxes import build_deadline
         value = layer([member('payload',b'body')])
         clock=[0.0]
         class SlowResponse(io.BytesIO):

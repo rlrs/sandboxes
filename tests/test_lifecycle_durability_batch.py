@@ -10,8 +10,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.routing import ExecRoute, RoutingStore, SandboxRouteConflictError
-from ucloud_sandboxes.durable_batch import DurableSqliteBatch
+from sandboxes.routing import ExecRoute, RoutingStore, SandboxRouteConflictError
+from sandboxes.durable_batch import DurableSqliteBatch
 from tests.test_routing import sandbox_route
 
 TEST_TIER = "contract"
@@ -110,7 +110,7 @@ class RoutingBatchTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             store = RoutingStore(Path(tmp) / 'routing.sqlite')
             route = ExecRoute('session', 'sandbox', 'node', 'job', 'http://node')
-            with patch('ucloud_sandboxes.routing.os.getpid', return_value=-1):
+            with patch('sandboxes.routing.os.getpid', return_value=-1):
                 with self.assertRaisesRegex(sqlite3.DatabaseError, 'after fork'):
                     store.upsert_exec(route)
             replacement = Path(tmp) / 'replacement.sqlite'
@@ -126,7 +126,7 @@ class RoutingBatchTests(unittest.TestCase):
             route = store.upsert_sandbox(sandbox_route(
                 sandbox_id='agent', node_id='node', job_id='job', node_url='http://node',
                 spec={'id': 'agent', 'environment': {'large': 'x' * 131072}}))
-            with patch('ucloud_sandboxes.routing._sandbox_route_from_row',
+            with patch('sandboxes.routing._sandbox_route_from_row',
                        side_effect=AssertionError('unnecessary full route decoding')):
                 state, changed = store.upsert_program_request_transition_with_change(
                     route, request_id='request', rollout_id='rollout', state='waking')

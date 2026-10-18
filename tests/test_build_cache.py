@@ -6,12 +6,12 @@ import json
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.build_cache import (
+from sandboxes.build_cache import (
     CACHE_CONFIG_MEDIA_TYPE,
     CACHE_MANIFEST_MEDIA_TYPE,
     RegistryBuildCache,
 )
-from ucloud_sandboxes.managed_registry import RegistryClient, RegistryRequestError
+from sandboxes.managed_registry import RegistryClient, RegistryRequestError
 
 
 NOW = 1_790_726_400
@@ -94,7 +94,7 @@ class CacheRegistryClientTests(unittest.TestCase):
         # Since 2dac20a manifest_document passes timeout_seconds; without it in
         # this override every registry prune crashed in its build-cache pass.
         from types import SimpleNamespace
-        from ucloud_sandboxes.build_cache import _CacheRegistryClient
+        from sandboxes.build_cache import _CacheRegistryClient
         client = _CacheRegistryClient("http://127.0.0.1:9", timeout_seconds=5)
         body = BytesIO(b'{"schemaVersion": 2}')
         response = SimpleNamespace(headers={"Docker-Content-Digest": "sha256:" + "a" * 64}, read=body.read,
@@ -478,7 +478,7 @@ class RegistryBuildCacheTests(unittest.TestCase):
 
     def test_prepare_abandons_slow_paginated_inventory(self) -> None:
         self.registry.inventory_headers = {"Link": f'</v2/{REPOSITORY}/tags/list?n=1000&last=next>; rel="next"'}
-        with patch("ucloud_sandboxes.build_cache.time.monotonic", side_effect=[0.0, 0.0, 4.0]):
+        with patch("sandboxes.build_cache.time.monotonic", side_effect=[0.0, 0.0, 4.0]):
             with self.assertRaises(TimeoutError):
                 self.cache().prepare("recipe")
         self.assertEqual(self.registry.inventory_calls, 1)
@@ -497,7 +497,7 @@ class RegistryBuildCacheTests(unittest.TestCase):
                     self.cache().prune(execute=True)
                 self.assertEqual(self.registry.deleted, [])
         self.registry.inventory_payload = {"name": REPOSITORY, "tags": ["a", "b"]}
-        with patch("ucloud_sandboxes.build_cache.MAX_CACHE_INVENTORY_TAGS", 1):
+        with patch("sandboxes.build_cache.MAX_CACHE_INVENTORY_TAGS", 1):
             with self.assertRaisesRegex(ValueError, "tag limit"):
                 self.cache().prune(execute=True)
         self.assertEqual(self.registry.deleted, [])
@@ -675,7 +675,7 @@ class RegistryBuildCacheMountTests(unittest.TestCase):
             now[0] += 3.1
             return True
         self.registry.on_mount = delay
-        with patch("ucloud_sandboxes.build_cache.time.monotonic", side_effect=lambda: now[0]):
+        with patch("sandboxes.build_cache.time.monotonic", side_effect=lambda: now[0]):
             result = self.cache.pre_mount(self.target, self.source)
         self.assertEqual(len(self.registry.mounts), 1)
         self.assertEqual(self.registry.mounts[0][3], 3.0)

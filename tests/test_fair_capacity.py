@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_startup_admission import wait_queued
-from ucloud_sandboxes.admission import FairCapacity, _Waiter
+from sandboxes.admission import FairCapacity, _Waiter
 
 
 class FairCapacityTests(unittest.TestCase):
@@ -61,7 +61,7 @@ class FairCapacityTests(unittest.TestCase):
             capacity.release()
             return False
 
-        with patch('ucloud_sandboxes.admission._Waiter', return_value=ticket), patch.object(ticket.ready, 'wait', side_effect=racing_wait):
+        with patch('sandboxes.admission._Waiter', return_value=ticket), patch.object(ticket.ready, 'wait', side_effect=racing_wait):
             self.assertTrue(capacity.acquire(timeout=0))
         self.assertFalse(capacity.acquire(blocking=False))
         capacity.release()
@@ -79,7 +79,7 @@ class FairCapacityTests(unittest.TestCase):
                         capacity.release()
                     raise KeyboardInterrupt
 
-                with patch('ucloud_sandboxes.admission._Waiter', return_value=ticket), patch.object(ticket.ready, 'wait', side_effect=interrupted_wait):
+                with patch('sandboxes.admission._Waiter', return_value=ticket), patch.object(ticket.ready, 'wait', side_effect=interrupted_wait):
                     with self.assertRaises(KeyboardInterrupt):
                         capacity.acquire(timeout=3)
                 if not grant:

@@ -18,9 +18,9 @@ from uuid import uuid4
 
 import psycopg
 from psycopg import sql
-from ucloud_sandboxes import model_relay as api
-from ucloud_sandboxes.shared_control.database import PostgresDatabase
-from ucloud_sandboxes.shared_control.relay import PostgresRelayState
+from sandboxes import model_relay as api
+from sandboxes.shared_control.database import PostgresDatabase
+from sandboxes.shared_control.relay import PostgresRelayState
 
 DSN = os.environ['UCLOUD_TEST_POSTGRES_DSN']
 
@@ -117,7 +117,7 @@ async def main():
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     spec = importlib.util.spec_from_file_location(
-        'ucloud_sandboxes.shared_control.relay_baseline', args.baseline)
+        'sandboxes.shared_control.relay_baseline', args.baseline)
     baseline = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = baseline
     spec.loader.exec_module(baseline)
@@ -128,7 +128,7 @@ async def main():
     report = dict(scope='Disposable local PostgreSQL17, direct state API; includes driver CPU; no real sandbox or HTTP latency claim.',
         cases=results, source_sha256={name: hashlib.sha256(Path(path).read_bytes()).hexdigest() for name,path in {
             'before': args.baseline,
-            'after': 'ucloud_sandboxes/shared_control/relay.py'}.items()})
+            'after': 'sandboxes/shared_control/relay.py'}.items()})
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')
 

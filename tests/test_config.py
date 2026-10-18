@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.config import DeploymentConfig
+from sandboxes.config import DeploymentConfig
 
 
 class ConfigTests(unittest.TestCase):

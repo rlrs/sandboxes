@@ -27,7 +27,7 @@ class OwnedBuilderUpgradeTests(unittest.TestCase):
             override = root / "unit.d/99-owned.conf"
             source, target = root / "old", root / "candidate"
             state = {"job_id": "123", "node_epoch": "epoch", "source": source,
-                     "unit": root / "unit", "argv": ["python", "-m", "ucloud_sandboxes.cli", "serve-builder-agent"]}
+                     "unit": root / "unit", "argv": ["python", "-m", "sandboxes.cli", "serve-builder-agent"]}
             before = {"draining": False, "admission_open": True, "unit_sha256": "a" * 64}
             token = None
 

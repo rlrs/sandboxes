@@ -7,18 +7,18 @@ from threading import Event, Lock
 from time import monotonic
 import unittest
 
-from ucloud_sandboxes import cli
-from ucloud_sandboxes.bootstrap import (
+from sandboxes import cli
+from sandboxes.bootstrap import (
     VmBootstrapIntent,
     VmBootstrapRecord,
     build_vm_bootstrap_intents,
     mark_bootstrap_access_refresh,
 )
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.metrics import MetricsStore
-from ucloud_sandboxes.models import InstancePhase, SandboxNode, ProviderInstance
-from ucloud_sandboxes.providers.base import InstanceBootstrapAccess
-from ucloud_sandboxes.vm_init import VmInitOptions
+from sandboxes.control_state import ControlStateStore
+from sandboxes.metrics import MetricsStore
+from sandboxes.models import InstancePhase, SandboxNode, ProviderInstance
+from sandboxes.providers.base import InstanceBootstrapAccess
+from sandboxes.vm_init import VmInitOptions
 
 TEST_TIER = "contract"
 

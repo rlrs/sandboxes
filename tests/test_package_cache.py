@@ -8,7 +8,7 @@ import time
 import unittest
 from urllib import error, request
 
-from ucloud_sandboxes.package_cache import PackageCache, PackageCacheConfig, _Handler
+from sandboxes.package_cache import PackageCache, PackageCacheConfig, _Handler
 
 
 class Mirror:

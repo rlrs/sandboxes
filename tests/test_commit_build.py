@@ -26,17 +26,17 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from tests.test_commit_policy import ROOT, TOKEN, directory, entry, upper, whiteout
 from tests.test_environment_artifact import MemoryRegistry
 from tests.test_registry_client_contract import _RegistryHTTPServer
-from ucloud_sandboxes import environment_artifact
-from ucloud_sandboxes.commit_policy import COMMIT_ANNOTATION, CommitBuild, CommitPolicy, CommitRefused, staging_repository
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes import environment_artifact
+from sandboxes.commit_policy import COMMIT_ANNOTATION, CommitBuild, CommitPolicy, CommitRefused, staging_repository
+from sandboxes.environment_artifact import (
     ENVIRONMENT_ANNOTATION, OCI_IMAGE, CommitEnvironmentComponent, EnvironmentArtifactRegistry, EnvironmentComponent,
     bind_components, canonical_bytes, content_digest, load_environment, load_image_environment,
     publish_environment, sign_commit_component, sign_component,
 )
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest
-from ucloud_sandboxes.environment_prepare import PreparationError, prepare_commit_in_subprocess
-from ucloud_sandboxes.managed_registry import RegistryClient
+from sandboxes.environment_builder import FreshEnvironmentBuilder
+from sandboxes.environment_manifest import EnvironmentManifest
+from sandboxes.environment_prepare import PreparationError, prepare_commit_in_subprocess
+from sandboxes.managed_registry import RegistryClient
 
 TEST_TIER = "contract"
 FORMAT = {"layout": 2, "mkfs": "mkfs.erofs (erofs-utils) 1.8.6", "compression": "lz4",

@@ -28,12 +28,12 @@ import tarfile
 import tempfile
 import zipfile
 
-from ucloud_sandboxes.vm_init import (
+from sandboxes.vm_init import (
     PINNED_STORAGE_NATIVE_AGENTENV_COMMIT,
     PINNED_STORAGE_NATIVE_PATCHES,
 )
-from ucloud_sandboxes.environment_config import NYDUSD_FEATURES, PINNED_NYDUS_COMMIT
-from ucloud_sandboxes.gvisor_distribution import (
+from sandboxes.environment_config import NYDUSD_FEATURES, PINNED_NYDUS_COMMIT
+from sandboxes.gvisor_distribution import (
     GVISOR_COMMIT,
     GVISOR_SIDECARS,
     distribution_files,
@@ -204,9 +204,9 @@ def inspect_wheel(wheel: Path) -> tuple[str, str]:
         metadata = archive.read(wheel_metadata_names[0]).decode("utf-8")
         if "Root-Is-Purelib: true" not in metadata or "Tag: py3-none-any" not in metadata:
             raise ValueError("only a py3-none-any wheel can update this Linux bundle")
-        if not any(name.startswith("ucloud_sandboxes/") for name in names):
-            raise ValueError("wheel does not contain the ucloud_sandboxes package")
-        return "ucloud_sandboxes", next(iter(dist_info_names))
+        if not any(name.startswith("sandboxes/") for name in names):
+            raise ValueError("wheel does not contain the sandboxes package")
+        return "sandboxes", next(iter(dist_info_names))
 
 
 def replace_agent_package(runtime_root: Path, wheel: Path) -> None:
@@ -218,6 +218,11 @@ def replace_agent_package(runtime_root: Path, wheel: Path) -> None:
     package_path = site_packages / package_name
     if package_path.exists():
         shutil.rmtree(package_path)
+    for old_dist_info in site_packages.glob("sandboxes-*.dist-info"):
+        shutil.rmtree(old_dist_info)
+    # Bundles built before the rename carry the package as ucloud_sandboxes.
+    if (site_packages / "ucloud_sandboxes").exists():
+        shutil.rmtree(site_packages / "ucloud_sandboxes")
     for old_dist_info in site_packages.glob("ucloud_sandboxes-*.dist-info"):
         shutil.rmtree(old_dist_info)
 

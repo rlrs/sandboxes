@@ -23,9 +23,9 @@ from unittest.mock import patch
 from tests.test_environment_artifact import MemoryRegistry
 from tests.test_environment_layers import FORMAT, Keys
 from tests.test_oci_layer_materialize import REPOSITORY, MemoryRegistry as BlobRegistry, directory, layer, member
-from ucloud_sandboxes.environment_artifact import EnvironmentArtifactRegistry
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, normalize_directory_times
-from ucloud_sandboxes.oci_layer_materialize import materialize_layers
+from sandboxes.environment_artifact import EnvironmentArtifactRegistry
+from sandboxes.environment_builder import FreshEnvironmentBuilder, normalize_directory_times
+from sandboxes.oci_layer_materialize import materialize_layers
 
 SOURCE_TIME = 1_700_000_000
 LINK_TIME = 1_650_000_000
@@ -74,7 +74,7 @@ class LayoutTwoFixture:
         stack = ExitStack()
         self.addCleanup(stack.close)
         # Extraction is privileged in production; tests keep their own owner.
-        stack.enter_context(patch("ucloud_sandboxes.oci_layer_materialize.os.chown"))
+        stack.enter_context(patch("sandboxes.oci_layer_materialize.os.chown"))
         package = layer([timed(directory("app"), 1_600_000_000), timed(member("app/mod.py", SOURCE), SOURCE_TIME),
                          timed(directory("app/__pycache__"), 1_600_000_001),
                          timed(member(CACHE, compiled(self.root)), FILE_TIMES[CACHE]),

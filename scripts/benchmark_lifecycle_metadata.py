@@ -13,10 +13,10 @@ from tempfile import TemporaryDirectory
 import time
 from unittest.mock import patch
 
-from ucloud_sandboxes.control_plane import _sandbox_transport_epoch
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.control_plane import _sandbox_transport_epoch
+from sandboxes.control_state import ControlStateStore
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import RoutingStore, SandboxRoute
 
 
 def milliseconds(operation, count=100):
@@ -86,9 +86,9 @@ def main():
                             os.chmod(Path(f"{path}{suffix}"), 0o600)
                         except FileNotFoundError:
                             pass
-                target = ("ucloud_sandboxes.routing._chmod_sqlite_state_files"
+                target = ("sandboxes.routing._chmod_sqlite_state_files"
                           if isinstance(db, RoutingStore)
-                          else "ucloud_sandboxes.control_state.ControlStateStore._secure_files")
+                          else "sandboxes.control_state.ControlStateStore._secure_files")
                 with patch(target, previous_permissions), patch("os.chmod", wraps=os.chmod) as chmod:
                     for _ in range(100):
                         read()

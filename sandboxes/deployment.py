@@ -4,7 +4,7 @@ from importlib import metadata
 from functools import lru_cache
 
 
-PACKAGE_NAME = "ucloud-sandboxes"
+PACKAGE_NAME = "sandboxes"
 DEFAULT_INIT_VERSION = "3"
 
 NODE_LABEL = "ucloud-sandboxes/node"

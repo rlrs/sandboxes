@@ -5,7 +5,7 @@ WORKDIR /deps
 COPY pyproject.toml uv.lock ./
 RUN uv sync --python 3.13 --locked --extra postgres --no-install-project
 COPY README.md ./
-COPY ucloud_sandboxes ./ucloud_sandboxes
+COPY sandboxes ./sandboxes
 COPY scripts/verify_installed_wheel.py /verify_installed_wheel.py
 RUN uv build --wheel --out-dir /wheels \
     && uv venv --python 3.13 /wheel-check \

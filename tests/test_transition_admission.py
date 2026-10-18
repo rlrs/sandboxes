@@ -1,5 +1,5 @@
 """Admission consumes each memory forecast once and never fences out cancellation."""
-from ucloud_sandboxes.transition_admission import MemoryDemand
+from sandboxes.transition_admission import MemoryDemand
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
@@ -15,23 +15,23 @@ from unittest.mock import patch
 from tests import test_direct_provisioner as fixtures
 from tests.admission_backends import AdmissionBackendCase
 from tests.test_startup_admission import wait_queued
-from ucloud_sandboxes.admission import CREATE_ADMISSION_WAIT, FairCapacity
-from ucloud_sandboxes.background_io import Pressure
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef, WorkspaceCaptureRef
-from ucloud_sandboxes.direct_service import (
+from sandboxes.admission import CREATE_ADMISSION_WAIT, FairCapacity
+from sandboxes.background_io import Pressure
+from sandboxes.checkpoint_components import MemoryBackingRef, WorkspaceCaptureRef
+from sandboxes.direct_service import (
     DirectSandboxService,
     SandboxRestoreBusyError,
     SandboxCapacityUnavailableError,
 )
-from ucloud_sandboxes.direct_warden import DirectWardenError
-from ucloud_sandboxes.direct_registry import DirectRegistryCapacityUnavailable
-from ucloud_sandboxes.hibernation import (
+from sandboxes.direct_warden import DirectWardenError
+from sandboxes.direct_registry import DirectRegistryCapacityUnavailable
+from sandboxes.hibernation import (
     HibernationFileRole, HibernationManifest, HibernationState, LocalHibernationArtifactFile,
 )
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.resource_evidence import MemoryBackingCapacity
-from ucloud_sandboxes.warm_park import WarmParkPolicy, decide_resident_wait
-from ucloud_sandboxes.transition_admission import (
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.resource_evidence import MemoryBackingCapacity
+from sandboxes.warm_park import WarmParkPolicy, decide_resident_wait
+from sandboxes.transition_admission import (
     TransitionCost,
     TransitionKind,
     TransitionLedger,

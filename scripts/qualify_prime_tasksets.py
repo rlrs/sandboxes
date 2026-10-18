@@ -12,8 +12,8 @@ import subprocess
 import sys
 
 
-from ucloud_sandboxes.environment_contract import describe_environment
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.environment_contract import describe_environment
+from sandboxes.sandbox import SandboxSpec
 
 
 MANIFEST = Path(__file__).resolve().parents[1] / "scripts/data/prime-tasksets.json"

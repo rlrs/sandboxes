@@ -10,8 +10,8 @@ from pathlib import Path
 import shlex
 import subprocess
 
-from ucloud_sandboxes.direct_service import sandbox_file_write_script
-from ucloud_sandboxes.sandbox import linux_host_entrypoint_script
+from sandboxes.direct_service import sandbox_file_write_script
+from sandboxes.sandbox import linux_host_entrypoint_script
 
 
 def probe() -> str:

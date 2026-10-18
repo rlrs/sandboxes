@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_registry import build_heartbeat
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.models import utc_now
+from sandboxes.control_state import ControlStateStore
+from sandboxes.models import utc_now
 
 TEST_TIER = "contract"
 
@@ -67,7 +67,7 @@ class ControlStatePoolTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'state.sqlite'
             store = ControlStateStore(path)
-            with patch('ucloud_sandboxes.control_state.os.getpid', return_value=-1):
+            with patch('sandboxes.control_state.os.getpid', return_value=-1):
                 with self.assertRaisesRegex(ValueError, 'control state is unreadable'):
                     store.get_heartbeat('absent')
             replacement = Path(directory) / 'replacement.sqlite'

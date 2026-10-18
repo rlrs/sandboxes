@@ -11,22 +11,22 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
 
-from ucloud_sandboxes import cli
-from ucloud_sandboxes.gateway import registry_refs
-from ucloud_sandboxes.agent import build_heartbeat
-from ucloud_sandboxes.autoscaler_state import (
+from sandboxes import cli
+from sandboxes.gateway import registry_refs
+from sandboxes.agent import build_heartbeat
+from sandboxes.autoscaler_state import (
     AutoscalerStateStore,
     ProviderOperation,
 )
-from ucloud_sandboxes.cli import (
+from sandboxes.cli import (
     find_ucloud_ssh_key,
     read_public_ssh_key_file,
 )
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.deployment import package_version
-from ucloud_sandboxes.managed_registry import RegistryTag, RegistryUsageStore
-from ucloud_sandboxes.models import (
+from sandboxes.config import DeploymentConfig
+from sandboxes.control_state import ControlStateStore
+from sandboxes.deployment import package_version
+from sandboxes.managed_registry import RegistryTag, RegistryUsageStore
+from sandboxes.models import (
     InstancePhase,
     NodeHeartbeat,
     ProviderInstance,
@@ -36,15 +36,15 @@ from ucloud_sandboxes.models import (
     ScalePolicy,
     utc_now,
 )
-from ucloud_sandboxes.routing import (
+from sandboxes.routing import (
     RoutingStore,
     SandboxRoute,
 )
-from ucloud_sandboxes.providers import DestructiveInstanceLoss
-from ucloud_sandboxes.providers.ucloud.api import UCloudError
-from ucloud_sandboxes.providers.ucloud.config import UCloudSettings
-from ucloud_sandboxes.providers.ucloud import UCloudProvider
-from ucloud_sandboxes.providers.hetzner import (
+from sandboxes.providers import DestructiveInstanceLoss
+from sandboxes.providers.ucloud.api import UCloudError
+from sandboxes.providers.ucloud.config import UCloudSettings
+from sandboxes.providers.ucloud import UCloudProvider
+from sandboxes.providers.hetzner import (
     HetznerCreateProfile,
     HetznerProvider,
 )
@@ -2102,7 +2102,7 @@ class CliTests(unittest.TestCase):
         self.assertTrue(UCloudProvider.requires_guest_continuity)
 
     def test_external_provider_must_declare_its_continuity_contract(self):
-        from ucloud_sandboxes.providers import loader
+        from sandboxes.providers import loader
 
         configuration = SimpleNamespace(kind="external")
         for flags, loads in (({"requires_continuity_history": False}, False),

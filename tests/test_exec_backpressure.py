@@ -7,7 +7,7 @@ import unittest
 
 from tests.support import requires_sdk
 from tests.test_sandbox_exec import FakeSandboxManager, BlockingStdin, _install_session
-from ucloud_sandboxes.sandbox_exec import ExecSessionManager, SandboxExecSpec
+from sandboxes.sandbox_exec import ExecSessionManager, SandboxExecSpec
 
 TEST_TIER = "contract"
 
@@ -111,9 +111,9 @@ class ExecDuplexHttpTests(unittest.TestCase):
         from ucloud_sandboxes_sdk import SandboxClient, AsyncSandboxClient
         from types import SimpleNamespace
         from tests.test_control_plane import _running_server
-        from ucloud_sandboxes.http_server import HighBacklogThreadingHTTPServer
-        from ucloud_sandboxes.node_agent import NodeAgentHandler
-        from ucloud_sandboxes.telemetry import Telemetry
+        from sandboxes.http_server import HighBacklogThreadingHTTPServer
+        from sandboxes.node_agent import NodeAgentHandler
+        from sandboxes.telemetry import Telemetry
         class Handler(NodeAgentHandler):
             def _check_node_control_authorized(self):
                 return True

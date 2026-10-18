@@ -6,11 +6,11 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_node_runtime import _WakeService
-from ucloud_sandboxes.background_io import Pressure
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.resident_memory import ResidentMemorySample, ResidentReclaimResult
-from ucloud_sandboxes.warm_park import WarmParkPolicy, WarmParkDeferred
-from ucloud_sandboxes.transition_admission import MemoryDemand
+from sandboxes.background_io import Pressure
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.resident_memory import ResidentMemorySample, ResidentReclaimResult
+from sandboxes.warm_park import WarmParkPolicy, WarmParkDeferred
+from sandboxes.transition_admission import MemoryDemand
 
 MIB = 1024**2
 
@@ -83,7 +83,7 @@ class ResidentCachePolicyTests(unittest.TestCase):
         self.policy.wake(self.key)
         next_key = ("agent", 1, "next-request")
         hot = replace(self.sample, refault_file_pages=512 * MIB // os.sysconf("SC_PAGE_SIZE"))
-        with patch("ucloud_sandboxes.warm_park.time.monotonic", return_value=time.monotonic() + 1), \
+        with patch("sandboxes.warm_park.time.monotonic", return_value=time.monotonic() + 1), \
                 self.policy.defer(next_key, memory_bytes=hot.current_bytes, ram_bytes=0,
                                   blocking=False):
             self.assertGreater(self.policy.cache_reclaim_target(
@@ -124,7 +124,7 @@ class ResidentCachePolicyTests(unittest.TestCase):
             self.assertEqual(sum(targets), policy.snapshot()["projected_reclaim_bytes"])
 
     def test_rapid_refault_backs_off_new_waits_then_allows_a_later_probe(self):
-        with patch("ucloud_sandboxes.warm_park.time.monotonic", return_value=10):
+        with patch("sandboxes.warm_park.time.monotonic", return_value=10):
             with self.policy.defer(
                 self.key, memory_bytes=self.sample.current_bytes, blocking=False
             ):
@@ -143,13 +143,13 @@ class ResidentCachePolicyTests(unittest.TestCase):
             self.sample, refault_file_pages=256 * MIB // os.sysconf("SC_PAGE_SIZE")
         )
         next_key = ("agent", 1, "request2")
-        with patch("ucloud_sandboxes.warm_park.time.monotonic", return_value=12):
+        with patch("sandboxes.warm_park.time.monotonic", return_value=12):
             with self.policy.defer(
                 next_key, memory_bytes=hot.current_bytes, blocking=False
             ):
                 self.assertEqual(self.policy.cache_reclaim_target(next_key, hot), 0)
             self.policy.wake(next_key)
-        with patch("ucloud_sandboxes.warm_park.time.monotonic", return_value=43):
+        with patch("sandboxes.warm_park.time.monotonic", return_value=43):
             with self.policy.defer(
                 ("agent", 1, "request3"), memory_bytes=hot.current_bytes, blocking=False
             ):
@@ -223,7 +223,7 @@ class ResidentCachePolicyTests(unittest.TestCase):
         self.assertEqual(service.park_calls, ["agent"])
 
     def test_wake_during_reclaim_cancels_the_checkpoint_fallback(self):
-        from ucloud_sandboxes.sandbox import SandboxConflictError
+        from sandboxes.sandbox import SandboxConflictError
 
         service = _WakeService()
         service.provisioner.registry.relay_wake_fence = lambda *_: False

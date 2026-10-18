@@ -274,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="ucloud-sandboxes",
+        prog="sandboxes",
         description=(
             "Autoscale direct gVisor sandbox nodes through a compute provider."
         ),
@@ -2475,7 +2475,7 @@ def cmd_submit_vm(args: argparse.Namespace) -> int:
                     init_role = "builder" if args.role == "builder" else "sandbox"
                     print(
                         "Next: "
-                        "ucloud-sandboxes init-vm "
+                        "sandboxes init-vm "
                         f"--config {args.config} {job_ids[0]} "
                         f"--role {init_role} --package-spec <node-bundle>"
                     )

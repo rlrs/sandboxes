@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from prepare_image_pool import SourceResolver, save
-from ucloud_sandboxes.environment_artifact import require_digest
+from sandboxes.environment_artifact import require_digest
 
 
 def blob_accounting(descriptors, retained_size, seen_missing):
@@ -40,7 +40,7 @@ def main():
     args = parser.parse_args()
     if args.limit < 1:
         parser.error('limit must be positive')
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_dict(json.loads(args.config.read_text()))
     plan = json.loads((args.root / 'plan.json').read_text())
     if plan.get('schema') != 1:

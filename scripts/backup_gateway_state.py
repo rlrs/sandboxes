@@ -95,7 +95,7 @@ def publish(pending: Path, target: Path, root: Path, pattern: str, keep: int) ->
 
 
 def backup_gateway(args, root: Path, stamp: str) -> dict:
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_file(args.config)
     with tempfile.TemporaryDirectory(dir=root, prefix=".gateway-") as temporary:
         work = Path(temporary) / f"gateway-{stamp}"
@@ -145,8 +145,8 @@ gzip -1 -c "$copy"
 
 
 def backup_chunk_index(args, root: Path, stamp: str) -> dict:
-    from ucloud_sandboxes.environment_config import ChunkStoreConfig
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.environment_config import ChunkStoreConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_file(args.config)
     store = config.immutable_environments.chunk_store if config.immutable_environments else None
     if not isinstance(store, ChunkStoreConfig) or store.store_node is None or not store.store_node.serve_index:

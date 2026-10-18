@@ -2,8 +2,8 @@ import unittest
 from unittest.mock import Mock, patch
 from urllib3.exceptions import ProtocolError, ReadTimeoutError
 
-from ucloud_sandboxes.control_plane import ControlPlaneHandler
-from ucloud_sandboxes.telemetry import Telemetry
+from sandboxes.control_plane import ControlPlaneHandler
+from sandboxes.telemetry import Telemetry
 
 
 class NodeResponseErrorTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class NodeResponseErrorTests(unittest.TestCase):
                 response.__enter__ = Mock(return_value=response)
                 response.__exit__ = Mock(return_value=False)
                 response.read.side_effect = failure
-                with patch('ucloud_sandboxes.gateway.node_rpc._open_node_request', return_value=response) as opened:
+                with patch('sandboxes.gateway.node_rpc._open_node_request', return_value=response) as opened:
                     result = handler._proxy_request('http://node', '/status', method='POST')
                 self.assertEqual(result.status, status)
                 self.assertEqual(result.json()['code'], code)
@@ -38,6 +38,6 @@ class NodeResponseErrorTests(unittest.TestCase):
                 response.__enter__ = Mock(return_value=response)
                 response.__exit__ = Mock(return_value=False)
                 response.read.return_value = b''
-                with patch('ucloud_sandboxes.gateway.node_rpc._open_node_request', return_value=response) as opened:
+                with patch('sandboxes.gateway.node_rpc._open_node_request', return_value=response) as opened:
                     handler._proxy_request(node_url, '/status', method='POST', body=b'{}')
                 self.assertIs(opened.call_args.kwargs['allow_body_keep_alive'], reuse)

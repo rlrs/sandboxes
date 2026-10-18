@@ -6,7 +6,7 @@ import ssl
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes import cli
+from sandboxes import cli
 
 
 class ControlTransportTests(unittest.TestCase):

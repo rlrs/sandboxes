@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from scripts.derive_builder_bundle import derive_builder_bundle
-from ucloud_sandboxes.vm_init import (
+from sandboxes.vm_init import (
     BUILDER_RUNTIME_PACKAGES,
     RUNTIME_KERNEL_MODULES,
     SANDBOX_RUNTIME_PACKAGES,

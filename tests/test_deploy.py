@@ -10,9 +10,9 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from ucloud_sandboxes.cli import build_parser
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.deploy import (
+from sandboxes.cli import build_parser
+from sandboxes.config import DeploymentConfig
+from sandboxes.deploy import (
     AllInOneDeployPlan,
     packaged_systemd_units,
     render_remote_deploy_script,
@@ -21,7 +21,7 @@ from ucloud_sandboxes.deploy import (
     storage_native_build_artifacts,
     wheel_package_version,
 )
-from ucloud_sandboxes.vm_init import (
+from sandboxes.vm_init import (
     PINNED_STORAGE_NATIVE_AGENTENV_COMMIT,
     PINNED_STORAGE_NATIVE_PATCHES,
     RUNTIME_KERNEL_MODULES,
@@ -71,12 +71,12 @@ class DeployTests(unittest.TestCase):
         config: DeploymentConfig | None = None,
         local_wheel: Path | None = None,
     ) -> AllInOneDeployPlan:
-        wheel = local_wheel or root / "ucloud_sandboxes-0.2.0-py3-none-any.whl"
+        wheel = local_wheel or root / "sandboxes-0.2.0-py3-none-any.whl"
         wheel.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(wheel, "w") as archive:
             archive.writestr(
-                "ucloud_sandboxes-0.2.0.dist-info/METADATA",
-                "Metadata-Version: 2.1\nName: ucloud-sandboxes\nVersion: 0.2.0\n",
+                "sandboxes-0.2.0.dist-info/METADATA",
+                "Metadata-Version: 2.1\nName: sandboxes\nVersion: 0.2.0\n",
             )
         runsc = root / "runsc"
         runsc.write_bytes(b"patched-runsc")
@@ -122,7 +122,7 @@ class DeployTests(unittest.TestCase):
 
     def test_remote_deploy_failure_retains_bounded_diagnostics(self) -> None:
         with patch(
-            "ucloud_sandboxes.deploy.subprocess.run",
+            "sandboxes.deploy.subprocess.run",
             return_value=subprocess.CompletedProcess(
                 args=("ssh",),
                 returncode=1,
@@ -143,8 +143,8 @@ class DeployTests(unittest.TestCase):
             wheel = root / "misleading-filename-99.0.whl"
             with zipfile.ZipFile(wheel, "w") as archive:
                 archive.writestr(
-                    "ucloud_sandboxes-7.4.1.dist-info/METADATA",
-                    "Metadata-Version: 2.1\nName: ucloud-sandboxes\nVersion: 7.4.1\n",
+                    "sandboxes-7.4.1.dist-info/METADATA",
+                    "Metadata-Version: 2.1\nName: sandboxes\nVersion: 7.4.1\n",
                 )
 
             self.assertEqual(wheel_package_version(wheel), "7.4.1")
@@ -158,7 +158,7 @@ class DeployTests(unittest.TestCase):
                     "Metadata-Version: 2.1\nName: other\nVersion: 1.0\n",
                 )
 
-            with self.assertRaisesRegex(ValueError, "ucloud-sandboxes"):
+            with self.assertRaisesRegex(ValueError, "sandboxes"):
                 wheel_package_version(wheel)
 
     def test_rendered_deploy_script_is_valid_for_each_registry_backend(self) -> None:
@@ -244,7 +244,7 @@ class DeployTests(unittest.TestCase):
 
         for script in (registry_script, s3_script):
             self.assertIn(
-                "ucloud_sandboxes.systemd gateway-reconcile",
+                "sandboxes.systemd gateway-reconcile",
                 script,
             )
             self.assertNotIn("SNAPSHOT_STORE_KIND=", script)
@@ -267,7 +267,7 @@ class DeployTests(unittest.TestCase):
                 stdout=b"",
                 stderr=b"",
             )
-            with patch("ucloud_sandboxes.deploy.subprocess.run", return_value=completed) as run:
+            with patch("sandboxes.deploy.subprocess.run", return_value=completed) as run:
                 stage_file_over_ssh(
                     "ssh gateway",
                     source,
@@ -286,7 +286,7 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["input"], b"new wheel")
 
     def test_sandbox_bundle_contains_complete_new_gvisor_distribution(self):
-        from ucloud_sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
+        from sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
 
         with TemporaryDirectory() as directory:
             root = Path(directory)

@@ -1,5 +1,5 @@
 //! Guest files written into a prepared (merged overlay) rootfs before runsc
-//! starts, as ucloud_sandboxes/direct_oci.py does them: S9 (`prepare_workspace`,
+//! starts, as sandboxes/direct_oci.py does them: S9 (`prepare_workspace`,
 //! `prepare_working_directory`, `prepare_network_files`) and S10
 //! (`install_init`, `install_managed_init`) of the create-pipeline spec.
 //!

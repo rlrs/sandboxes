@@ -13,12 +13,12 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_images import _uploaded_context
-from ucloud_sandboxes.images import (
+from sandboxes.images import (
     DockerImageRuntime, ImageBuildCapacityError, ImageBuildConflictError,
     ImageBuildRecord, ImageBuildSpec, ImageBuildStore, ImageManager, ImageStore,
 )
-from ucloud_sandboxes.sandbox import CommandResult
-from ucloud_sandboxes.build_deadline import build_execution_deadline
+from sandboxes.sandbox import CommandResult
+from sandboxes.build_deadline import build_execution_deadline
 
 TEST_TIER = "contract"
 
@@ -200,7 +200,7 @@ class PhaseAdmissionTests(unittest.TestCase):
         now = [1000.0]
         clock = SimpleNamespace(monotonic=lambda: now[0])
         with TemporaryDirectory() as temporary, patch(
-            "ucloud_sandboxes.build_deadline.time", clock
+            "sandboxes.build_deadline.time", clock
         ):
             runtime = ControlledRuntime()
             runtime.arm("first", release=True)
@@ -275,7 +275,7 @@ class PhaseAdmissionTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             manager = self.manager(Path(temporary), ControlledRuntime(), builds=1, finishing=1)
             observed = []
-            with patch("ucloud_sandboxes.images.Thread.start", side_effect=RuntimeError("start failed")):
+            with patch("sandboxes.images.Thread.start", side_effect=RuntimeError("start failed")):
                 with self.assertRaisesRegex(RuntimeError, "start failed"):
                     self.submit(manager, "first", cleanup=lambda: observed.append(manager.active_build_count()))
             self.assertEqual(observed, [1])
@@ -327,7 +327,7 @@ class PhaseAdmissionTests(unittest.TestCase):
             store.upsert(record("terminal", phase="finishing", status="succeeded", owner=999999))
             store.upsert(record("running", owner=999999))
             store.upsert(record("live", phase="finishing", status="succeeded"))
-            with patch("ucloud_sandboxes.images._pid_is_running", side_effect=lambda pid: pid == os.getpid()):
+            with patch("sandboxes.images._pid_is_running", side_effect=lambda pid: pid == os.getpid()):
                 interrupted = store.reconcile_interrupted()
             self.assertEqual([item.build_id for item in interrupted], ["running"])
             self.assertEqual(store.get("terminal").admission_phase, "released")

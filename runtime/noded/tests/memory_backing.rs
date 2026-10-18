@@ -458,8 +458,8 @@ from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.memory_backing import MemoryBackingStore
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.memory_backing import MemoryBackingStore
 
 class Quota:
     def validate_root(self, root): pass
@@ -470,7 +470,7 @@ class Quota:
 a = json.loads(sys.argv[1])
 
 def store():
-    with patch("ucloud_sandboxes.memory_backing.subprocess.run",
+    with patch("sandboxes.memory_backing.subprocess.run",
                return_value=SimpleNamespace(stdout="tmpfs rw,noswap\n")):
         return MemoryBackingStore(Path(a["root"]), Path(a["journal"]),
                                   hard_capacity_bytes=a["capacity"], quota=Quota(),
@@ -797,7 +797,7 @@ fn syscalls_provision_exactly_what_xfs_quota_does() {
     // The agent's own XfsMemoryQuota accepts the syscall-provisioned directory.
     let interpreter = repo().join(".venv/bin/python");
     if interpreter.exists() {
-        let check = "import sys; from pathlib import Path; from ucloud_sandboxes.memory_backing import XfsMemoryQuota; \
+        let check = "import sys; from pathlib import Path; from sandboxes.memory_backing import XfsMemoryQuota; \
                      XfsMemoryQuota().validate_project(Path(sys.argv[1]), int(sys.argv[2])); print('ok')";
         let output = run(Command::new(interpreter).current_dir(repo()).args(["-c", check]).arg(&ours.path).arg(ours.project_id.to_string()));
         assert_eq!(output.trim(), "ok");

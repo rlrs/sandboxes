@@ -263,7 +263,7 @@ done
 
 systemd_source="$($venv_dir/bin/python - <<'PY'
 from importlib import resources
-print(resources.files("ucloud_sandboxes").joinpath("systemd"))
+print(resources.files("sandboxes").joinpath("systemd"))
 PY
 )"
 for unit in \
@@ -373,7 +373,7 @@ EOF
 sysctl --system >/dev/null
 
 systemctl enable --now ucloud-sandboxes-nat.service
-"$venv_dir/bin/python" -m ucloud_sandboxes.systemd \
+"$venv_dir/bin/python" -m sandboxes.systemd \
   gateway-reconcile --config /etc/ucloud-sandboxes/deployment.json
 
 install -m 0755 "$ingress" /usr/local/sbin/configure-hetzner-sdk-ingress

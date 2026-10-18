@@ -31,7 +31,7 @@ DEFAULT_NODE_AGENT_HOST = "0.0.0.0"
 DEFAULT_NODE_AGENT_PORT = 8090
 DEFAULT_SSH_PORT_START = 22000
 DEFAULT_SSH_PORT_END = 22999
-DEFAULT_PACKAGE_SPEC = "ucloud-sandboxes"
+DEFAULT_PACKAGE_SPEC = "sandboxes"
 DEFAULT_DOCKER_QUOTA_IMAGE_GB = 200
 DEFAULT_SWAP_GB = 0
 DEFAULT_DOCKER_STORAGE_DIR = "/var/lib/ucloud-sandboxes"
@@ -468,9 +468,9 @@ def render_vm_init_script(options: VmInitOptions) -> str:
         from .chunk_store_node import store_init_script
         return store_init_script(options)
     work_dir = _clean_posix_path(options.work_dir)
-    agent_bin = str(PurePosixPath(work_dir) / "bin" / "ucloud-sandboxes")
+    agent_bin = str(PurePosixPath(work_dir) / "bin" / "sandboxes")
     storage_agent_bin = str(
-        PurePosixPath(work_dir) / "bin" / "ucloud-sandboxes-storage"
+        PurePosixPath(work_dir) / "bin" / "sandboxes-storage"
     )
     docker_storage_dir = _clean_posix_path(DEFAULT_DOCKER_STORAGE_DIR)
     docker_data_root = str(PurePosixPath(docker_storage_dir) / "docker")
@@ -756,7 +756,7 @@ fi
     )
     memory_filesystem_prestart = (
         "ExecStartPre=/usr/bin/env PYTHONPATH=$UCLOUD_AGENT_RUNTIME_DIR/site-packages /usr/bin/python3"
-        " -m ucloud_sandboxes.memory_filesystem --mount-root $UCLOUD_STORAGE_NATIVE_MOUNT_ROOT"
+        " -m sandboxes.memory_filesystem --mount-root $UCLOUD_STORAGE_NATIVE_MOUNT_ROOT"
         " --hard-capacity-bytes $UCLOUD_STORAGE_NATIVE_HARD_CAPACITY_BYTES\n"
         if options.direct_split_memory_backing else ""
     )
@@ -1015,7 +1015,7 @@ if [ -f "$UCLOUD_STATIC_RUNTIME_RECEIPT" ] \
   && [ "$(receipt_value init_version)" = "$UCLOUD_INIT_VERSION" ] \
   && [ "$(receipt_value role)" = "$UCLOUD_NODE_ROLE" ] \
   && [ "$(receipt_value kernel_release)" = "$(uname -r)" ] \
-  && [ -d "$UCLOUD_CACHED_AGENT_RUNTIME_DIR/site-packages/ucloud_sandboxes" ] \
+  && [ -d "$UCLOUD_CACHED_AGENT_RUNTIME_DIR/site-packages/sandboxes" ] \
   && command -v docker >/dev/null 2>&1 \
   && [ -f "/lib/modules/$(uname -r)/updates/ucloud-sandboxes/.bundle-sha256" ] \
   && [ "$(cat "/lib/modules/$(uname -r)/updates/ucloud-sandboxes/.bundle-sha256")" = "$UCLOUD_PACKAGE_EXPECTED_SHA256" ]; then
@@ -1956,7 +1956,7 @@ log_init_phase "docker-daemon"
 
 {buildkit_setup}
 
-echo "Activating bundled ucloud-sandboxes runtime"
+echo "Activating bundled sandboxes runtime"
 UCLOUD_AGENT_RUNTIME_DIR="$UCLOUD_CACHED_AGENT_RUNTIME_DIR"
 UCLOUD_AGENT_RUNTIME_TMP="$UCLOUD_AGENT_RUNTIME_DIR.tmp.$$"
 if [ "$UCLOUD_STATIC_RUNTIME_READY" -eq 0 ]; then
@@ -1964,19 +1964,19 @@ if [ "$UCLOUD_STATIC_RUNTIME_READY" -eq 0 ]; then
   $SUDO install -d -m 0755 -o root -g root "$UCLOUD_AGENT_RUNTIME_TMP"
   $SUDO tar --no-same-owner --no-same-permissions \
     -xf "$UCLOUD_PREBUILT_AGENT_ARCHIVE" -C "$UCLOUD_AGENT_RUNTIME_TMP"
-  test -d "$UCLOUD_AGENT_RUNTIME_TMP/site-packages/ucloud_sandboxes"
+  test -d "$UCLOUD_AGENT_RUNTIME_TMP/site-packages/sandboxes"
   $SUDO rm -rf "$UCLOUD_AGENT_RUNTIME_DIR"
   $SUDO mv "$UCLOUD_AGENT_RUNTIME_TMP" "$UCLOUD_AGENT_RUNTIME_DIR"
 fi
-test -d "$UCLOUD_AGENT_RUNTIME_DIR/site-packages/ucloud_sandboxes"
+test -d "$UCLOUD_AGENT_RUNTIME_DIR/site-packages/sandboxes"
 $SUDO install -d -m 0755 -o "$UCLOUD_SERVICE_USER" -g "$UCLOUD_SERVICE_GROUP" "$(dirname "$UCLOUD_AGENT_BIN")"
 UCLOUD_AGENT_LAUNCHER="$(mktemp)"
-printf '#!/bin/sh\nexec env PYTHONPATH=%q /usr/bin/python3 -m ucloud_sandboxes.cli "$@"\n' \
+printf '#!/bin/sh\nexec env PYTHONPATH=%q /usr/bin/python3 -m sandboxes.cli "$@"\n' \
   "$UCLOUD_AGENT_RUNTIME_DIR/site-packages" > "$UCLOUD_AGENT_LAUNCHER"
 $SUDO install -m 0755 -o "$UCLOUD_SERVICE_USER" -g "$UCLOUD_SERVICE_GROUP" "$UCLOUD_AGENT_LAUNCHER" "$UCLOUD_AGENT_BIN"
 rm -f "$UCLOUD_AGENT_LAUNCHER"
 UCLOUD_STORAGE_AGENT_LAUNCHER="$(mktemp)"
-printf '#!/bin/sh\nexec env PYTHONPATH=%q /usr/bin/python3 -m ucloud_sandboxes.storage_native_service "$@"\n' \
+printf '#!/bin/sh\nexec env PYTHONPATH=%q /usr/bin/python3 -m sandboxes.storage_native_service "$@"\n' \
   "$UCLOUD_AGENT_RUNTIME_DIR/site-packages" > "$UCLOUD_STORAGE_AGENT_LAUNCHER"
 $SUDO install -m 0755 -o root -g root "$UCLOUD_STORAGE_AGENT_LAUNCHER" "$UCLOUD_STORAGE_AGENT_BIN"
 rm -f "$UCLOUD_STORAGE_AGENT_LAUNCHER"
@@ -1987,7 +1987,7 @@ if [ "$UCLOUD_DIRECT_SPLIT_MEMORY_BACKING" -eq 1 ]; then
     [ "$UCLOUD_DIRECT_PAUSE_TIER" -eq 0 ] || UCLOUD_RAM_MEMORY_ARGS+=(--ram-swappable)
   fi
   $SUDO env PYTHONPATH="$UCLOUD_AGENT_RUNTIME_DIR/site-packages" /usr/bin/python3 \
-    -m ucloud_sandboxes.memory_filesystem \
+    -m sandboxes.memory_filesystem \
     --mount-root "$UCLOUD_STORAGE_NATIVE_MOUNT_ROOT" \
     --hard-capacity-bytes "$UCLOUD_STORAGE_NATIVE_HARD_CAPACITY_BYTES" "${{UCLOUD_RAM_MEMORY_ARGS[@]}}"
 fi

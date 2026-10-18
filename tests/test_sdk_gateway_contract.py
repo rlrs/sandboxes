@@ -8,10 +8,10 @@ from threading import Thread
 import unittest
 
 from tests.support import sdk_skip_reason
-from ucloud_sandboxes.control_plane import build_server
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.deployment import package_version
-from ucloud_sandboxes.models import (
+from sandboxes.control_plane import build_server
+from sandboxes.control_state import ControlStateStore
+from sandboxes.deployment import package_version
+from sandboxes.models import (
     NodeHeartbeat,
     NodeRuntimeMetrics,
     ResourceQuantity,

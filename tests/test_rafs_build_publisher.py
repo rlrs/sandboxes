@@ -3,9 +3,9 @@ from types import SimpleNamespace
 import unittest
 
 from tests.chunk_store_support import REPOSITORY, ChunkStoreFixture, fake_nydus, sample_images
-from ucloud_sandboxes.chunk_convert import rafs_build_publisher
-from ucloud_sandboxes.environment_artifact import RafsEnvironmentComponent, load_environment, load_image_environment
-from ucloud_sandboxes.environment_builder import publication_metrics
+from sandboxes.chunk_convert import rafs_build_publisher
+from sandboxes.environment_artifact import RafsEnvironmentComponent, load_environment, load_image_environment
+from sandboxes.environment_builder import publication_metrics
 
 
 class RafsBuildPublisherTests(unittest.TestCase):
@@ -46,8 +46,8 @@ class RecipeReleaseTests(unittest.TestCase):
     def test_a_chunk_store_image_gets_its_roots_row_and_its_manifest_released(self):
         from pathlib import Path
         from unittest.mock import patch
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
-        from ucloud_sandboxes.gateway.image_roots import ImageRootsStore
+        from sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.gateway.image_roots import ImageRootsStore
         fixture = ChunkStoreFixture(self)
         sample_images(fixture.client)
         store = SimpleNamespace(object_store=lambda: fixture.index.store, nydus_image=fake_nydus(fixture.root),
@@ -71,7 +71,7 @@ class RecipeReleaseTests(unittest.TestCase):
             return {"released": len(keys)}
 
         reference = f"10.0.0.1:5000/{REPOSITORY}:a@{digest}"
-        with patch("ucloud_sandboxes.chunk_migrate.release_oci", release_oci):
+        with patch("sandboxes.chunk_migrate.release_oci", release_oci):
             outcome = ControlPlaneHandler._release_recipe_images(handler, {"recipe-x": reference})
             again = ControlPlaneHandler._release_recipe_images(handler, {"recipe-x": reference})
         root, _ = load_image_environment(fixture.registry, REPOSITORY, digest)

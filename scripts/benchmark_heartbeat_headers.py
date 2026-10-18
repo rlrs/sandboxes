@@ -19,14 +19,14 @@ import subprocess
 from tempfile import TemporaryDirectory
 import time
 
-from ucloud_sandboxes import control_state
-from ucloud_sandboxes.agent import build_heartbeat
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry
+from sandboxes import control_state
+from sandboxes.agent import build_heartbeat
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry
 
 
 def baseline_method(revision):
     source = subprocess.check_output(
-        ["git", "show", f"{revision}:ucloud_sandboxes/control_state.py"], text=True,
+        ["git", "show", f"{revision}:sandboxes/control_state.py"], text=True,
     )
     cls = next(node for node in ast.parse(source).body
                if isinstance(node, ast.ClassDef) and node.name == "ControlStateStore")

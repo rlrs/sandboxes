@@ -151,7 +151,7 @@ class StoreNodeConfig:
     # resident extents on every core; this node then answers behind it on
     # chunk_store_node.NATIVE_UPSTREAM, a loopback port of its own.
     native_server_sha256: str | None = None
-    # The build package cache on this node (ucloud_sandboxes.package_cache): an
+    # The build package cache on this node (sandboxes.package_cache): an
     # allowlisted, caching HTTP proxy for package mirrors; builds use it as http_proxy.
     package_cache: object = None
 

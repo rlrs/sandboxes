@@ -8,13 +8,13 @@ import time
 import unittest
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.build_deadline import (
+from sandboxes.build_deadline import (
     ImageBuildTimeoutError, build_execution_deadline, remaining_build_execution_seconds,
 )
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder
-from ucloud_sandboxes.image_rootfs import DockerOverlay2RootfsStore
-from ucloud_sandboxes.managed_registry import RegistryClient, _read_response_bytes, _upload_blocks
-from ucloud_sandboxes.direct_warden import DirectWardenError
+from sandboxes.environment_builder import FreshEnvironmentBuilder
+from sandboxes.image_rootfs import DockerOverlay2RootfsStore
+from sandboxes.managed_registry import RegistryClient, _read_response_bytes, _upload_blocks
+from sandboxes.direct_warden import DirectWardenError
 from tests.test_image_rootfs import IMAGE_DIGEST, Overlay2Runner, image_store
 
 TEST_TIER = "contract"
@@ -79,7 +79,7 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
     def test_registry_connection_and_streaming_share_execution_budget(self):
         client = RegistryClient("http://registry.invalid", timeout_seconds=30)
         with build_execution_deadline(0.05):
-            with patch("ucloud_sandboxes.managed_registry.request.urlopen") as opened:
+            with patch("sandboxes.managed_registry.request.urlopen") as opened:
                 client._request("/v2/", timeout_seconds=600)
                 self.assertGreater(opened.call_args.kwargs["timeout"], 0)
                 self.assertLessEqual(opened.call_args.kwargs["timeout"], 0.05)
@@ -100,7 +100,7 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
             root = Path(temporary)
             builder = FreshEnvironmentBuilder(None, None, None, root)
             with build_execution_deadline(0.1), patch(
-                "ucloud_sandboxes.environment_builder.subprocess.run"
+                "sandboxes.environment_builder.subprocess.run"
             ) as run:
                 builder._mkfs(root / "out", root, exclude_runtime_mounts=True, preserve_mtimes=False)
                 self.assertLessEqual(run.call_args.kwargs["timeout"], 0.1)
@@ -126,7 +126,7 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
         store.collect_image.side_effect = collect
         with build_execution_deadline(0.01):
             time.sleep(0.02)
-            with self.assertLogs("ucloud_sandboxes.environment_builder", level="WARNING"):
+            with self.assertLogs("sandboxes.environment_builder", level="WARNING"):
                 builder._collect_image("sha256:" + "a" * 64)
             self.assertGreater(budgets[0], 9)
             self.assertLessEqual(budgets[0], 10)
@@ -139,7 +139,7 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
             clock = [100.0]
             runner = TimedOverlayRunner(root / "docker", clock)
             store = image_store(root, runner)
-            with patch("ucloud_sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
+            with patch("sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
                 with build_execution_deadline(0.25):
                     store.image_content_id("example/image:latest")
                     store.image_tag_times(("sha256:" + IMAGE_DIGEST,))
@@ -160,7 +160,7 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
             runner = TimedOverlayRunner(root / "docker", clock)
             runner.remount_timeout = True
             store = image_store(root, runner)
-            with patch("ucloud_sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
+            with patch("sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
                 with build_execution_deadline(0.25):
                     with self.assertRaises(subprocess.TimeoutExpired):
                         with store.operation_lease("example/image:latest"):
@@ -206,10 +206,10 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
             runner.unmount_timeout = True
             builder = FreshEnvironmentBuilder(store, None, None, root / "scratch")
             runner.budgets.clear()
-            with patch("ucloud_sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
+            with patch("sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
                 with build_execution_deadline(0.25):
                     clock[0] += 1
-                    with self.assertLogs("ucloud_sandboxes.environment_builder", level="WARNING"):
+                    with self.assertLogs("sandboxes.environment_builder", level="WARNING"):
                         builder._collect_image(image.image_id)
                     with self.assertRaises(ImageBuildTimeoutError):
                         remaining_build_execution_seconds()

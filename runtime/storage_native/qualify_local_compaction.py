@@ -14,9 +14,9 @@ import threading
 import time
 
 from runtime.storage_native.benchmark_delta_compaction import apply_layer, write_layer
-from ucloud_sandboxes.storage_native import AgentEnvUblkClient
-from ucloud_sandboxes.storage_native_compaction import LocalCheckpointCompactor
-from ucloud_sandboxes.storage_native_daemon import StorageVolumeRecord, StorageVolumeState
+from sandboxes.storage_native import AgentEnvUblkClient
+from sandboxes.storage_native_compaction import LocalCheckpointCompactor
+from sandboxes.storage_native_daemon import StorageVolumeRecord, StorageVolumeState
 
 
 def qualify(root: Path, backend: Path, exercise_fn=None) -> dict:

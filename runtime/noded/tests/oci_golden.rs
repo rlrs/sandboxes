@@ -134,9 +134,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
+from sandboxes.sandbox import SandboxSpec
 
 PASSWD = (
     "root:x:0:0:root:/root:/bin/bash\n"

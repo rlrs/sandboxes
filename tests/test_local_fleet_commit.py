@@ -18,9 +18,9 @@ from urllib.parse import urlparse
 
 from tests.harness import LocalFleet
 from tests.test_environment_artifact import MemoryRegistry
-from ucloud_sandboxes import node_commit
-from ucloud_sandboxes.commit_policy import CommitExport, CommitExportRequest, CommitPolicy, filter_upper, staging_repository
-from ucloud_sandboxes.commit_steps import export_step
+from sandboxes import node_commit
+from sandboxes.commit_policy import CommitExport, CommitExportRequest, CommitPolicy, filter_upper, staging_repository
+from sandboxes.commit_steps import export_step
 
 TEST_TIER = "contract"
 

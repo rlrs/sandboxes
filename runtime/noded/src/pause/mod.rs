@@ -1,6 +1,6 @@
-//! The pause tier's mechanism (C1.1; ucloud_sandboxes/direct_warden.py
+//! The pause tier's mechanism (C1.1; sandboxes/direct_warden.py
 //! `pause`/`_pause_locked`/`thaw`/`_thaw_locked`/`_prefetch_memory` and
-//! ucloud_sandboxes/pause_tier.py): pause a LIVE runtime in place with
+//! sandboxes/pause_tier.py): pause a LIVE runtime in place with
 //! `runsc pause`, and thaw it with an optional read-back of its swapped
 //! application memory before `runsc resume`.
 //!

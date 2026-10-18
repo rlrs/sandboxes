@@ -1,6 +1,6 @@
 //! The agent's internal socket (`--internal-unix`, docs/architecture.md
 //! §3.3, step 3c.0): the handshake, its refusals, the socket's permissions,
-//! and the agent's own client (ucloud_sandboxes/noded_client.py) against it.
+//! and the agent's own client (sandboxes/noded_client.py) against it.
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -222,7 +222,7 @@ async fn the_agents_client_says_hello_to_the_daemon() {
     let internal = serve(&socket, internal::own_uid(), FixedNode(Some(true), Some("e".repeat(64))));
     let script = r#"
 import json, sys
-from ucloud_sandboxes.noded_client import NodedClient, NodedRefused
+from sandboxes.noded_client import NodedClient, NodedRefused
 client = NodedClient(sys.argv[1], sys.argv[2], agent_session=sys.argv[3])
 hello = client.hello()
 ping = client.ping()
@@ -253,8 +253,8 @@ import hashlib, json, sys
 from pathlib import Path
 from types import SimpleNamespace
 from tests import test_direct_provisioner as fixtures
-from ucloud_sandboxes.create_handoff import create_config
-from ucloud_sandboxes.direct_service import DirectSandboxService
+from sandboxes.create_handoff import create_config
+from sandboxes.direct_service import DirectSandboxService
 root = Path(sys.argv[1])
 provisioner, _, storage, images, warden = fixtures.DirectProvisionerTests().make(root)
 warden.config.runsc, warden.config.runtime_root = Path("/opt/runsc"), root / "runsc"

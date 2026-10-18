@@ -23,10 +23,10 @@ from unittest.mock import patch
 from hypothesis import settings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
-from ucloud_sandboxes import admission
-from ucloud_sandboxes.admission import FairCapacity
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.transition_admission import TransitionCost, TransitionKind, TransitionLedger
+from sandboxes import admission
+from sandboxes.admission import FairCapacity
+from sandboxes.models import ResourceQuantity
+from sandboxes.transition_admission import TransitionCost, TransitionKind, TransitionLedger
 
 
 # FairCapacity.acquire looks _Waiter up at call time; the harness replaces it.

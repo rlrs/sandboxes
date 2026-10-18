@@ -10,11 +10,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tests.test_registry_sweep import FakeDistribution, HOUR
-from ucloud_sandboxes import build_cache, cli
-from ucloud_sandboxes.build_cache import CACHE_CONFIG_MEDIA_TYPE, CACHE_MANIFEST_MEDIA_TYPE
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.managed_registry import RegistryTag, RegistryUsageStore
-from ucloud_sandboxes.registry_sweep import sweep_registry_blobs
+from sandboxes import build_cache, cli
+from sandboxes.build_cache import CACHE_CONFIG_MEDIA_TYPE, CACHE_MANIFEST_MEDIA_TYPE
+from sandboxes.config import DeploymentConfig
+from sandboxes.managed_registry import RegistryTag, RegistryUsageStore
+from sandboxes.registry_sweep import sweep_registry_blobs
 
 
 CACHE_REPOSITORY = "test/ucloud-build-cache"

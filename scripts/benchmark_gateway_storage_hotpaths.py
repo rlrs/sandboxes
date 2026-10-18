@@ -22,15 +22,15 @@ from tempfile import TemporaryDirectory
 import time
 import tracemalloc
 
-from ucloud_sandboxes import storage_native_registry
-from ucloud_sandboxes.gateway import registry_refs
-from ucloud_sandboxes.managed_registry import RegistryUsageStore
-from ucloud_sandboxes.storage_native import StorageNativeLayer
+from sandboxes import storage_native_registry
+from sandboxes.gateway import registry_refs
+from sandboxes.managed_registry import RegistryUsageStore
+from sandboxes.storage_native import StorageNativeLayer
 
 
 def source_at(revision: str, filename: str) -> str:
     return subprocess.check_output(
-        ["git", "show", f"{revision}:ucloud_sandboxes/{filename}.py"], text=True,
+        ["git", "show", f"{revision}:sandboxes/{filename}.py"], text=True,
     )
 
 
@@ -53,7 +53,7 @@ def timed(operation, count: int) -> dict:
 def registry_benchmark(root: Path, revision: str, repeat: int) -> dict:
     old_path = root / "old_registry.py"
     old_path.write_text(source_at(revision, "managed_registry"))
-    spec = importlib.util.spec_from_file_location("ucloud_sandboxes._benchmark_registry", old_path)
+    spec = importlib.util.spec_from_file_location("sandboxes._benchmark_registry", old_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)

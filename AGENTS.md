@@ -2,7 +2,7 @@
 
 ## Layout
 
-- `ucloud_sandboxes/`: the Python package. CLI (`cli.py`); gateway
+- `sandboxes/`: the Python package. CLI (`cli.py`); gateway
   (`control_plane.py`, `gateway/`); shared state on PostgreSQL (`shared_control/`,
   `routing.py`); node agent (`node_agent.py`, `direct_*.py`); images and chunk store
   (`environment_*.py`, `chunk_*.py`); model relay (`model_relay.py`); providers.
@@ -15,6 +15,13 @@
 
 The SDK is a separate repo, [ucloud-sandboxes-sdk](https://github.com/rlrs/ucloud-sandboxes-sdk);
 `scripts/check.sh` expects a checkout at `./ucloud-sandboxes-sdk` (gitignored).
+
+Some names still say `ucloud` because they are wire or on-disk contracts with
+running deployments and the SDK: `UCLOUD_*` environment variables, `X-UCloud-*`
+headers, `/etc/ucloud-sandboxes` and other host paths, `ucloud-sandbox-*` systemd
+units, the `ucloud-noded` and other runtime binaries, and the `ucloud-sandboxes.`
+label prefix. Renaming them needs a planned migration, not a find-and-replace.
+`providers/ucloud` is the UCloud provider itself.
 
 ## Checks
 

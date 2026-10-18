@@ -17,8 +17,8 @@ import unittest
 from unittest.mock import patch
 from urllib import error
 
-from ucloud_sandboxes import sandbox_build
-from ucloud_sandboxes.sandbox_build import (BuildFailed, BuildRunner, ContextTree, ExternalImages, Spool, Unsupported,
+from sandboxes import sandbox_build
+from sandboxes.sandbox_build import (BuildFailed, BuildRunner, ContextTree, ExternalImages, Spool, Unsupported,
                                             bundle, context_tar, parse_dockerfile, plan_build, words)
 
 TEST_TIER = "contract"
@@ -343,7 +343,7 @@ class FakeGateway(sandbox_build.GatewayApi):
 
 
 def sandbox_build_staging(image_id):
-    from ucloud_sandboxes.commit_policy import staging_repository
+    from sandboxes.commit_policy import staging_repository
     return staging_repository(image_id)
 
 
@@ -375,14 +375,14 @@ class RunnerTests(unittest.TestCase):
                         "metrics": {"chunks_new": 2}}
 
         def filtered(client, commit, root, timeout_seconds):
-            from ucloud_sandboxes.commit_policy import FilterResult
+            from sandboxes.commit_policy import FilterResult
             self.assertEqual(commit.policy.exclude, (sandbox_build.BUILD_DIR, sandbox_build.BUILD_TMP))
             self.assertTrue(commit.policy.keep_build_residue)
             self.assertEqual((commit.generation, commit.parent_root), (3, "sha256:" + "d" * 64))
             Path(root, "filtered.tar").write_bytes(b"layer")
             return FilterResult("sha256:" + "9" * 64, 5, 1, {})
 
-        with patch("ucloud_sandboxes.environment_prepare.prepare_commit_in_subprocess", filtered):
+        with patch("sandboxes.environment_prepare.prepare_commit_in_subprocess", filtered):
             result = self.runner(gateway, Converter()).run(self.job())
         self.assertEqual(result["status"], "succeeded", result)
         self.assertEqual((result["root"], result["diff_id"]), ("sha256:" + "e" * 64, "sha256:" + "9" * 64))
@@ -392,7 +392,7 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(gateway.calls[-1][0], "DELETE")
         self.assertTrue(result["manifest_digest"].startswith("sha256:"))
         self.assertTrue(gateway.spec["managed_process"] and gateway.spec["parkable"])
-        from ucloud_sandboxes.sandbox import SandboxSpec
+        from sandboxes.sandbox import SandboxSpec
         self.assertEqual(SandboxSpec.from_dict(gateway.spec).filesystem.tmpfs_mb, 4096)  # Half the memory.
 
     def test_filtering_and_stacking_share_the_local_slots(self):
@@ -409,7 +409,7 @@ class RunnerTests(unittest.TestCase):
                 return {"root": "sha256:" + "e" * 64, "config": "sha256:" + "f" * 64, "config_size": 9, "metrics": {}}
 
         def filtered(client, commit, root, timeout_seconds):
-            from ucloud_sandboxes.commit_policy import FilterResult
+            from sandboxes.commit_policy import FilterResult
             Path(root, "filtered.tar").write_bytes(b"layer")
             return FilterResult("sha256:" + "9" * 64, 5, 1, {})
 
@@ -421,7 +421,7 @@ class RunnerTests(unittest.TestCase):
             runner.local = shared
             results.append(runner.run(self.job()))
 
-        with patch("ucloud_sandboxes.environment_prepare.prepare_commit_in_subprocess", filtered):
+        with patch("sandboxes.environment_prepare.prepare_commit_in_subprocess", filtered):
             threads = [threading.Thread(target=one) for _ in range(3)]
             for thread in threads:
                 thread.start()
@@ -453,11 +453,11 @@ class GatewaySideTests(unittest.TestCase):
 
     def setUp(self):
         from tests.chunk_store_support import REPOSITORY, ChunkStoreFixture, sample_images, signing
-        from ucloud_sandboxes.build_context_store import BuildContextBlobStore
-        from ucloud_sandboxes.gateway.image_roots import ImageRootsStore
-        from ucloud_sandboxes.gateway.sandbox_builds import SandboxBuilds
-        from ucloud_sandboxes.image_foundations import tmax_foundation
-        from ucloud_sandboxes.prepared_images import PreparedImageCatalog
+        from sandboxes.build_context_store import BuildContextBlobStore
+        from sandboxes.gateway.image_roots import ImageRootsStore
+        from sandboxes.gateway.sandbox_builds import SandboxBuilds
+        from sandboxes.image_foundations import tmax_foundation
+        from sandboxes.prepared_images import PreparedImageCatalog
         self.store = ChunkStoreFixture(self, signer=signing())
         sample_images(self.store.client)
         self.parent = self.store.converter.convert(REPOSITORY, "a")["root"]
@@ -518,7 +518,7 @@ class GatewaySideTests(unittest.TestCase):
 
     def test_a_finished_build_is_born_released_and_resolves(self):
         from tests.test_chunk_convert import commit_layer
-        from ucloud_sandboxes.images import ImageRecord
+        from sandboxes.images import ImageRecord
         self.released_base()
         job, _ = self.builds.job(self.payload("RUN echo task\n"))
         self.spool.submit(job)
@@ -541,7 +541,7 @@ class GatewaySideTests(unittest.TestCase):
 
 class ConfigTests(unittest.TestCase):
     def test_sandbox_builds_config_round_trips_and_needs_the_chunk_store(self):
-        from ucloud_sandboxes.environment_config import EnvironmentDeploymentConfig, SandboxBuildsConfig
+        from sandboxes.environment_config import EnvironmentDeploymentConfig, SandboxBuildsConfig
         self.assertEqual(SandboxBuildsConfig.from_dict({"enabled": True, "slots": 4}).slots, 4)
         for bad in ({"slots": 0}, {"cpus": True}, {"timeout_seconds": 10}, {"extra": 1}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):

@@ -1,4 +1,4 @@
-//! Direct-egress network leases, as ucloud_sandboxes/direct_network.py's
+//! Direct-egress network leases, as sandboxes/direct_network.py's
 //! `DirectNetworkManager.ensure` does them for a create: the same slot state
 //! file and flocks (shared with the Python agent), the same names and
 //! addresses and the same `iptables` host rules. The netns and veth pair are

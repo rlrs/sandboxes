@@ -6,14 +6,14 @@ import os
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.models import NodeRuntimeMetrics, utc_now
-from ucloud_sandboxes.resource_evidence import (
+from sandboxes.models import NodeRuntimeMetrics, utc_now
+from sandboxes.resource_evidence import (
     MemoryBackingCapacity,
     ResourceEvidenceSampler,
     read_memory_pressure,
     sample_memory_backing,
 )
-from ucloud_sandboxes.runtime_metrics import read_proc_stat_cpu
+from sandboxes.runtime_metrics import read_proc_stat_cpu
 
 
 class ResourceEvidenceTests(unittest.TestCase):
@@ -34,8 +34,8 @@ class ResourceEvidenceTests(unittest.TestCase):
             return descriptor
 
         space = SimpleNamespace(f_blocks=100, f_bavail=4, f_bfree=9, f_frsize=4096)
-        with patch('ucloud_sandboxes.resource_evidence.os.open', side_effect=opened), \
-                patch('ucloud_sandboxes.resource_evidence.os.fstatvfs', return_value=space):
+        with patch('sandboxes.resource_evidence.os.open', side_effect=opened), \
+                patch('sandboxes.resource_evidence.os.fstatvfs', return_value=space):
             first = sample_memory_backing(backing, proc_root=self.proc)
             self.assertEqual(first.total_bytes, 409600)
             self.assertEqual(first.available_bytes, 16384)
@@ -106,7 +106,7 @@ class ResourceEvidenceTests(unittest.TestCase):
             self.sampler.collect()
             return self.sampler.cached_cpu_percent()
 
-        with patch("ucloud_sandboxes.resource_evidence.threading.Thread") as thread:
+        with patch("sandboxes.resource_evidence.threading.Thread") as thread:
             self.assertIsNone(self.sampler.cached_cpu_percent())
             self.assertIsNone(collect(0, "cpu 100 0 0 100 0 0 0 0\n"))
             self.assertEqual(collect(1, "cpu 175 0 0 125 0 0 0 0\n"), 75)
@@ -123,7 +123,7 @@ class ResourceEvidenceTests(unittest.TestCase):
             self.assertEqual(thread.call_count, 1)
 
     def test_failed_collection_does_not_refresh_cpu_freshness(self):
-        with patch("ucloud_sandboxes.resource_evidence.threading.Thread"):
+        with patch("sandboxes.resource_evidence.threading.Thread"):
             (self.proc / "stat").write_text("cpu 100 0 0 100\n")
             self.sampler.collect()
             self.now[0] = 1
@@ -131,14 +131,14 @@ class ResourceEvidenceTests(unittest.TestCase):
             self.sampler.collect()
             self.assertEqual(self.sampler.cached_cpu_percent(), 50)
             self.now[0] = 4
-            with patch("ucloud_sandboxes.resource_evidence.read_leaf_disks", side_effect=OSError):
+            with patch("sandboxes.resource_evidence.read_leaf_disks", side_effect=OSError):
                 with self.assertRaises(OSError):
                     self.sampler.collect()
             self.assertIsNone(self.sampler.cached_cpu_percent())
 
     def test_cumulative_cpu_excludes_wait_steal_and_duplicate_guest_charge(self):
         (self.proc / "stat").write_text("cpu 100 20 30 400 50 6 7 8 90 10\n")
-        with patch("ucloud_sandboxes.resource_evidence.os.sysconf", return_value=100):
+        with patch("sandboxes.resource_evidence.os.sysconf", return_value=100):
             sample = self.sampler.collect()
         self.assertEqual(sample.host_cpu_usage_usec, 1_630_000)
         self.assertEqual(sample.host_cpu_steal_usec, 80_000)
@@ -285,7 +285,7 @@ class ResourceEvidenceTests(unittest.TestCase):
         self.assertIsNone(NodeRuntimeMetrics.from_dict(raw))
 
     def test_requests_only_start_one_background_collector_and_expire_stale_data(self):
-        with patch("ucloud_sandboxes.resource_evidence.threading.Thread") as thread:
+        with patch("sandboxes.resource_evidence.threading.Thread") as thread:
             self.assertIsNone(self.sampler.cached())
             self.assertIsNone(self.sampler.cached())
             self.assertEqual(thread.call_count, 1)

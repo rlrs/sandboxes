@@ -15,15 +15,15 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.deploy import REGISTRY_STORAGE_SYSTEMD_UNITS, SYSTEMD_UNIT_NAMES, packaged_systemd_units
-from ucloud_sandboxes.image_import import import_build_context
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.systemd import (
+from sandboxes.config import DeploymentConfig
+from sandboxes.deploy import REGISTRY_STORAGE_SYSTEMD_UNITS, SYSTEMD_UNIT_NAMES, packaged_systemd_units
+from sandboxes.image_import import import_build_context
+from sandboxes.models import ResourceQuantity
+from sandboxes.systemd import (
     read_mirror_credentials, reconcile_gateway_services, run_upstream_mirror, trim_upstream_mirrors,
     upstream_mirror_command, upstream_mirror_environment,
 )
-import ucloud_sandboxes.vm_init as vm_init
+import sandboxes.vm_init as vm_init
 
 ROOT = Path(__file__).resolve().parents[1]
 with patch.object(sys, "path", [str(ROOT / "scripts"), *sys.path]):
@@ -74,7 +74,7 @@ class UpstreamMirrorServiceTests(unittest.TestCase):
     def test_units_are_packaged_gated_on_the_volume_and_installed(self):
         units = packaged_systemd_units()
         service = units["ucloud-sandbox-upstream-mirror@.service"]
-        self.assertIn("ucloud_sandboxes.systemd upstream-mirror --config /etc/ucloud-sandboxes/deployment.json --upstream %i", service)
+        self.assertIn("sandboxes.systemd upstream-mirror --config /etc/ucloud-sandboxes/deployment.json --upstream %i", service)
         self.assertIn("ExecStop=/usr/bin/docker stop ucloud-sandbox-upstream-mirror-%i", service)
         self.assertIn("Restart=always", service)
         self.assertIn("SuccessExitStatus=78\nRestartPreventExitStatus=78", service)

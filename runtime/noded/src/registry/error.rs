@@ -1,5 +1,5 @@
 //! Registry errors, one variant per Python exception class in
-//! ucloud_sandboxes/direct_registry.py; `message()` is Python's `str(exc)`.
+//! sandboxes/direct_registry.py; `message()` is Python's `str(exc)`.
 
 use std::fmt;
 

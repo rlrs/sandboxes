@@ -143,7 +143,7 @@ def main() -> int:
     parser.add_argument("--init-failures", type=int, default=3)
     parser.add_argument("--remind-hours", type=float, default=6.0)
     args = parser.parse_args()
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_file(args.config)
     webhook = None
     alerts_env = ETC / "alerts.env"

@@ -19,22 +19,22 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from tests.test_environment_artifact import MemoryRegistry
-from ucloud_sandboxes import environment_builder
-from ucloud_sandboxes.direct_registry import DirectRegistryCapacityUnavailable
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes import environment_builder
+from sandboxes.direct_registry import DirectRegistryCapacityUnavailable
+from sandboxes.environment_artifact import (
     COMPONENT_SCHEMA, COMPONENT_SCHEMA_V2, EMPTY_LAYER_DIFF_ID, OCI_IMAGE, EnvironmentArtifactRegistry,
     EnvironmentComponent, LayerEnvironmentComponent, bind_source_layers, canonical_bytes, content_digest,
     layer_chain_id, layer_group_key, load_image_environment, publish_environment, require_layer_format,
     sign_component, sign_layer_component,
 )
-from ucloud_sandboxes.environment_backend import NO_BLOCK_DEVICE, mount_has_dependents
-from ucloud_sandboxes.environment_builder import (
+from sandboxes.environment_backend import NO_BLOCK_DEVICE, mount_has_dependents
+from sandboxes.environment_builder import (
     LAYER_GROUP_BYTES, FreshEnvironmentBuilder, plan_layer_groups, publication_metrics, squash_layer_diffs,
 )
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest, HOST_EROFS_ABI
-from ucloud_sandboxes.environment_rootfs import EnvironmentDeviceCapacityError, EnvironmentRootfsStore
-from ucloud_sandboxes.image_rootfs import DockerImageConfig, DockerOverlay2RootfsStore
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.environment_manifest import EnvironmentManifest, HOST_EROFS_ABI
+from sandboxes.environment_rootfs import EnvironmentDeviceCapacityError, EnvironmentRootfsStore
+from sandboxes.image_rootfs import DockerImageConfig, DockerOverlay2RootfsStore
+from sandboxes.managed_registry import RegistryRequestError
 
 TEST_TIER = "contract"
 
@@ -535,7 +535,7 @@ class LayerPublicationTests(unittest.TestCase):
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
     def publish(self, tag):
-        with patch("ucloud_sandboxes.environment_builder.subprocess.run", side_effect=self.mkfs):
+        with patch("sandboxes.environment_builder.subprocess.run", side_effect=self.mkfs):
             annotated = self.builder.publish_image("registry.example/ucloud-managed/" + tag + ":" + tag,
                                                    allowlist=("*",))
         _root, environment = load_image_environment(self.registry, "ucloud-managed/" + tag, annotated)
@@ -618,7 +618,7 @@ class LayerPublicationTests(unittest.TestCase):
                 (component.source_layers, diff_id("foreign"), component.format),
                 (component.source_layers, component.parent, component.format | {"compression": ""})):
             with self.subTest(layers=layers, parent=parent, layer_format=layer_format), \
-                 self.assertLogs("ucloud_sandboxes.environment_builder", level="WARNING"):
+                 self.assertLogs("sandboxes.environment_builder", level="WARNING"):
                 self.assertIsNone(self.builder._reuse_layer_component(tag, layers, parent, layer_format))
         self.assertEqual(self.client.puts, [])
 
@@ -714,7 +714,7 @@ class LayerPublicationTests(unittest.TestCase):
                 times.append({str(path.relative_to(view)): path.lstat().st_mtime_ns
                               for path in (view, *view.rglob("*"))})
             return self.mkfs(command, **kwargs)
-        return patch("ucloud_sandboxes.environment_builder.subprocess.run", side_effect=run)
+        return patch("sandboxes.environment_builder.subprocess.run", side_effect=run)
 
     def test_preserve_mtimes_selects_layout_two_and_normalizes_only_owned_views(self):
         # Docker diffs: tar-header file times, layer-creation directory times.
@@ -780,7 +780,7 @@ class LayerPublicationTests(unittest.TestCase):
         # A registry that refuses the re-put (its blobs were swept) rebuilds.
         self.views.clear()
         self.client.refuse_puts = True
-        with patch("ucloud_sandboxes.environment_builder.subprocess.run", side_effect=self.mkfs), \
+        with patch("sandboxes.environment_builder.subprocess.run", side_effect=self.mkfs), \
              self.assertRaises(RegistryRequestError):
             self.builder.publish_image("registry.example/ucloud-managed/base:base", allowlist=("*",))
         self.assertEqual(len(self.views), 1)
@@ -876,12 +876,12 @@ class RelativeLowerDependencyTests(unittest.TestCase):
                 path.mkdir(parents=True)
             overlay = (f"101 1 0:123 / /image ro - overlay overlay ro,lowerdir={'2' * 64}:{'1' * 64}\n"
                        "102 1 0:124 / /docker ro - overlay overlay ro,lowerdir=l/ABC:l/DEF\n")
-            with patch("ucloud_sandboxes.environment_backend.Path.read_text", return_value=overlay):
+            with patch("sandboxes.environment_backend.Path.read_text", return_value=overlay):
                 self.assertTrue(mount_has_dependents(first, include_bind_mounts=False))
                 self.assertTrue(mount_has_dependents(second, include_bind_mounts=False))
                 self.assertFalse(mount_has_dependents(third, include_bind_mounts=False))
             plus = f"103 1 0:125 / /image ro - overlay overlay ro,lowerdir+={first},lowerdir+={'2' * 64}\n"
-            with patch("ucloud_sandboxes.environment_backend.Path.read_text", return_value=plus):
+            with patch("sandboxes.environment_backend.Path.read_text", return_value=plus):
                 self.assertTrue(mount_has_dependents(first, include_bind_mounts=False))
                 self.assertTrue(mount_has_dependents(second, include_bind_mounts=False))
 

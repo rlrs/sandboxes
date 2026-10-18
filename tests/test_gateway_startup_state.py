@@ -10,9 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_control_plane import _gateway_server, _running_server, build_heartbeat
-from ucloud_sandboxes.control_state import ControlStateStore, _json
-from ucloud_sandboxes.models import NodeRuntimeMetrics, utc_now
-from ucloud_sandboxes.resource_evidence import ResourceEvidence
+from sandboxes.control_state import ControlStateStore, _json
+from sandboxes.models import NodeRuntimeMetrics, utc_now
+from sandboxes.resource_evidence import ResourceEvidence
 
 TEST_TIER = "contract"
 

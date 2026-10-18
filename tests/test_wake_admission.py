@@ -9,9 +9,9 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_control_plane import _sandbox_route
-from ucloud_sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
-from ucloud_sandboxes.routing import RoutingStore, wake_pending_demand_id
-from ucloud_sandboxes.wake_admission import WakeAdmission
+from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
+from sandboxes.routing import RoutingStore, wake_pending_demand_id
+from sandboxes.wake_admission import WakeAdmission
 
 TEST_TIER = "contract"
 
@@ -143,7 +143,7 @@ class WakeAdmissionTests(unittest.TestCase):
         )
 
     def test_unrelated_migration_is_not_decoded_for_local_admission(self):
-        from ucloud_sandboxes import routing
+        from sandboxes import routing
 
         other = self.store.upsert_sandbox(
             replace(
@@ -160,7 +160,7 @@ class WakeAdmissionTests(unittest.TestCase):
             destination_node_url="http://other",
         )
         with patch(
-            "ucloud_sandboxes.routing._sandbox_migration_from_row",
+            "sandboxes.routing._sandbox_migration_from_row",
             wraps=routing._sandbox_migration_from_row,
         ) as decode:
             result = self.admission.reserve_batch([self.routes[0]])

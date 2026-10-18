@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
 from prepare_shared_task_image import write_flat_index
 from shared_dependency_index import build_index, qualified_candidates, rank_anchors
 from tests.test_oci_flat_delta import ROOT, archive
-from ucloud_sandboxes.oci_flat_delta import index_flat_tar
+from sandboxes.oci_flat_delta import index_flat_tar
 
 
 class SharedDependencyIndexTests(unittest.TestCase):

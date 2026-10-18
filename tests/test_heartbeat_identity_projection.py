@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import unittest
 from tests.test_control_plane import _sandbox_route
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.routing import RoutingStore
 
 
 class HeartbeatIdentityProjectionTests(unittest.TestCase):
@@ -23,7 +23,7 @@ class HeartbeatIdentityProjectionTests(unittest.TestCase):
                 store.upsert_sandbox(replace(base, sandbox_id=sid, node_id=node,
                                             job_id=job, node_url=url,
                                             spec={'id': sid, 'env': {'LARGE': 'x' * 65536}}))
-            with patch('ucloud_sandboxes.routing._sandbox_route_from_row',
+            with patch('sandboxes.routing._sandbox_route_from_row',
                        side_effect=AssertionError('unnecessary full route decoding')):
                 self.assertEqual(store.assigned_node_identities(
                     node_id='owner', job_id='job', node_url='http://worker/'), sorted(tuples[:4]))

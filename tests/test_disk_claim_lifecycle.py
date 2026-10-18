@@ -14,17 +14,17 @@ from unittest.mock import patch
 
 from tests import test_direct_warden as fixtures
 from tests.test_split_memory_lifecycle import FakeQuota, SplitStorage
-from ucloud_sandboxes import disk_claims
-from ucloud_sandboxes.direct_registry import (
+from sandboxes import disk_claims
+from sandboxes.direct_registry import (
     DirectRegistryCapacityUnavailable,
     DirectSandboxRegistry,
     DiskClaim,
 )
-from ucloud_sandboxes.disk_claims import DiskClaimPolicy, capture_claim_mb, next_grant
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.memory_backing import MemoryBackingStore
-from ucloud_sandboxes.sandbox import SandboxSpec
-from ucloud_sandboxes.storage_native_daemon import StorageVolumeRecord, StorageVolumeState
+from sandboxes.disk_claims import DiskClaimPolicy, capture_claim_mb, next_grant
+from sandboxes.hibernation import HibernationState
+from sandboxes.memory_backing import MemoryBackingStore
+from sandboxes.sandbox import SandboxSpec
+from sandboxes.storage_native_daemon import StorageVolumeRecord, StorageVolumeState
 
 MIB = 1024**2
 GIB = 1024**3
@@ -110,7 +110,7 @@ class DemonstratedMemoryClaimTests(unittest.TestCase):
         self.storage.mount_path.mkdir(parents=True)
         self.warden.storage = self.storage
         self.rootfs.events = self.storage.events
-        with patch("ucloud_sandboxes.memory_backing.subprocess.run",
+        with patch("sandboxes.memory_backing.subprocess.run",
                    return_value=SimpleNamespace(stdout="tmpfs rw,noswap\n")):
             self.memory_backing = MemoryBackingStore(
                 self.config.memory_root, self.root / "allocations.sqlite",
@@ -130,7 +130,7 @@ class DemonstratedMemoryClaimTests(unittest.TestCase):
         return self.memory_backing.limit_bytes(self.sandbox.memory) // MIB
 
     def park(self, operation_id="park", demand=3 * MIB):
-        with patch("ucloud_sandboxes.disk_claims.cgroup_memory_demand", return_value=demand):
+        with patch("sandboxes.disk_claims.cgroup_memory_demand", return_value=demand):
             return self.warden.park(self.sandbox, operation_id=operation_id)
 
     def test_park_reserves_measured_memory_then_settles_to_the_checkpoint(self):
@@ -162,10 +162,10 @@ class DemonstratedMemoryClaimTests(unittest.TestCase):
         (active / "application_memory.active").write_bytes(b"x" * (8 * MIB))
         allocated = (active / "application_memory.active").stat().st_blocks * 512
         # Resident memory above the 1 GiB limit is capped at the limit.
-        with patch("ucloud_sandboxes.disk_claims.cgroup_memory_demand", return_value=5 * GIB):
+        with patch("sandboxes.disk_claims.cgroup_memory_demand", return_value=5 * GIB):
             demand = self.warden._capture_demand_bytes(self.sandbox, 1)
         self.assertEqual(demand, allocated + GIB)
-        with patch("ucloud_sandboxes.disk_claims.cgroup_memory_demand", return_value=None):
+        with patch("sandboxes.disk_claims.cgroup_memory_demand", return_value=None):
             self.assertIsNone(self.warden._capture_demand_bytes(self.sandbox, 1))
 
     def test_rootfs_filestore_is_reserved_even_beyond_the_formula(self):

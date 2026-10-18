@@ -203,7 +203,7 @@ def run(args):
     args.output_root.mkdir(mode=0o700, parents=True, exist_ok=False)
     sys.path.insert(0, str(args.sdk_wheel))
     import ucloud_sandboxes_sdk.client as sdk
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_dict(json.loads(args.deployment_config.read_text()))
     token = config.sandbox_api_token_file().read_text().strip()
     registry = urlsplit(config.registry_worker_url)

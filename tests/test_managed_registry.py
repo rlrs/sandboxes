@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from hypothesis import given, settings, strategies as st
 
-from ucloud_sandboxes.managed_registry import (
+from sandboxes.managed_registry import (
     digest_protection_tag,
     RegistryRequestError,
     RegistryImageLeaseNotFound,

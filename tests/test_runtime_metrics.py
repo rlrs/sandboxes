@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from hypothesis import given, settings, strategies as st
 
-from ucloud_sandboxes.models import NodeRuntimeMetrics, utc_now
-from ucloud_sandboxes.runtime_metrics import (
+from sandboxes.models import NodeRuntimeMetrics, utc_now
+from sandboxes.runtime_metrics import (
     SingleFlightRuntimeMetricsSampler,
     cpu_percent_from_samples,
     read_proc_meminfo,
@@ -19,12 +19,12 @@ from ucloud_sandboxes.runtime_metrics import (
 
 class RuntimeMetricsTests(unittest.TestCase):
     def test_configured_backing_evidence_is_shared_with_custom_host_provider(self):
-        from ucloud_sandboxes.node_agent import _host_runtime_metrics_sampler
-        from ucloud_sandboxes.resource_evidence import MemoryBackingCapacity
+        from sandboxes.node_agent import _host_runtime_metrics_sampler
+        from sandboxes.resource_evidence import MemoryBackingCapacity
 
         metrics = NodeRuntimeMetrics(collected_at=utc_now())
         unknown = MemoryBackingCapacity()
-        with patch('ucloud_sandboxes.resource_evidence.sample_memory_backing', return_value=unknown) as backing:
+        with patch('sandboxes.resource_evidence.sample_memory_backing', return_value=unknown) as backing:
             sampler = _host_runtime_metrics_sampler(lambda: metrics,
                                                     memory_backing_root=Path('/active'))
             samples = [sampler() for _ in range(100)]
@@ -33,18 +33,18 @@ class RuntimeMetricsTests(unittest.TestCase):
         backing.assert_called_once_with(Path('/active'))
 
     def test_foreground_uses_cached_cpu_but_reads_current_memory_without_sleep(self):
-        from ucloud_sandboxes.resource_admission import dynamic_pressure_error
-        from ucloud_sandboxes.models import ResourceQuantity
-        from ucloud_sandboxes.resource_evidence import MemoryPressure
+        from sandboxes.resource_admission import dynamic_pressure_error
+        from sandboxes.models import ResourceQuantity
+        from sandboxes.resource_evidence import MemoryPressure
 
         def pressure(available):
             return MemoryPressure(0, {"MemTotal": 8192 * 1024, "MemAvailable": available * 1024}, {}, {})
 
         with (
-            patch("ucloud_sandboxes.runtime_metrics._RESOURCE_EVIDENCE") as background,
-            patch("ucloud_sandboxes.runtime_metrics.read_memory_pressure", side_effect=[pressure(6000), pressure(100)]),
-            patch("ucloud_sandboxes.runtime_metrics.os.getloadavg", return_value=(0, 0, 0)),
-            patch("ucloud_sandboxes.runtime_metrics.os.cpu_count", return_value=4),
+            patch("sandboxes.runtime_metrics._RESOURCE_EVIDENCE") as background,
+            patch("sandboxes.runtime_metrics.read_memory_pressure", side_effect=[pressure(6000), pressure(100)]),
+            patch("sandboxes.runtime_metrics.os.getloadavg", return_value=(0, 0, 0)),
+            patch("sandboxes.runtime_metrics.os.cpu_count", return_value=4),
             patch("time.sleep", side_effect=AssertionError("foreground must not sleep")),
         ):
             background.cached.return_value = None
@@ -326,10 +326,10 @@ class ResidentWaitMetricsTests(unittest.TestCase):
     def test_worker_snapshot_roundtrips_and_gateway_accepts_older_workers(self):
         from dataclasses import replace
         from types import SimpleNamespace
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.models import ResidentWaitMetrics
-        from ucloud_sandboxes.node_agent import NodeAgentHandler
-        from ucloud_sandboxes.warm_park import WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.models import ResidentWaitMetrics
+        from sandboxes.node_agent import NodeAgentHandler
+        from sandboxes.warm_park import WarmParkPolicy
 
         policy = WarmParkPolicy(lambda: Pressure(.20, 0))
         handler = SimpleNamespace(

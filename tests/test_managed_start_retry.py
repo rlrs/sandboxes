@@ -16,9 +16,9 @@ from tests import test_direct_provisioner as node_fixtures
 from tests.admission_backends import AdmissionBackendCase
 from tests import test_managed_growth as growth_fixtures
 from tests.support import requires_sdk
-from ucloud_sandboxes.direct_registry import ManagedPrimaryOwnedError
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.sandbox import (
+from sandboxes.direct_registry import ManagedPrimaryOwnedError
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.sandbox import (
     SandboxCapacityUnavailableError,
     SandboxStartupBusyError,
 )

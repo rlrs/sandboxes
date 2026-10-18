@@ -6,7 +6,7 @@ from typing import Any, Callable, cast
 from .base import ComputeProvider, ProviderConfiguration
 
 
-PROVIDER_ENTRY_POINT_GROUP = "ucloud_sandboxes.compute_providers"
+PROVIDER_ENTRY_POINT_GROUP = "sandboxes.compute_providers"
 ProviderFactory = Callable[[ProviderConfiguration, Any], ComputeProvider]
 
 

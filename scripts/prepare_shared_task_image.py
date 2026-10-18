@@ -26,8 +26,8 @@ from uuid import uuid4
 from prepare_image_pool import SourceResolver, public_registry_headers, register_import_alias, registry_parts
 from plan_flat_image_delta import CheckedWriter, verified_tar
 from stage_source_image import PublicBlobRedirect, mount_source_layers, publication_repositories
-from ucloud_sandboxes.flat_image_qualification import SCANNER, compare_snapshot, qualification_key, qualified_layout
-from ucloud_sandboxes.oci_flat_delta import FileEntry, index_flat_tar, plan_flat_delta, validate_flat_index, write_flat_delta
+from sandboxes.flat_image_qualification import SCANNER, compare_snapshot, qualification_key, qualified_layout
+from sandboxes.oci_flat_delta import FileEntry, index_flat_tar, plan_flat_delta, validate_flat_index, write_flat_delta
 
 
 def encode(value):
@@ -41,12 +41,12 @@ def source_identity(source, anchor, pinned_source=None, exports=None, compressio
     if compression_level != 9:
         identity['compression_level'] = compression_level
     if anchor_filesystem_source:
-        from ucloud_sandboxes.environment_artifact import require_digest
+        from sandboxes.environment_artifact import require_digest
         require_digest(registry_parts(anchor_filesystem_source)[2])
         identity['anchor_filesystem_source'] = anchor_filesystem_source
     if pinned_source:
         host, repository, selector = registry_parts(pinned_source)
-        from ucloud_sandboxes.environment_artifact import require_digest
+        from sandboxes.environment_artifact import require_digest
         require_digest(selector)
         if registry_parts(source)[:2] != (host, repository):
             raise ValueError('pinned source belongs to another repository')
@@ -71,7 +71,7 @@ def read_filesystem_exports(root):
         if not receipt.is_file() or not archive.is_file() or receipt.stat().st_size > 256 * 1024:
             raise ValueError('invalid filesystem export inputs')
         row = json.loads(receipt.read_text())
-        from ucloud_sandboxes.environment_artifact import require_digest
+        from sandboxes.environment_artifact import require_digest
         require_digest('sha256:' + row['export_sha256'])
         require_digest('sha256:' + row['unpacker_sha256'])
         if (row.get('schema') != 1 or set(row.get('excluded_runtime_trees', [])) != {'dev', 'proc', 'sys', 'run'}
@@ -282,16 +282,16 @@ def main():
 def prepare(args):
     sys.path.insert(0, str(args.sdk_wheel))
     import ucloud_sandboxes_sdk as sdk
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.gateway.registry_refs import _persist_registry_image_protection
-    from ucloud_sandboxes.environment_artifact import bind_source_layers, load_image_environment, require_digest
-    from ucloud_sandboxes.environment_config import environment_registry_from_deployment
-    from ucloud_sandboxes.environment_dependencies import EnvironmentDependencyResolver
-    from ucloud_sandboxes.host_locks import HOST_LOCKS
-    from ucloud_sandboxes.image_rootfs import DockerImageConfig
-    from ucloud_sandboxes.images import ImageRecord, ImageStore
-    from ucloud_sandboxes.managed_registry import RegistryRequestError, RegistryUsageStore, registry_repository_tag_from_image_ref
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.gateway.registry_refs import _persist_registry_image_protection
+    from sandboxes.environment_artifact import bind_source_layers, load_image_environment, require_digest
+    from sandboxes.environment_config import environment_registry_from_deployment
+    from sandboxes.environment_dependencies import EnvironmentDependencyResolver
+    from sandboxes.host_locks import HOST_LOCKS
+    from sandboxes.image_rootfs import DockerImageConfig
+    from sandboxes.images import ImageRecord, ImageStore
+    from sandboxes.managed_registry import RegistryRequestError, RegistryUsageStore, registry_repository_tag_from_image_ref
+    from sandboxes.registry_disk import registry_disk_usage
 
     started = time.monotonic()
     c = DeploymentConfig.from_dict(json.loads(args.config.read_text()))
@@ -590,7 +590,7 @@ def prepare(args):
                               anchor_strategy='shared_dependencies')
         if args.family:
             result['families'] = args.family
-        from ucloud_sandboxes.prepared_images import PreparedImageCatalog, catalog_path as prepared_catalog_path
+        from sandboxes.prepared_images import PreparedImageCatalog, catalog_path as prepared_catalog_path
         PreparedImageCatalog(prepared_catalog_path(c.image_file())).register_source(result)
         save(args.root / 'catalog.json', {'schema': 1, 'images': {args.source: result}})
         print(json.dumps({k: result[k] for k in ('source', 'status', 'delta_compressed_bytes', 'original_compressed_bytes_not_retained', 'seconds')}), flush=True)

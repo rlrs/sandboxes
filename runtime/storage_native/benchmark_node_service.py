@@ -19,9 +19,9 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from ucloud_sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
-from ucloud_sandboxes.managed_registry import RegistryClient  # noqa: E402
-from ucloud_sandboxes.storage_native_daemon import (  # noqa: E402
+from sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
+from sandboxes.managed_registry import RegistryClient  # noqa: E402
+from sandboxes.storage_native_daemon import (  # noqa: E402
     StorageNativeNodeClient,
     StorageNativeNodeConfig,
     StorageNativeNodeServer,
@@ -29,10 +29,10 @@ from ucloud_sandboxes.storage_native_daemon import (  # noqa: E402
     StorageVolumeOwner,
     StorageVolumeState,
 )
-from ucloud_sandboxes.storage_native_publication import (  # noqa: E402
+from sandboxes.storage_native_publication import (  # noqa: E402
     local_layer_data_bytes, snapshot_compaction_start,
 )
-from ucloud_sandboxes.storage_native_registry import (  # noqa: E402
+from sandboxes.storage_native_registry import (  # noqa: E402
     RegistrySnapshotPublisher,
 )
 

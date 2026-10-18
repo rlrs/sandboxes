@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 from prepare_image_pool import registry_parts, save
-from ucloud_sandboxes.environment_artifact import require_digest
+from sandboxes.environment_artifact import require_digest
 
 
 def validated(source, resolved):

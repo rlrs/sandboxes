@@ -54,7 +54,7 @@ if [[ ! "$runtime_sha256" =~ ^[0-9a-f]{64}$ \
   || "$(cat "$runtime_marker")" != "$runtime_sha256" \
   || "$(sha256sum "$runtime_bundle" | awk '{print $1}')" != "$runtime_sha256" \
   || "$(awk -F= '$1 == "kernel_release" {print $2; exit}' "$runtime_receipt")" != "$(uname -r)" \
-  || ! -d "$runtime_cache_dir/agent-runtime/site-packages/ucloud_sandboxes" ]]; then
+  || ! -d "$runtime_cache_dir/agent-runtime/site-packages/sandboxes" ]]; then
   echo "snapshot runtime receipt does not match its cached runtime" >&2
   exit 2
 fi
@@ -108,7 +108,7 @@ rm -rf \
   /root/node-bundle-venv \
   /root/ucloud-repack-node-agent.py \
   /root/ucloud-kernel-closure*.tar \
-  /root/ucloud_sandboxes-*.whl \
+  /root/sandboxes-*.whl \
   /root/builder-node-package*.tar.gz \
   /root/sandbox-node-package*.tar.gz \
   /root/sandbox-node-package*.tar.gz.sha256 \

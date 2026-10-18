@@ -1,5 +1,5 @@
 //! The warm path of the production image store, `EnvironmentRootfsStore`
-//! (ucloud_sandboxes/environment_rootfs.py), and its environment backend
+//! (sandboxes/environment_rootfs.py), and its environment backend
 //! client (environment_backend.py `EnvironmentBackendClient`). Create-pipeline
 //! spec S2.2 and A.8; protocols spec §2.
 //!

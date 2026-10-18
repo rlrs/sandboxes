@@ -2,7 +2,7 @@
 # Install a gateway on a UCloud VM from a backup (or a moved deployment's state).
 # Run as root after apt installs ca-certificates curl docker.io nftables openssl
 # python3-venv postgresql-18. Inputs staged by the operator in $S (mode 0700):
-#   ucloud_sandboxes-<version>-py3-none-any.whl  deployment.json  state.tar
+#   sandboxes-<version>-py3-none-any.whl  deployment.json  state.tar
 #   postgres.dsn  ucloud.pgdump  s3.env  ucloud-session.json
 #   release/ (the node bundles node_package_root names)
 # A gateway backup (scripts/backup_gateway_state.py) holds all but the wheel and
@@ -12,7 +12,7 @@
 # Ends before gateway-reconcile, which starts the services. Never prints secrets.
 set -euo pipefail
 S=${STAGE:-/home/ucloud/stage}
-wheel="$(ls "$S"/ucloud_sandboxes-*-py3-none-any.whl)"
+wheel="$(ls "$S"/sandboxes-*-py3-none-any.whl)"
 [[ $EUID -eq 0 ]] || { echo "run as root" >&2; exit 2; }
 for f in deployment.json state.tar postgres.dsn \
          ucloud.pgdump s3.env ucloud-session.json release/sandbox-node-package.tar.gz \
@@ -80,7 +80,7 @@ python3 -m venv "$venv_dir"
 # bin/python -m pip, as upgrades install: scripts keep the same shebang across releases.
 "$venv_dir/bin/python" -m pip install -q --disable-pip-version-check --force-reinstall "${wheel}[postgres]"
 
-systemd_source="$("$venv_dir/bin/python" -c 'from importlib import resources; print(resources.files("ucloud_sandboxes").joinpath("systemd"))')"
+systemd_source="$("$venv_dir/bin/python" -c 'from importlib import resources; print(resources.files("sandboxes").joinpath("systemd"))')"
 for unit in \
   ucloud-sandbox-autoscaler.service ucloud-sandbox-gateway.service ucloud-sandbox-placement.service \
   ucloud-sandbox-registry-gc.service ucloud-sandbox-registry-gc.timer \

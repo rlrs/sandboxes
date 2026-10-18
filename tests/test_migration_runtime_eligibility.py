@@ -4,13 +4,13 @@ import unittest
 
 from tests import test_control_plane as fixtures
 from tests.gateway_support import gateway_services
-from ucloud_sandboxes.capabilities import (
+from sandboxes.capabilities import (
     HIBERNATE_LOCAL_CAPABILITY, HOST_EROFS_CAPABILITY,
     RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX, STORAGE_NATIVE_CAPABILITY,
     STORAGE_NATIVE_MIGRATION_CAPABILITY,
 )
-from ucloud_sandboxes.control_plane import ControlPlaneHandler
-from ucloud_sandboxes.models import NodeHeartbeat, NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.control_plane import ControlPlaneHandler
+from sandboxes.models import NodeHeartbeat, NodeRuntimeMetrics, ResourceQuantity, utc_now
 
 
 class MigrationRuntimeEligibilityTests(unittest.TestCase):

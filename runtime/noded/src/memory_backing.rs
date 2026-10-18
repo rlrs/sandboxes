@@ -1,5 +1,5 @@
 //! The split memory-backing allocator's create path, as
-//! ucloud_sandboxes/memory_backing.py's `MemoryBackingStore` does it: the same
+//! sandboxes/memory_backing.py's `MemoryBackingStore` does it: the same
 //! SQLite journal (`memory-backing.sqlite`, schema version 3), the same
 //! per-allocation mutation flocks, ownership markers, XFS project quotas and
 //! RAM directories. The Python agent keeps opening the same journal: it parks,

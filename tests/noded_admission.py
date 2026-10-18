@@ -35,9 +35,9 @@ import threading
 import time
 import unittest
 
-from ucloud_sandboxes.admission_backend import NodedAdmission
-from ucloud_sandboxes.create_handoff import admission_config
-from ucloud_sandboxes.noded_client import NodedClient, NodedLink
+from sandboxes.admission_backend import NodedAdmission
+from sandboxes.create_handoff import admission_config
+from sandboxes.noded_client import NodedClient, NodedLink
 
 REPO = Path(__file__).resolve().parents[1]
 NODED = REPO / "runtime" / "noded"

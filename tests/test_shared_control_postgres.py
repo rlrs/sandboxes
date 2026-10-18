@@ -15,7 +15,7 @@ DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
 if DSN:
     import psycopg
     from psycopg import sql
-    from ucloud_sandboxes.shared_control.database import PostgresDatabase
+    from sandboxes.shared_control.database import PostgresDatabase
 
 
 @unittest.skipUnless(DSN, "set UCLOUD_TEST_POSTGRES_DSN for the real PostgreSQL contract")

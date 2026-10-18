@@ -7,10 +7,10 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.chunk_store_support import pseudo_random, signing, write_bootstrap
-from ucloud_sandboxes.chunk_store import (PACK_ENTRY, PACK_TRAILER, RAW, ZSTD, ChunkMap, Locator, PackWriter,
+from sandboxes.chunk_store import (PACK_ENTRY, PACK_TRAILER, RAW, ZSTD, ChunkMap, Locator, PackWriter,
                                           chunk_map_from_bootstrap, decode_chunk, parse_bootstrap, parse_pack_tail,
                                           store_encoding, zstd_compress, zstd_decompress)
-from ucloud_sandboxes.environment_artifact import (CHUNK_BYTES, EnvironmentComponent, RafsEnvironmentComponent,
+from sandboxes.environment_artifact import (CHUNK_BYTES, EnvironmentComponent, RafsEnvironmentComponent,
                                                    bind_rafs_layers, sign_rafs_component)
 
 
@@ -213,7 +213,7 @@ class ChunkStoreConfigTests(unittest.TestCase):
            "mount_granularity": "image", "nydus_image": "/usr/local/bin/nydus-image", "concurrent_misses": 32}
 
     def test_off_by_default_strict_and_round_trips(self):
-        from ucloud_sandboxes.environment_config import EnvironmentDeploymentConfig
+        from sandboxes.environment_config import EnvironmentDeploymentConfig
         bare = EnvironmentDeploymentConfig.from_dict({"trusted_keys_file": "/keys.json"})
         self.assertIsNone(bare.chunk_store)
         self.assertNotIn("chunk_store", bare.to_dict())  # Older releases still read rendered configs.
@@ -239,7 +239,7 @@ if __name__ == "__main__":
 class SuperblockTests(unittest.TestCase):
     def test_the_chunk_size_is_read_and_rewritten_only_without_a_checksum(self):
         from tests.chunk_store_support import write_bootstrap
-        from ucloud_sandboxes.chunk_store import CHUNK_BYTES, bootstrap_chunk_size, parse_bootstrap, with_chunk_size
+        from sandboxes.chunk_store import CHUNK_BYTES, bootstrap_chunk_size, parse_bootstrap, with_chunk_size
 
         bootstrap = bytearray(write_bootstrap([], []))
         struct.pack_into("<I", bootstrap, 1024 + 128 + 20, 0x100000)

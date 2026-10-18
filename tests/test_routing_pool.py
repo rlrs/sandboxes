@@ -7,7 +7,7 @@ import threading
 import unittest
 from unittest.mock import patch
 from tests.test_control_plane import _sandbox_route
-from ucloud_sandboxes.routing import ExecRoute, RoutingStore
+from sandboxes.routing import ExecRoute, RoutingStore
 
 TEST_TIER = "contract"
 
@@ -104,7 +104,7 @@ class RoutingPoolTests(unittest.TestCase):
 
     def test_inventory_batches_unchanged_routes_but_keeps_fences_and_dependencies(self):
         from dataclasses import replace
-        from ucloud_sandboxes.models import SandboxInventoryEntry, utc_now
+        from sandboxes.models import SandboxInventoryEntry, utc_now
         with TemporaryDirectory() as tmp:
             store = RoutingStore(Path(tmp) / 'routing.sqlite')
             routes = [store.upsert_sandbox(_sandbox_route(
@@ -142,7 +142,7 @@ class RoutingPoolTests(unittest.TestCase):
             self.assertEqual(store.get_sandbox('live-0').activity_epoch, 12)
 
     def test_repeated_image_warmup_observation_skips_writer_and_new_nodes_merge(self):
-        from ucloud_sandboxes.models import ResourceQuantity
+        from sandboxes.models import ResourceQuantity
         with TemporaryDirectory() as tmp:
             store = RoutingStore(Path(tmp) / 'routing.sqlite')
             store.upsert_image_warmup(
@@ -239,8 +239,8 @@ class RoutingPoolTests(unittest.TestCase):
                 store.get_sandbox('absent')
 
     def test_inventory_and_create_do_not_wait_for_fleet_projection(self):
-        from ucloud_sandboxes.models import SandboxInventoryEntry, utc_now
-        from ucloud_sandboxes.routing import SandboxRouteAllocation
+        from sandboxes.models import SandboxInventoryEntry, utc_now
+        from sandboxes.routing import SandboxRouteAllocation
         with TemporaryDirectory() as tmp:
             store = RoutingStore(Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
@@ -290,7 +290,7 @@ class RoutingPoolTests(unittest.TestCase):
             self.assertEqual(store.sandbox_routes_readonly(), [])
 
     def test_repeated_program_projection_reads_committed_generation_without_writer(self):
-        from ucloud_sandboxes.routing import SandboxRouteConflictError
+        from sandboxes.routing import SandboxRouteConflictError
         with TemporaryDirectory() as tmp:
             store = RoutingStore(Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
@@ -326,7 +326,7 @@ class RoutingPoolTests(unittest.TestCase):
 
     def test_warm_durable_wake_records_observation_with_outcome_only(self):
         from unittest.mock import Mock
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.control_plane import ControlPlaneHandler
         with TemporaryDirectory() as tmp:
             store = RoutingStore(Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
@@ -352,7 +352,7 @@ class RoutingPoolTests(unittest.TestCase):
 
     def test_failed_warm_wake_retains_demand_and_original_start_observation(self):
         from unittest.mock import Mock
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.control_plane import ControlPlaneHandler
         with TemporaryDirectory() as tmp:
             store = RoutingStore(Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(

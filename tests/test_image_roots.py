@@ -9,16 +9,16 @@ from unittest import mock
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
 from tests.harness import LocalFleet
-from ucloud_sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
-from ucloud_sandboxes.chunk_migrate import (convert_wave, inventory, read_jsonl, reap_dead_nbd, record_results,
+from sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
+from sandboxes.chunk_migrate import (convert_wave, inventory, read_jsonl, reap_dead_nbd, record_results,
                                             release_wave, revert_wave, switch_wave, wave_of)
-from ucloud_sandboxes.environment_artifact import OCI_IMAGE, attach_environment_to_image, canonical_bytes, publish_environment
-from ucloud_sandboxes.environment_dependencies import EnvironmentDependencyResolver
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest
-from ucloud_sandboxes.gateway.image_roots import ImageRootsStore, retention_view
-from ucloud_sandboxes.gateway.placement import _sandbox_required_capabilities
-from ucloud_sandboxes.managed_registry import RegistryUsageStore, digest_protection_tag
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.environment_artifact import OCI_IMAGE, attach_environment_to_image, canonical_bytes, publish_environment
+from sandboxes.environment_dependencies import EnvironmentDependencyResolver
+from sandboxes.environment_manifest import EnvironmentManifest
+from sandboxes.gateway.image_roots import ImageRootsStore, retention_view
+from sandboxes.gateway.placement import _sandbox_required_capabilities
+from sandboxes.managed_registry import RegistryUsageStore, digest_protection_tag
+from sandboxes.sandbox import SandboxSpec
 
 TEST_TIER = "contract"
 D = {name: "sha256:" + name * 64 for name in "123456789"}
@@ -284,7 +284,7 @@ class GatewayDispatchTests(unittest.TestCase):
     def test_a_create_with_its_dispatched_root_skips_the_node_pull(self):
         # The node's pull resolves the annotation: after release, the deleted
         # old root. A create pinned to the dispatched root attaches it itself.
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.control_plane import ControlPlaneHandler
         roots = SimpleNamespace(dispatch_root=lambda repository, digest: D["5"] if repository == "managed/a" else None)
         pulls = []
         handler = SimpleNamespace(
@@ -297,7 +297,7 @@ class GatewayDispatchTests(unittest.TestCase):
         image = "10.42.0.2:5000/managed/a@" + D["1"]
         self.assertIsNone(ControlPlaneHandler._ensure_image_for_create(handler, heartbeat, image, D["5"]))
         self.assertEqual(pulls, [])
-        with mock.patch("ucloud_sandboxes.control_plane._heartbeat_has_image", return_value=False):
+        with mock.patch("sandboxes.control_plane._heartbeat_has_image", return_value=False):
             ControlPlaneHandler._ensure_image_for_create(handler, heartbeat, image, D["6"])  # Not its dispatched root.
             ControlPlaneHandler._ensure_image_for_create(handler, heartbeat, image)
         self.assertEqual(len(pulls), 2)

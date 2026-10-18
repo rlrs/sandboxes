@@ -4,9 +4,9 @@ from unittest.mock import Mock, patch
 
 from tests.gateway_support import gateway_services
 from tests.test_control_plane import build_heartbeat, _sandbox_route
-from ucloud_sandboxes import control_plane as cp
-from ucloud_sandboxes.gateway import fleet, placement as placement_rules
-from ucloud_sandboxes.models import ResourceQuantity
+from sandboxes import control_plane as cp
+from sandboxes.gateway import fleet, placement as placement_rules
+from sandboxes.models import ResourceQuantity
 
 
 class PlacementScoringTests(unittest.TestCase):

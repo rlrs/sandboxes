@@ -8,14 +8,14 @@ import sqlite3
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     DirectRegistryConflictError,
     DirectRegistryError,
     DirectSandboxRegistry,
     ManagedPrimaryOwnedError,
 )
-from ucloud_sandboxes.direct_warden import DirectSandbox
-from ucloud_sandboxes.sandbox import NodeDrainState, SandboxSpec
+from sandboxes.direct_warden import DirectSandbox
+from sandboxes.sandbox import NodeDrainState, SandboxSpec
 
 TEST_TIER = "contract"
 
@@ -622,7 +622,7 @@ if __name__ == "__main__":
 
 class RelayWakeFenceTests(unittest.TestCase):
     def test_legacy_schema_upgrade_retains_registration_and_fences_survive_reopen(self):
-        from ucloud_sandboxes import direct_registry as module
+        from sandboxes import direct_registry as module
         with TemporaryDirectory() as raw:
             path=(Path(raw)/'registry.sqlite3').resolve()
             registry=DirectSandboxRegistry(path)

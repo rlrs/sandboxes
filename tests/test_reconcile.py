@@ -1,7 +1,7 @@
 from dataclasses import replace
 import unittest
 
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     InstancePhase,
     NodeHeartbeat,
     ResourceQuantity,
@@ -10,7 +10,7 @@ from ucloud_sandboxes.models import (
     ProviderInstance,
     utc_now,
 )
-from ucloud_sandboxes.reconcile import (
+from sandboxes.reconcile import (
     node_drain_ready,
     partition_safe_stop_job_ids,
 )

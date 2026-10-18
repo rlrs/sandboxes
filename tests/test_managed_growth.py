@@ -12,15 +12,15 @@ from unittest.mock import patch
 
 from tests import test_direct_provisioner as fixtures
 from tests.admission_backends import AdmissionBackendCase
-from ucloud_sandboxes import pause_tier
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry, DirectRegistryConflictError
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.managed_process import ManagedProcessStart
-from ucloud_sandboxes.hibernation import HibernationManifest, HibernationFileRole, LocalHibernationArtifactFile
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.resident_memory import ResidentMemorySample
-from ucloud_sandboxes.sandbox import SandboxAdmissionClosedError, SandboxStartupBusyError
+from sandboxes import pause_tier
+from sandboxes.direct_registry import DirectSandboxRegistry, DirectRegistryConflictError
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.managed_process import ManagedProcessStart
+from sandboxes.hibernation import HibernationManifest, HibernationFileRole, LocalHibernationArtifactFile
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.resident_memory import ResidentMemorySample
+from sandboxes.sandbox import SandboxAdmissionClosedError, SandboxStartupBusyError
 
 # The noded half starts ucloud-noded (tests/noded_admission.py).
 TEST_TIER = "contract"
@@ -293,8 +293,8 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
         self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
 
     def test_response_growth_burst_settles_without_parking_or_overadmission(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
 
         self.service.start_managed_process('one', self.spec)
         self.service.observe_managed_wait('one', 7, 'request-one')

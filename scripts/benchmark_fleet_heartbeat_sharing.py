@@ -15,12 +15,12 @@ import statistics
 from tempfile import TemporaryDirectory
 import time
 
-from ucloud_sandboxes.agent import build_heartbeat
-from ucloud_sandboxes.control_plane import _sandbox_list_bytes
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.fleet_reader import FleetResponseRenderer
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry
-from ucloud_sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.agent import build_heartbeat
+from sandboxes.control_plane import _sandbox_list_bytes
+from sandboxes.control_state import ControlStateStore
+from sandboxes.fleet_reader import FleetResponseRenderer
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry
+from sandboxes.routing import RoutingStore, SandboxRoute
 
 
 class ReadMode:

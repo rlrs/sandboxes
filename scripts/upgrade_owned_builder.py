@@ -110,7 +110,7 @@ def discover(job_id, expected_epoch=None):
     pid = int(properties["MainPID"])
     require(pid > 1, "Builder service has no main PID")
     argv = Path(f"/proc/{pid}/cmdline").read_bytes().decode().rstrip("\0").split("\0")
-    require(argv[1:4] == ["-m", "ucloud_sandboxes.cli", "serve-builder-agent"],
+    require(argv[1:4] == ["-m", "sandboxes.cli", "serve-builder-agent"],
             "Unexpected builder service command")
     require(flag(argv, "--job-id") == job_id, "Service is not the explicitly owned job")
     env = dict(item.split("=", 1) for item in Path(f"/proc/{pid}/environ").read_bytes()
@@ -119,7 +119,7 @@ def discover(job_id, expected_epoch=None):
     require(pythonpath and ":" not in pythonpath, "Expected one explicit bundled runtime")
     source = Path(pythonpath).resolve(strict=True)
     require(source.is_dir() and source.name == "site-packages", "Unexpected runtime root")
-    require((source / "ucloud_sandboxes" / "images.py").is_file(), "Runtime package absent")
+    require((source / "sandboxes" / "images.py").is_file(), "Runtime package absent")
     port = int(flag(argv, "--port"))
     state = {"job_id": job_id, "node_epoch": expected_epoch or "", "pid": pid,
              "argv": argv, "env": env, "source": source,
@@ -136,7 +136,7 @@ def receipt(state):
     current = heartbeat(state)
     return {"job_id": state["job_id"], "node_epoch": state["node_epoch"],
             "runtime_root": str(state["source"]), "service": SERVICE,
-            "images_sha256": sha(state["source"] / "ucloud_sandboxes" / "images.py"),
+            "images_sha256": sha(state["source"] / "sandboxes" / "images.py"),
             "unit_sha256": sha(state["unit"]), "active_builds": 0,
             "draining": current["draining"], "admission_open": current["admission_open"],
             "advertised_capacity": current["labels"].get(LABEL),
@@ -153,22 +153,22 @@ def wheel_members(wheel):
             path = PurePosixPath(item.filename)
             require(not path.is_absolute() and ".." not in path.parts and path.parts,
                     "Unsafe wheel member path")
-            require(path.parts[0] in {"ucloud_sandboxes", "ucloud_sandboxes-0.7.0.dist-info"},
+            require(path.parts[0] in {"sandboxes", "sandboxes-0.7.0.dist-info"},
                     "Wheel contains unexpected package")
             require(not stat.S_ISLNK(item.external_attr >> 16), "Wheel contains symlink")
             if item.is_dir():
                 continue
             require(item.filename not in members, "Duplicate wheel member")
             members[item.filename] = archive.read(item)
-    require("ucloud_sandboxes/images.py" in members and
-            "ucloud_sandboxes/build_admission.py" in members, "Candidate package incomplete")
+    require("sandboxes/images.py" in members and
+            "sandboxes/build_admission.py" in members, "Candidate package incomplete")
     return members
 
 
 def stage(state, wheel, root):
     require(not root.exists(), "Choose an unused owned upgrade directory")
     members = wheel_members(wheel)
-    name = "ucloud_sandboxes-0.7.0.dist-info"
+    name = "sandboxes-0.7.0.dist-info"
     old_metadata = BytesParser().parsebytes((state["source"] / name / "METADATA").read_bytes())
     new_metadata = BytesParser().parsebytes(members[name + "/METADATA"])
     require(new_metadata["Name"] == old_metadata["Name"] and new_metadata["Version"] == "0.7.0",
@@ -181,7 +181,7 @@ def stage(state, wheel, root):
     target = root / "site-packages"
     shutil.copytree(state["source"], target, symlinks=True,
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    for package in ("ucloud_sandboxes", name):
+    for package in ("sandboxes", name):
         path = target / package
         require(not path.is_symlink(), "Package directory unexpectedly symlinked")
         shutil.rmtree(path)
@@ -190,16 +190,16 @@ def stage(state, wheel, root):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
         path.chmod(0o644)
-    for package in ("ucloud_sandboxes", name):
+    for package in ("sandboxes", name):
         (target / package).chmod(0o755)
         for directory in (target / package).rglob("*"):
             if directory.is_dir():
                 directory.chmod(0o755)
     env = {**state["env"], "PYTHONPATH": str(target)}
-    run([state["argv"][0], "-c", "from ucloud_sandboxes.images import ImageManager; "
-         "from ucloud_sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL; "
+    run([state["argv"][0], "-c", "from sandboxes.images import ImageManager; "
+         "from sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL; "
          "assert hasattr(ImageManager, 'build_admission_snapshot')"], env=env)
-    run([state["argv"][0], "-m", "ucloud_sandboxes.cli", "serve-builder-agent", "--help"], env=env)
+    run([state["argv"][0], "-m", "sandboxes.cli", "serve-builder-agent", "--help"], env=env)
     require(all((target / relative).read_bytes() == content for relative, content in members.items()),
             "Staged package differs from wheel")
     return target

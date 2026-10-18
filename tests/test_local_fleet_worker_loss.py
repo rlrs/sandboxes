@@ -21,8 +21,8 @@ import time
 import unittest
 
 from tests.harness import LocalFleet, process_alive
-from ucloud_sandboxes.control_state import QUARANTINE_REASON
-from ucloud_sandboxes.models import utc_now
+from sandboxes.control_state import QUARANTINE_REASON
+from sandboxes.models import utc_now
 
 SPEC = {"image": "harness/base:1", "cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 

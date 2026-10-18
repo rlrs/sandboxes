@@ -18,19 +18,19 @@ from tempfile import TemporaryDirectory
 import time
 from uuid import uuid4
 
-from ucloud_sandboxes.agent import build_heartbeat
-from ucloud_sandboxes.control_plane import _sandbox_list_bytes
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.fleet_reader import FleetResponseRenderer
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
-from ucloud_sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.agent import build_heartbeat
+from sandboxes.control_plane import _sandbox_list_bytes
+from sandboxes.control_state import ControlStateStore
+from sandboxes.fleet_reader import FleetResponseRenderer
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
+from sandboxes.routing import RoutingStore, SandboxRoute
 
 
 def benchmark(root, *, count, nodes, reads, repeats, postgres=False):
     control = ControlStateStore(root / "control.sqlite")
     schema = None
     if postgres:
-        from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
         schema = "ucloud_routing_fleet_bench_" + uuid4().hex
         routes = PostgresRoutingStore(root / "routes.sqlite",
             dsn=os.environ["UCLOUD_TEST_POSTGRES_DSN"], schema=schema)

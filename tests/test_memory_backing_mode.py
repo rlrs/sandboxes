@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_split_memory_lifecycle as fixtures
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.memory_backing import MemoryBackingError, MemoryBackingStore
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.memory_backing import MemoryBackingError, MemoryBackingStore
 
 
 class MemoryBackingModeTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class MemoryBackingModeTests(unittest.TestCase):
         self.store = self.open_store()
 
     def open_store(self):
-        with patch('ucloud_sandboxes.memory_backing.subprocess.run',
+        with patch('sandboxes.memory_backing.subprocess.run',
                    return_value=SimpleNamespace(stdout='tmpfs rw,noswap\n')):
             return MemoryBackingStore(self.root / 'disk', self.root / 'memory.sqlite',
                                       hard_capacity_bytes=8192, quota=self.quota,
@@ -249,7 +249,7 @@ class WardenFileModeTests(unittest.TestCase):
             with self.assertRaisesRegex(MemoryBackingError, 'readers'):
                 with f.warden.memory_backing._allocation_lock(f.sandbox.memory, exclusive=True):
                     self.fail('flush lost its backing capacity lease')
-        with patch('ucloud_sandboxes.direct_warden.os.fdatasync', side_effect=check_flush, create=True):
+        with patch('sandboxes.direct_warden.os.fdatasync', side_effect=check_flush, create=True):
             self.assertTrue(f.warden.flush_reclaimable_memory(f.sandbox))
 
     def test_flush_rejects_a_replaced_active_file(self):
@@ -260,5 +260,5 @@ class WardenFileModeTests(unittest.TestCase):
         def replace_file(fd):
             active.unlink()
             active.write_bytes(b'new')
-        with patch('ucloud_sandboxes.direct_warden.os.fdatasync', side_effect=replace_file, create=True):
+        with patch('sandboxes.direct_warden.os.fdatasync', side_effect=replace_file, create=True):
             self.assertFalse(f.warden.flush_reclaimable_memory(f.sandbox))

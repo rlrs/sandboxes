@@ -13,16 +13,16 @@ from urllib.parse import unquote, urlparse
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
 from tests.harness import LocalFleet
-from ucloud_sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
-from ucloud_sandboxes.chunk_migrate import drop_staged, release_oci, release_originals
-from ucloud_sandboxes.environment_artifact import OCI_IMAGE, canonical_bytes, content_digest, publish_environment
-from ucloud_sandboxes.environment_dependencies import EnvironmentDependencyResolver
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest
-from ucloud_sandboxes.gateway.image_resolution import ImageResolution
-from ucloud_sandboxes.gateway.image_roots import ImageRootsStore, released_lookup
-from ucloud_sandboxes.managed_registry import (RegistryClient, RegistryRequestError, RegistryUsageStore,
+from sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
+from sandboxes.chunk_migrate import drop_staged, release_oci, release_originals
+from sandboxes.environment_artifact import OCI_IMAGE, canonical_bytes, content_digest, publish_environment
+from sandboxes.environment_dependencies import EnvironmentDependencyResolver
+from sandboxes.environment_manifest import EnvironmentManifest
+from sandboxes.gateway.image_resolution import ImageResolution
+from sandboxes.gateway.image_roots import ImageRootsStore, released_lookup
+from sandboxes.managed_registry import (RegistryClient, RegistryRequestError, RegistryUsageStore,
                                                digest_protection_tag)
-from ucloud_sandboxes.routing import open_routing_store
+from sandboxes.routing import open_routing_store
 
 TEST_TIER = "contract"
 D = {name: "sha256:" + name * 64 for name in "123456789"}

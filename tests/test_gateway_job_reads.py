@@ -14,15 +14,15 @@ from threading import Condition, Event, Thread
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.control_plane import build_server
-from ucloud_sandboxes.gateway import job_reads
-from ucloud_sandboxes.gateway.node_rpc import DEFAULT_PROXY_TIMEOUT_SECONDS, ProxiedResponse
-from ucloud_sandboxes.http_contract import match_sandbox_http_route
-from ucloud_sandboxes.managed_process import ManagedProcessRecord
-from ucloud_sandboxes.models import (
+from sandboxes.control_plane import build_server
+from sandboxes.gateway import job_reads
+from sandboxes.gateway.node_rpc import DEFAULT_PROXY_TIMEOUT_SECONDS, ProxiedResponse
+from sandboxes.http_contract import match_sandbox_http_route
+from sandboxes.managed_process import ManagedProcessRecord
+from sandboxes.models import (
     NodeHeartbeat, ResourceQuantity, SandboxInventoryEntry, utc_now,
 )
-from ucloud_sandboxes.routing import SandboxRoute
+from sandboxes.routing import SandboxRoute
 
 TEST_TIER = "contract"
 
@@ -384,7 +384,7 @@ class ParkedSandboxRecordTests(GatewayJobReadTests):
         return self.read(connection)
 
     def inventory_heartbeat(self, managed_process):
-        from ucloud_sandboxes.registry import heartbeat_to_dict
+        from sandboxes.registry import heartbeat_to_dict
         heartbeat = replace(
             self.heartbeat, activity_epoch=5, inventory_complete=True,
             inventory=(SandboxInventoryEntry(

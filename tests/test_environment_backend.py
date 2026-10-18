@@ -11,8 +11,8 @@ import unittest
 
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
-from ucloud_sandboxes.environment_backend import EnvironmentBackend, EnvironmentBackendClient, EnvironmentBackendServer, mount_has_dependents
-from ucloud_sandboxes.environment_nbd import EnvironmentReadWorkers, ReadOnlyEnvironmentDevice, ReadOnlyNbdExport, REQUEST, REPLY, REQUEST_MAGIC, REPLY_MAGIC
+from sandboxes.environment_backend import EnvironmentBackend, EnvironmentBackendClient, EnvironmentBackendServer, mount_has_dependents
+from sandboxes.environment_nbd import EnvironmentReadWorkers, ReadOnlyEnvironmentDevice, ReadOnlyNbdExport, REQUEST, REPLY, REQUEST_MAGIC, REPLY_MAGIC
 
 TEST_TIER = "contract"
 
@@ -22,13 +22,13 @@ class EnvironmentBackendTests(artifact_fixtures.EnvironmentArtifactTests):
         device = self.root.stat().st_dev
         identity = f"{os.major(device)}:{os.minor(device)}"
         peers = f"100 1 {identity} / /component ro - erofs /dev/nbd0 ro\n"
-        with patch("ucloud_sandboxes.environment_backend.Path.read_text", return_value=peers):
+        with patch("sandboxes.environment_backend.Path.read_text", return_value=peers):
             # Image-view removal can leave the owned canonical component mount;
             # backing disconnect cannot ignore another retained filesystem bind.
             self.assertTrue(mount_has_dependents(self.root))
             self.assertFalse(mount_has_dependents(self.root, include_bind_mounts=False))
         overlay = f"101 1 0:123 / /sandbox rw - overlay overlay rw,lowerdir={self.root},upperdir=/upper,workdir=/work\n"
-        with patch("ucloud_sandboxes.environment_backend.Path.read_text", return_value=peers + overlay):
+        with patch("sandboxes.environment_backend.Path.read_text", return_value=peers + overlay):
             self.assertTrue(mount_has_dependents(self.root))
             self.assertTrue(mount_has_dependents(self.root, include_bind_mounts=False))
 
@@ -45,7 +45,7 @@ class EnvironmentBackendTests(artifact_fixtures.EnvironmentArtifactTests):
         ReadOnlyEnvironmentDevice._await_ready(export, device, 4096)
         self.assertEqual(waits, [.005])
         (device / "size").write_text("0\n")
-        with patch("ucloud_sandboxes.environment_nbd.time.monotonic", side_effect=[0, 6]), \
+        with patch("sandboxes.environment_nbd.time.monotonic", side_effect=[0, 6]), \
              self.assertRaisesRegex(RuntimeError, "did not become ready"):
             ReadOnlyEnvironmentDevice._await_ready(export, device, 4096)
         export.healthy = False
@@ -53,7 +53,7 @@ class EnvironmentBackendTests(artifact_fixtures.EnvironmentArtifactTests):
             ReadOnlyEnvironmentDevice._await_ready(export, device, 4096)
 
     def test_devices_are_sized_in_blocks_beyond_two_gib(self):
-        from ucloud_sandboxes.environment_nbd import SET_BLKSIZE, SET_SIZE_BLOCKS, size_ioctls
+        from sandboxes.environment_nbd import SET_BLKSIZE, SET_SIZE_BLOCKS, size_ioctls
         size = 3 * 1024 ** 3 + 4096
         self.assertEqual(size_ioctls(size), ((SET_BLKSIZE, 4096), (SET_SIZE_BLOCKS, size // 4096)))
         for argument in (value for _, value in size_ioctls(size)):
@@ -66,16 +66,16 @@ class EnvironmentBackendTests(artifact_fixtures.EnvironmentArtifactTests):
         device = self.root / "device"
         device.touch()
         block = SimpleNamespace(st_mode=stat.S_IFBLK, st_rdev=os.makedev(43, 0))
-        with patch("ucloud_sandboxes.environment_nbd.os.fstat", return_value=block), \
-             patch("ucloud_sandboxes.environment_nbd.fcntl.flock", side_effect=BlockingIOError()), \
-             patch("ucloud_sandboxes.environment_nbd.fcntl.ioctl") as ioctl:
+        with patch("sandboxes.environment_nbd.os.fstat", return_value=block), \
+             patch("sandboxes.environment_nbd.fcntl.flock", side_effect=BlockingIOError()), \
+             patch("sandboxes.environment_nbd.fcntl.ioctl") as ioctl:
             with self.assertRaises(OSError) as raised:
                 ReadOnlyEnvironmentDevice(device, self.component, None, None, trusted_keys=self.registry.trusted_keys)
             self.assertEqual(raised.exception.errno, errno.EBUSY)
             ioctl.assert_not_called()
-        with patch("ucloud_sandboxes.environment_nbd.os.fstat", return_value=block), \
-             patch("ucloud_sandboxes.environment_nbd.Path.read_text", return_value="123\n"), \
-             patch("ucloud_sandboxes.environment_nbd.fcntl.ioctl") as ioctl:
+        with patch("sandboxes.environment_nbd.os.fstat", return_value=block), \
+             patch("sandboxes.environment_nbd.Path.read_text", return_value="123\n"), \
+             patch("sandboxes.environment_nbd.fcntl.ioctl") as ioctl:
             with self.assertRaises(OSError) as raised:
                 ReadOnlyEnvironmentDevice(device, self.component, None, None, trusted_keys=self.registry.trusted_keys)
             self.assertEqual(raised.exception.errno, errno.EBUSY)

@@ -1,4 +1,4 @@
-//! runsc invocation and sentry identity, as ucloud_sandboxes/direct_warden.py
+//! runsc invocation and sentry identity, as sandboxes/direct_warden.py
 //! (`SubprocessCommandRunner`, `_runsc_state`, `_sentry_identity`) and
 //! runtime_process.py (`owned_runtime_process_ticks`) do them.
 

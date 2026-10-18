@@ -44,7 +44,7 @@ create {image, toolkits?}
 ```
 
 Resolution is `_resolve_create_spec` in
-[`control_plane.py`](../ucloud_sandboxes/control_plane.py). The pinned root
+[`control_plane.py`](../sandboxes/control_plane.py). The pinned root
 keeps park, wake, migration and retries on the same root for the sandbox's
 life; without `dispatch_roots`, the worker reads it from the manifest's
 annotation.
@@ -91,7 +91,7 @@ released (OCI manifest deleted), since the recipe can always rebuild it.
 ## Prepared images
 
 A **prepared image** is a validated chunk-store image that builds start from
-(catalog: [`prepared_images.py`](../ucloud_sandboxes/prepared_images.py)):
+(catalog: [`prepared_images.py`](../sandboxes/prepared_images.py)):
 
 - **Sources**: faithful copies of upstream images, optionally with an exact
   enrichment recipe (SWE-smith's `swesmith-v1` bakes in task branches and
@@ -175,7 +175,7 @@ the sha256 of their uncompressed bytes, packed into ≤64 MiB packs in S3.
 Per component it also stores a RAFS **bootstrap** (filesystem metadata) and a
 **chunk map** (device offset → chunk id), both signed, plus an unsigned
 **locator** (chunk → pack range), which is only a hint. Conversion
-([`chunk_convert.py`](../ucloud_sandboxes/chunk_convert.py)) is shared by
+([`chunk_convert.py`](../sandboxes/chunk_convert.py)) is shared by
 every writer: run `nydus-image` per layer (reusing layers already converted),
 pack only new chunks, upload, merge, sign, register, and publish the root
 manifest last. A crash leaves nothing visible; a rerun yields the same root.
@@ -231,8 +231,8 @@ backend to attach every component, and composes them.
 
 All settings are in `deployment.json` under `immutable_environments` (plus
 `builder`, `upstream_mirror` and the `registry_*` keys). Run
-`uv run ucloud-sandboxes sample-config` for a full example, and see
-[`config.py`](../ucloud_sandboxes/config.py) for every key, default and
+`uv run sandboxes sample-config` for a full example, and see
+[`config.py`](../sandboxes/config.py) for every key, default and
 validation rule. The keys that select behaviour:
 
 | Key | Effect |
@@ -252,13 +252,13 @@ validation rule. The keys that select behaviour:
 relevant host with `--config`.
 
 ```bash
-ucloud-sandboxes image-index summary | show <name> | list --environment E --state failed
-ucloud-sandboxes image-index export-task-ids <dir>        # one task_ids_file per environment
-ucloud-sandboxes publish-environment --environment-allow-path opt/ucloud/toolkits/<name> ...
-ucloud-sandboxes toolkit-register --name N --tag T --image-ref R ; toolkit-list
-ucloud-sandboxes warm-chunk-store --component <digest> --wait   # fill the store node before a burst
-ucloud-sandboxes convert-environment | unpack-environment ...  # registry → chunk store, and back (rollback)
-ucloud-sandboxes chunk-migrate inventory|convert|record|switch|revert|status  # dry run until --execute
-ucloud-sandboxes registry-prune [--execute]
-ucloud-sandboxes provision-environment-key                # create or recover the producer key pair
+sandboxes image-index summary | show <name> | list --environment E --state failed
+sandboxes image-index export-task-ids <dir>        # one task_ids_file per environment
+sandboxes publish-environment --environment-allow-path opt/ucloud/toolkits/<name> ...
+sandboxes toolkit-register --name N --tag T --image-ref R ; toolkit-list
+sandboxes warm-chunk-store --component <digest> --wait   # fill the store node before a burst
+sandboxes convert-environment | unpack-environment ...  # registry → chunk store, and back (rollback)
+sandboxes chunk-migrate inventory|convert|record|switch|revert|status  # dry run until --execute
+sandboxes registry-prune [--execute]
+sandboxes provision-environment-key                # create or recover the producer key pair
 ```

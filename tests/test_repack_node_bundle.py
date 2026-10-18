@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from ucloud_sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
+from sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
 from tempfile import TemporaryDirectory
 import unittest
 import zipfile
@@ -22,7 +22,7 @@ from scripts.repack_node_bundle import (
 
 class RepackNodeBundleTests(unittest.TestCase):
     def test_nydusd_is_added_only_from_the_pinned_build(self):
-        from ucloud_sandboxes.environment_config import PINNED_NYDUS_COMMIT
+        from sandboxes.environment_config import PINNED_NYDUS_COMMIT
         with TemporaryDirectory() as raw:
             root, build = Path(raw, "bundle"), Path(raw, "build")
             build.mkdir()
@@ -103,15 +103,15 @@ class RepackNodeBundleTests(unittest.TestCase):
             (runtime / "site-packages").mkdir(parents=True)
             wheel = root / "agent.whl"
             with zipfile.ZipFile(wheel, "w") as archive:
-                archive.writestr("ucloud_sandboxes/relay/__init__.py", "")
-                archive.writestr("ucloud_sandboxes/cli.py", "")
+                archive.writestr("sandboxes/relay/__init__.py", "")
+                archive.writestr("sandboxes/cli.py", "")
                 archive.writestr(
-                    "ucloud_sandboxes-0.5.35.dist-info/WHEEL",
+                    "sandboxes-0.5.35.dist-info/WHEEL",
                     "Root-Is-Purelib: true\nTag: py3-none-any\n",
                 )
                 archive.writestr(
-                    "ucloud_sandboxes-0.5.35.dist-info/METADATA",
-                    "Name: ucloud-sandboxes\nVersion: 0.5.35\n",
+                    "sandboxes-0.5.35.dist-info/METADATA",
+                    "Name: sandboxes\nVersion: 0.5.35\n",
                 )
             previous = os.umask(0o077)
             try:
@@ -158,8 +158,8 @@ class RepackNodeBundleTests(unittest.TestCase):
             runtime = Path(raw_dir)
             self._metadata(
                 runtime,
-                "ucloud_sandboxes-0.4.1.dist-info",
-                "Name: ucloud-sandboxes\n"
+                "sandboxes-0.4.1.dist-info",
+                "Name: sandboxes\n"
                 "Version: 0.4.1\n"
                 "Requires-Dist: opentelemetry-sdk>=1.30\n",
             )
@@ -172,8 +172,8 @@ class RepackNodeBundleTests(unittest.TestCase):
             runtime = Path(raw_dir)
             self._metadata(
                 runtime,
-                "ucloud_sandboxes-0.4.1.dist-info",
-                "Name: ucloud-sandboxes\n"
+                "sandboxes-0.4.1.dist-info",
+                "Name: sandboxes\n"
                 "Version: 0.4.1\n"
                 "Requires-Dist: opentelemetry-sdk>=1.30\n"
                 'Requires-Dist: importlib-metadata; python_version < "3.10"\n',
@@ -239,7 +239,7 @@ class RepackNodeBundleTests(unittest.TestCase):
                 self.assertEqual(sha256_file(bundle / item["file"]), item["sha256"])
                 self.assertEqual((bundle / item["file"]).stat().st_size, item["size"])
             # Run the complete fresh-worker validator on the repacker output.
-            from ucloud_sandboxes.vm_init import render_vm_init_script
+            from sandboxes.vm_init import render_vm_init_script
             from tests.test_vm_init import VmInitTests, write_bundle
             complete = root / "complete"
             full_manifest = write_bundle(complete, "sandbox")

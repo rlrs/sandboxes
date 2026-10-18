@@ -24,8 +24,8 @@ from uuid import uuid4
 from prepare_image_pool import public_registry_headers, registry_parts
 from prepare_shared_task_image import copy_verified, encode
 from stage_source_image import PublicBlobRedirect
-from ucloud_sandboxes.environment_artifact import require_digest
-from ucloud_sandboxes.oci_flat_delta import archive_path
+from sandboxes.environment_artifact import require_digest
+from sandboxes.oci_flat_delta import archive_path
 
 EXCLUDED = frozenset({'dev', 'proc', 'sys', 'run'})
 
@@ -106,8 +106,8 @@ def main():
         parser.error('immutable image reference required')
     if hashlib.sha256(args.umoci.read_bytes()).hexdigest() != args.umoci_sha256:
         raise ValueError('unpacker binary identity mismatch')
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.managed_registry import MANIFEST_ACCEPT, RegistryClient, registry_repository_tag_from_image_ref
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.managed_registry import MANIFEST_ACCEPT, RegistryClient, registry_repository_tag_from_image_ref
     config = DeploymentConfig.from_dict(json.loads(args.config.read_text()))
     client = RegistryClient(config.registry_url)
     original_digest = args.reference.split('@')[1]

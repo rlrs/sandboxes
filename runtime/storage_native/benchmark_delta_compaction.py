@@ -16,8 +16,8 @@ import tempfile
 import time
 from uuid import uuid4
 
-from ucloud_sandboxes.storage_native import AgentEnvUblkClient
-from ucloud_sandboxes.storage_native_registry import consume_export_stream
+from sandboxes.storage_native import AgentEnvUblkClient
+from sandboxes.storage_native_registry import consume_export_stream
 
 
 MAGIC = bytes.fromhex("657e63d29444084ca2d2c8ec4fcfae8a")

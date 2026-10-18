@@ -14,7 +14,7 @@ import subprocess
 import time
 from uuid import uuid4
 
-from ucloud_sandboxes.gvisor_distribution import GVISOR_COMMIT, distribution_files
+from sandboxes.gvisor_distribution import GVISOR_COMMIT, distribution_files
 
 
 IMAGE = "python@sha256:9d2e5553305c7c7b0097999bb17187c69b921ccd6bc9d40e4bb5ebe652c00285"

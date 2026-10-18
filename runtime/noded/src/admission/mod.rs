@@ -13,7 +13,7 @@
 //! Step 3c.1 ported the pure parts against Python goldens
 //! (`testdata/goldens.py`). Step 3c.2 serves them behind
 //! `--rust-admission`; from step 3c.3 the agent admits through them
-//! (`ucloud_sandboxes/admission_backend.py`), and from 3c.4 noded's own
+//! (`sandboxes/admission_backend.py`), and from 3c.4 noded's own
 //! creates are admitted in process (`crate::create`).
 
 pub mod decide;

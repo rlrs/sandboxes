@@ -1,7 +1,7 @@
 import unittest
 
 from tests import test_control_plane as helpers
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.routing import RoutingStore
 
 TEST_TIER = "contract"
 

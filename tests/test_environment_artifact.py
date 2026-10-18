@@ -13,11 +13,11 @@ import time
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes.environment_artifact import (
     CHUNK_BYTES, EnvironmentArtifactRegistry, content_digest, sign_component,
 )
-from ucloud_sandboxes.environment_cache import VerifiedEnvironmentCache
-from ucloud_sandboxes.managed_registry import RegistryClient, RegistryRequestError
+from sandboxes.environment_cache import VerifiedEnvironmentCache
+from sandboxes.managed_registry import RegistryClient, RegistryRequestError
 
 TEST_TIER = "contract"
 
@@ -182,7 +182,7 @@ class EnvironmentDocumentLoadTests(unittest.TestCase):
             manifests.assert_called_once_with("environments", self.digest)
 
     def test_supplied_document_rejects_invalid_metadata_and_wrong_manifest_binding(self):
-        from ucloud_sandboxes.environment_artifact import canonical_bytes
+        from sandboxes.environment_artifact import canonical_bytes
         document, _ = self.client.manifest_document("environments", self.digest)
         reader = EnvironmentArtifactRegistry(self.client, "environments", self.registry.trusted_keys)
         for malformed in (None, [], "manifest"):
@@ -198,7 +198,7 @@ class EnvironmentDocumentLoadTests(unittest.TestCase):
         self.assertFalse(reader.whole_image(self.component))
 
     def test_supplied_document_authenticates_config_and_dependency_closure(self):
-        from ucloud_sandboxes.environment_artifact import canonical_bytes
+        from sandboxes.environment_artifact import canonical_bytes
         document, _ = self.client.manifest_document("environments", self.digest)
         reader = EnvironmentArtifactRegistry(self.client, "environments", self.registry.trusted_keys)
         changed = document | {"layers": []}
@@ -381,7 +381,7 @@ class EnvironmentReadRetryTests(EnvironmentArtifactTests):
 class UploadBlobRetryTests(unittest.TestCase):
     def client(self, failures):
         from unittest.mock import Mock
-        from ucloud_sandboxes.managed_registry import RegistryRequestError
+        from sandboxes.managed_registry import RegistryRequestError
         client = Mock()
         client.blob_exists.return_value = False
         client.start_blob_upload.return_value = "/v2/environments/blobs/uploads/x"
@@ -395,22 +395,22 @@ class UploadBlobRetryTests(unittest.TestCase):
 
     def test_transient_commit_failure_is_retried_and_abort_errors_do_not_mask(self):
         from unittest.mock import patch
-        from ucloud_sandboxes import environment_artifact
+        from sandboxes import environment_artifact
         payload = b"chunk"
         client = self.client([503, None])
         with patch.object(environment_artifact.time, "sleep"), \
-                self.assertLogs("ucloud_sandboxes.environment_artifact", level="WARNING"):
+                self.assertLogs("sandboxes.environment_artifact", level="WARNING"):
             environment_artifact._upload_blob(client, "environments", payload,
                                               environment_artifact.content_digest(payload))
         self.assertEqual(client.finish_blob_upload.call_count, 2)
 
     def test_permanent_failure_surfaces_its_own_error(self):
-        from ucloud_sandboxes import environment_artifact
-        from ucloud_sandboxes.managed_registry import RegistryRequestError
+        from sandboxes import environment_artifact
+        from sandboxes.managed_registry import RegistryRequestError
         payload = b"chunk"
         client = self.client([400])
         with self.assertRaises(RegistryRequestError) as caught, \
-                self.assertLogs("ucloud_sandboxes.environment_artifact", level="WARNING"):
+                self.assertLogs("sandboxes.environment_artifact", level="WARNING"):
             environment_artifact._upload_blob(client, "environments", payload,
                                               environment_artifact.content_digest(payload))
         self.assertEqual(caught.exception.status_code, 400)
@@ -421,7 +421,7 @@ class EnvironmentLayoutTests(EnvironmentArtifactTests.__mro__[0]):
     """Whole-image and per-chunk publications both load and read."""
 
     def test_earlier_per_chunk_publication_still_loads_and_reads(self):
-        from ucloud_sandboxes import environment_artifact as artifact
+        from sandboxes import environment_artifact as artifact
         for chunk, offset in zip(self.component.chunks, range(0, len(self.bytes), CHUNK_BYTES)):
             artifact._upload_blob(self.client, "environments", self.bytes[offset:offset + chunk.size], chunk.digest)
         config = artifact.canonical_bytes(self.component.to_dict())
@@ -449,7 +449,7 @@ class RegistryRangeTests(unittest.TestCase):
     def test_blob_range_requires_partial_content(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from threading import Thread
-        from ucloud_sandboxes.managed_registry import RegistryClient
+        from sandboxes.managed_registry import RegistryClient
         payload = bytes(range(256)) * 16
         honour = [True]
 
@@ -484,7 +484,7 @@ class RegistryRangeTests(unittest.TestCase):
     def test_upload_blob_file_streams_the_whole_file_in_one_put(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from threading import Thread
-        from ucloud_sandboxes.managed_registry import RegistryClient
+        from sandboxes.managed_registry import RegistryClient
         payload = os.urandom(3 * 1024 * 1024 + 17)
         digest = content_digest(payload)
         received = {}

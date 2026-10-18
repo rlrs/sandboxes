@@ -1,9 +1,9 @@
 from dataclasses import replace
 import unittest
 
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.images import DEFAULT_MAX_ACTIVE_IMAGE_BUILDS
-from ucloud_sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL
+from sandboxes import control_plane
+from sandboxes.images import DEFAULT_MAX_ACTIVE_IMAGE_BUILDS
+from sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL
 from tests.test_control_plane import build_heartbeat
 
 

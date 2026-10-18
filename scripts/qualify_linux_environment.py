@@ -8,7 +8,7 @@ from pathlib import Path
 import urllib.request
 import uuid
 
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.sandbox import SandboxSpec
 
 
 def main() -> int:

@@ -3,18 +3,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from threading import Thread
 
-from ucloud_sandboxes.agent import (
+from sandboxes.agent import (
     build_heartbeat as _build_heartbeat,
     detect_job_id,
     fetch_node_agent_heartbeat,
 )
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     NodeRuntimeMetrics,
     ResourceQuantity,
     SandboxInventoryEntry,
     utc_now,
 )
-from ucloud_sandboxes.registry import heartbeat_to_dict
+from sandboxes.registry import heartbeat_to_dict
 
 TEST_TIER = "contract"
 

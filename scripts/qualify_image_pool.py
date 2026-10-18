@@ -12,7 +12,7 @@ from uuid import uuid4
 
 
 def matching_alias(alias, reference):
-    from ucloud_sandboxes.managed_registry import canonical_image_digest_ref
+    from sandboxes.managed_registry import canonical_image_digest_ref
     return alias is not None and alias.pushed and alias.digest_ref == canonical_image_digest_ref(reference)
 
 
@@ -32,9 +32,9 @@ def main():
         parser.error("use a new output path")
     sys.path.insert(0, str(args.sdk_wheel))
     import ucloud_sandboxes_sdk as sdk
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.image_import import import_image_id
-    from ucloud_sandboxes.images import ImageStore
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.image_import import import_image_id
+    from sandboxes.images import ImageStore
 
     config = DeploymentConfig.from_dict(json.loads(args.config.read_text()))
     token = config.sandbox_api_token_file().read_text().strip()

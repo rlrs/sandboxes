@@ -7,10 +7,10 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_routing import sandbox_route
-from ucloud_sandboxes import routing
+from sandboxes import routing
 from tests.gateway_support import gateway_services
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import RoutingStore
 
 TEST_TIER = "contract"
 
@@ -35,7 +35,7 @@ def assert_scoped_migrations(test, store):
             destination_node_url="http://dest-" + suffix,
         )
     with patch(
-        "ucloud_sandboxes.routing._sandbox_migration_from_row",
+        "sandboxes.routing._sandbox_migration_from_row",
         wraps=routing._sandbox_migration_from_row,
     ) as decode:
         selected = store.sandbox_migrations(
@@ -61,7 +61,7 @@ def assert_scoped_migrations(test, store):
         node_id="dest-one", job_id="dest-job-one", node_url="http://dest-one"
     )
     with patch(
-        "ucloud_sandboxes.routing._sandbox_migration_from_row",
+        "sandboxes.routing._sandbox_migration_from_row",
         wraps=routing._sandbox_migration_from_row,
     ) as decode:
         occupants = placement.routes_for_node(heartbeat)

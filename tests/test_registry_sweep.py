@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import time
 import unittest
 
-from ucloud_sandboxes.registry_sweep import (
+from sandboxes.registry_sweep import (
     JOURNAL_NAME,
     SWEEP_SUFFIX,
     DistributionTree,

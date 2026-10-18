@@ -8,7 +8,7 @@ from tempfile import TemporaryDirectory
 import time
 import unittest
 
-from ucloud_sandboxes.managed_process import (
+from sandboxes.managed_process import (
     DEFAULT_MAX_STDERR_BYTES,
     DEFAULT_MAX_STDOUT_BYTES,
     MANAGED_PROCESS_PROTOCOL_VERSION,
@@ -19,7 +19,7 @@ from ucloud_sandboxes.managed_process import (
     control_request_bytes,
     parse_control_response,
 )
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.sandbox import SandboxSpec
 
 TEST_TIER = "contract"
 

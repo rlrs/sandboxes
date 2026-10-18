@@ -2,8 +2,8 @@ from dataclasses import replace
 import unittest
 
 from tests.test_control_plane import build_heartbeat, _sandbox_route
-from ucloud_sandboxes.cli import apply_route_reservations_to_heartbeats
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry
+from sandboxes.cli import apply_route_reservations_to_heartbeats
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry
 
 
 class MemoryForecastProjectionTests(unittest.TestCase):

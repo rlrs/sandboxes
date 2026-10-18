@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 import urllib3
 from urllib3.exceptions import EmptyPoolError
 
-from ucloud_sandboxes.gateway import node_rpc
+from sandboxes.gateway import node_rpc
 
 TEST_TIER = "contract"
 

@@ -8,9 +8,9 @@ import tempfile
 import shutil
 import os
 from pathlib import Path
-from ucloud_sandboxes.sandbox import SandboxSpec
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
+from sandboxes.sandbox import SandboxSpec
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
 
 
 def main() -> int:

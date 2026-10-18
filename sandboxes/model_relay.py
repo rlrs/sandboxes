@@ -69,7 +69,7 @@ _DISABLED_TELEMETRY = Telemetry.disabled("model-relay")
 RELAY_POSTGRES_REQUIRED = (
     "Model relay 0.5.114 requires PostgreSQL; configure relay_postgres. "
     "For an existing SQLite journal, stop the relay and run "
-    "python -m ucloud_sandboxes.shared_control import-idle-relay --sqlite-file PATH "
+    "python -m sandboxes.shared_control import-idle-relay --sqlite-file PATH "
     "with the target --dsn-file and --deployment-id before restarting. "
     "See docs/architecture.md; do not delete or reset the old journal."
 )

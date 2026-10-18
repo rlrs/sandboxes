@@ -26,9 +26,9 @@ from aiohttp import ClientConnectionError, ClientSession, TCPConnector, web
 import psycopg
 from psycopg import sql
 
-from ucloud_sandboxes import model_relay as api
-from ucloud_sandboxes.shared_control.credentials import read_private_dsn
-from ucloud_sandboxes.shared_control.database import PostgresDatabase
+from sandboxes import model_relay as api
+from sandboxes.shared_control.credentials import read_private_dsn
+from sandboxes.shared_control.database import PostgresDatabase
 
 
 def dsn(args):
@@ -123,10 +123,10 @@ async def benchmark(args):
     source_hashes = {
         p: hashlib.sha256(Path(p).read_bytes()).hexdigest()
         for p in (
-            "ucloud_sandboxes/shared_control/relay.py",
-            "ucloud_sandboxes/shared_control/database.py",
-            "ucloud_sandboxes/shared_control/relay_schema.sql",
-            "ucloud_sandboxes/model_relay.py",
+            "sandboxes/shared_control/relay.py",
+            "sandboxes/shared_control/database.py",
+            "sandboxes/shared_control/relay_schema.sql",
+            "sandboxes/model_relay.py",
             __file__,
         )
     }

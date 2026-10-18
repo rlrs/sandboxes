@@ -6,5 +6,5 @@ After=ucloud-sandbox-registry.service
 Type=oneshot
 EnvironmentFile=-/etc/ucloud-sandboxes/registry-store.env
 # Exits at once below registry_disk_cleanup_percent or for an S3 store.
-ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/python -m ucloud_sandboxes.systemd registry-pressure --config /etc/ucloud-sandboxes/deployment.json
-ExecStopPost=-/work/ucloud-sandboxes/gateway-venv/bin/python -m ucloud_sandboxes.systemd registry-recover
+ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/python -m sandboxes.systemd registry-pressure --config /etc/ucloud-sandboxes/deployment.json
+ExecStopPost=-/work/ucloud-sandboxes/gateway-venv/bin/python -m sandboxes.systemd registry-recover

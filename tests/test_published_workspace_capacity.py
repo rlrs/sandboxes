@@ -13,13 +13,13 @@ import threading
 import unittest
 from unittest.mock import MagicMock
 
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     DirectRegistryCapacityUnavailable,
     DirectRegistryConflictError,
     DirectSandboxRegistry,
 )
-from ucloud_sandboxes.direct_warden import DirectRunscWarden, DirectSandbox
-from ucloud_sandboxes.storage_native_daemon import StorageVolumeState
+from sandboxes.direct_warden import DirectRunscWarden, DirectSandbox
+from sandboxes.storage_native_daemon import StorageVolumeState
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_direct_registry as registry_fixtures
 

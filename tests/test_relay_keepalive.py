@@ -3,7 +3,7 @@ import unittest
 
 from aiohttp import ClientSession, web
 
-from ucloud_sandboxes.model_relay import create_model_relay_app
+from sandboxes.model_relay import create_model_relay_app
 from tests.postgres_fixture import postgres_database
 
 TEST_TIER = "contract"

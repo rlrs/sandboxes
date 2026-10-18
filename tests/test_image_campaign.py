@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.image_foundations import terminal_foundation
+from sandboxes.image_foundations import terminal_foundation
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 with patch.object(sys, 'path', [str(SCRIPTS), *sys.path]):

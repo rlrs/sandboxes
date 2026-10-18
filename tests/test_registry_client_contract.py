@@ -7,8 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from unittest.mock import patch
 
-from ucloud_sandboxes import managed_registry
-from ucloud_sandboxes.managed_registry import (
+from sandboxes import managed_registry
+from sandboxes.managed_registry import (
     MANIFEST_ACCEPT,
     RegistryClient,
     RegistryRequestError,

@@ -16,7 +16,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ucloud_sandboxes.providers.hetzner import HetznerClient  # noqa: E402
+from sandboxes.providers.hetzner import HetznerClient  # noqa: E402
 
 
 DEFAULT_NAME = "ucloud-sandboxes-production"

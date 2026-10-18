@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 
 from typing_extensions import Self
 
-from ucloud_sandboxes.storage_native import (
+from sandboxes.storage_native import (
     AGENTENV_UBLK_PROTOCOL_MAX_BYTES,
     AgentEnvUblkClient,
     StorageNativeError,

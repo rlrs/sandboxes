@@ -3,7 +3,7 @@ from threading import Event, Lock, RLock
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.control_plane import ControlPlaneHandler
+from sandboxes.control_plane import ControlPlaneHandler
 
 
 class FleetReadCoalescingTests(unittest.TestCase):
@@ -43,7 +43,7 @@ class FleetReadCoalescingTests(unittest.TestCase):
             handler._list_sandboxes_from_cache()
             return handler.response
 
-        with patch('ucloud_sandboxes.control_plane.Future', ObservedFuture):
+        with patch('sandboxes.control_plane.Future', ObservedFuture):
             with ThreadPoolExecutor(max_workers=24) as pool:
                 first = pool.submit(read)
                 self.assertTrue(entered.wait(3))

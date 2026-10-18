@@ -14,24 +14,24 @@ import json
 import os
 from pathlib import Path
 
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.direct_provisioner import DirectSandboxProvisioner
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.direct_warden import (
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.direct_provisioner import DirectSandboxProvisioner
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.direct_warden import (
     DirectRunscWarden,
     DirectRunscWardenConfig,
     SubprocessCommandRunner,
 )
-from ucloud_sandboxes.disk_claims import DiskClaimPolicy
-from ucloud_sandboxes.hibernation import HibernationRuntimeFingerprint
-from ucloud_sandboxes.image_rootfs import OverlayRootfsManager
-from ucloud_sandboxes.images import DockerImageRuntime
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.heartbeat_sender import HeartbeatSenderConfig
-from ucloud_sandboxes.node_agent import build_direct_node_agent_server
-from ucloud_sandboxes.runtime_metrics import SingleFlightRuntimeMetricsSampler
-from ucloud_sandboxes.storage_native_daemon import StorageNativeNodeClient
+from sandboxes.disk_claims import DiskClaimPolicy
+from sandboxes.hibernation import HibernationRuntimeFingerprint
+from sandboxes.image_rootfs import OverlayRootfsManager
+from sandboxes.images import DockerImageRuntime
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.heartbeat_sender import HeartbeatSenderConfig
+from sandboxes.node_agent import build_direct_node_agent_server
+from sandboxes.runtime_metrics import SingleFlightRuntimeMetricsSampler
+from sandboxes.storage_native_daemon import StorageNativeNodeClient
 
 HARNESS = Path(__file__).resolve().parent
 

@@ -57,9 +57,9 @@ def application_observation(progress):
 def run(args):
     import tomllib
 
-    from ucloud_sandboxes.build_cache import RegistryBuildCache, _parse_owned_tag
-    from ucloud_sandboxes.managed_registry import normalize_manifest_digest
-    from ucloud_sandboxes.vm_init import PINNED_BUILDKIT_IMAGE
+    from sandboxes.build_cache import RegistryBuildCache, _parse_owned_tag
+    from sandboxes.managed_registry import normalize_manifest_digest
+    from sandboxes.vm_init import PINNED_BUILDKIT_IMAGE
 
     if not 120 <= args.timeout_seconds <= 1800:
         raise ValueError("deadline must be 120..1800 seconds")

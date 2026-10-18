@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 from threading import Barrier, Event
 import unittest
 
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.memory_backing import MemoryBackingStore, MemoryBackingError
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.memory_backing import MemoryBackingStore, MemoryBackingError
 from tests.test_split_memory_lifecycle import FakeQuota
 
 

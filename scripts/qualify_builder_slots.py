@@ -338,7 +338,7 @@ def verify_builder_receipts(paths, expected_nodes, declared_slots, expected_whee
 
 
 async def hold_builders(args, sdk):
-    from ucloud_sandboxes.config import DeploymentConfig
+    from sandboxes.config import DeploymentConfig
     config = DeploymentConfig.from_dict(json.loads(args.deployment_config.read_text()))
     token = config.sandbox_api_token_file().read_text().strip()
     stopping = asyncio.Event()
@@ -378,8 +378,8 @@ async def hold_builders(args, sdk):
 
 async def measure(args, sdk, cases):
     import aiohttp
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.control_state import ControlStateStore
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.control_state import ControlStateStore
     config = DeploymentConfig.from_dict(json.loads(args.deployment_config.read_text()))
     token = config.sandbox_api_token_file().read_text().strip()
     node_token = config.node_control_token_file().read_text().strip()

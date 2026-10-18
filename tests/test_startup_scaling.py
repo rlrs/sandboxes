@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 from tests.test_policy import node
 from tests import test_control_plane as gateway_fixtures
-from ucloud_sandboxes.cli import vm_init_options_for_job
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.vm_init import render_vm_init_script
-from ucloud_sandboxes.models import (
+from sandboxes.cli import vm_init_options_for_job
+from sandboxes.config import DeploymentConfig
+from sandboxes.vm_init import render_vm_init_script
+from sandboxes.models import (
     LiveScaleSignals,
     NodeRuntimeMetrics,
     ResourceQuantity,
@@ -21,8 +21,8 @@ from ucloud_sandboxes.models import (
     ScalePolicy,
     utc_now,
 )
-from ucloud_sandboxes.policy import _nodes_for_unplaced_requests, evaluate_scale
-from ucloud_sandboxes.routing import RoutingStore, sandbox_demand_from_routing_state
+from sandboxes.policy import _nodes_for_unplaced_requests, evaluate_scale
+from sandboxes.routing import RoutingStore, sandbox_demand_from_routing_state
 
 TEST_TIER = "contract"
 
@@ -73,7 +73,7 @@ class StartupScalingTests(unittest.TestCase):
                     self.assertEqual(store.prepared_capacity()[0].count, count)
                     # Planner effort must follow fleet capacity, not the
                     # caller's potentially enormous future workload count.
-                    from ucloud_sandboxes import policy as policy_module
+                    from sandboxes import policy as policy_module
                     with patch.object(
                         policy_module, "dynamic_request_fits",
                         wraps=policy_module.dynamic_request_fits,
@@ -120,7 +120,7 @@ class StartupScalingTests(unittest.TestCase):
             config, policy=replace(config.policy, create_target_concurrency_per_node=3)
         )
         with patch(
-            "ucloud_sandboxes.cli.read_bearer_token_source", return_value="test-token"
+            "sandboxes.cli.read_bearer_token_source", return_value="test-token"
         ):
             options = vm_init_options_for_job(
                 config,
@@ -150,7 +150,7 @@ class StartupScalingTests(unittest.TestCase):
             config, sandbox=replace(config.sandbox, storage_native_max_concurrent_prepares=48)
         )
         with patch(
-            "ucloud_sandboxes.cli.read_bearer_token_source", return_value="test-token"
+            "sandboxes.cli.read_bearer_token_source", return_value="test-token"
         ):
             options = vm_init_options_for_job(
                 config,
@@ -250,7 +250,7 @@ class StartupScalingTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             store = RoutingStore(Path(directory) / "routes.sqlite")
             with patch(
-                "ucloud_sandboxes.routing.utc_now",
+                "sandboxes.routing.utc_now",
                 return_value=now - timedelta(seconds=90),
             ):
                 store.upsert_prepared_capacity(
@@ -260,11 +260,11 @@ class StartupScalingTests(unittest.TestCase):
                     "bad-image", self.shape, failure_reason="image_pull_http_500"
                 )
             with patch(
-                "ucloud_sandboxes.routing.utc_now",
+                "sandboxes.routing.utc_now",
                 return_value=now - timedelta(seconds=5),
             ):
                 store.upsert_pending("fresh", self.shape)
-            with patch("ucloud_sandboxes.routing.utc_now", return_value=now):
+            with patch("sandboxes.routing.utc_now", return_value=now):
                 indexed = store.pending_demand()
                 snapshot = sandbox_demand_from_routing_state(store.load(), now=now)
             self.assertEqual(indexed, snapshot)

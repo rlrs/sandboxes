@@ -8,12 +8,12 @@ from unittest.mock import patch
 from tests import test_selective_environment_publication as fixture
 from tests.test_environment_layers import FORMAT
 from tests.test_oci_layer_materialize import directory, layer, member
-from ucloud_sandboxes import environment_builder
-from ucloud_sandboxes.build_deadline import ImageBuildTimeoutError, build_execution_deadline
-from ucloud_sandboxes.environment_artifact import LAYER_TAG_PREFIX, layer_chain_id, layer_group_key
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
-from ucloud_sandboxes.environment_prepare import PreparationResult
-from ucloud_sandboxes.oci_layer_materialize import materialize_layers
+from sandboxes import environment_builder
+from sandboxes.build_deadline import ImageBuildTimeoutError, build_execution_deadline
+from sandboxes.environment_artifact import LAYER_TAG_PREFIX, layer_chain_id, layer_group_key
+from sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
+from sandboxes.environment_prepare import PreparationResult
+from sandboxes.oci_layer_materialize import materialize_layers
 
 
 class SelectiveGroupClaimTests(unittest.TestCase):
@@ -64,8 +64,8 @@ class SelectiveGroupClaimTests(unittest.TestCase):
             return PreparationResult(tuple(prepare(client, repository, descriptors, diff_ids, root)),
                                      {'selective_subprocess_ms': 1.0})
 
-        target = ('ucloud_sandboxes.environment_prepare.prepare_in_subprocess' if isolated
-                  else 'ucloud_sandboxes.oci_layer_materialize.materialize_layers')
+        target = ('sandboxes.environment_prepare.prepare_in_subprocess' if isolated
+                  else 'sandboxes.oci_layer_materialize.materialize_layers')
         with patch(target, side_effect=child if isolated else prepare), \
              patch.object(other, '_group_lock', side_effect=waiting), ThreadPoolExecutor(2) as pool:
             first = pool.submit(self.reuse, self.builder, 'first')
@@ -122,7 +122,7 @@ class SelectiveGroupClaimTests(unittest.TestCase):
             return materialize_layers(*args, **kwargs)
 
         with patch.object(self.builder, '_group_lock', side_effect=tracked), \
-             patch('ucloud_sandboxes.oci_layer_materialize.materialize_layers', side_effect=prepare):
+             patch('sandboxes.oci_layer_materialize.materialize_layers', side_effect=prepare):
             result, metrics = self.reuse(self.builder, 'ordered')
         self.assertEqual(acquired, sorted(tags))
         self.assertFalse(held)

@@ -202,7 +202,7 @@ def semantic_checks(output, exercised):
 
 def worker(args):
     sys.path.insert(0, str(args.source_root.resolve()))
-    from ucloud_sandboxes import environment_builder as builder, oci_layer_materialize as materializer
+    from sandboxes import environment_builder as builder, oci_layer_materialize as materializer
     sources = {Path(module.__file__).name: digest(Path(module.__file__).read_bytes())
                for module in (builder, materializer)}
     for module in (builder, materializer):

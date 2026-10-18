@@ -12,13 +12,13 @@ from tempfile import TemporaryDirectory
 
 from tests.chunk_store_support import REPOSITORY, ChunkStoreFixture, sample_images, signing
 from tests.test_environment_artifact import MemoryRegistry
-from ucloud_sandboxes.chunk_store import Locator, pack_key
-from ucloud_sandboxes.environment_artifact import (CHUNK_BYTES, EnvironmentArtifactRegistry, load_environment,
+from sandboxes.chunk_store import Locator, pack_key
+from sandboxes.environment_artifact import (CHUNK_BYTES, EnvironmentArtifactRegistry, load_environment,
                                                    sign_component)
-from ucloud_sandboxes.environment_backend import EnvironmentBackend
-from ucloud_sandboxes.environment_cache import VerifiedEnvironmentCache
-from ucloud_sandboxes.environment_rafs import DEMAND_WINDOW_BYTES, load_rafs_image
-from ucloud_sandboxes.environment_trace import LocalTraceStore
+from sandboxes.environment_backend import EnvironmentBackend
+from sandboxes.environment_cache import VerifiedEnvironmentCache
+from sandboxes.environment_rafs import DEMAND_WINDOW_BYTES, load_rafs_image
+from sandboxes.environment_trace import LocalTraceStore
 
 TEST_TIER = "contract"
 
@@ -249,7 +249,7 @@ class ConcurrentAttachTests(unittest.TestCase):
         # M2 wave 1: serial nydusd attaches cost a 20-sandbox burst about 30 s.
         backend, other = self.backend(attach_concurrency=1, rafs=lambda digest, component: component), self.other()
         self.device_gate = threading.Event()
-        with mock.patch("ucloud_sandboxes.environment_backend.RafsEnvironmentComponent",
+        with mock.patch("sandboxes.environment_backend.RafsEnvironmentComponent",
                         type(self.registry.load(self.digest))), ThreadPoolExecutor(2) as pool:
             slow = pool.submit(backend.ensure, self.digest)
             time.sleep(.2)

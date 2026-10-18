@@ -8,10 +8,10 @@ from tests import test_storage_native_daemon as fixtures
 from tests.storage_native_publisher_support import FakeExporter
 from tests.test_storage_native_registry import FakeRegistry
 from tests.test_storage_native_s3 import FakeS3
-from ucloud_sandboxes.storage_native_daemon import StorageVolumeOwner, StorageVolumeState
-from ucloud_sandboxes.storage_native_local_cache import PublishedLocalCache
-from ucloud_sandboxes.storage_native_registry import RegistrySnapshotPublisher
-from ucloud_sandboxes.storage_native_s3 import S3SnapshotPublisher
+from sandboxes.storage_native_daemon import StorageVolumeOwner, StorageVolumeState
+from sandboxes.storage_native_local_cache import PublishedLocalCache
+from sandboxes.storage_native_registry import RegistrySnapshotPublisher
+from sandboxes.storage_native_s3 import S3SnapshotPublisher
 
 
 class PublishedLocalCacheTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class PublishedLocalCacheTests(unittest.TestCase):
             source = root / "source"
             source.write_bytes(b"checkpoint")
             with patch.object(Path, "mkdir", side_effect=OSError("disk full")), \
-                 patch("ucloud_sandboxes.storage_native_local_cache.LOGGER.warning"):
+                 patch("sandboxes.storage_native_local_cache.LOGGER.warning"):
                 cache = PublishedLocalCache(root / "cache", capacity_bytes=4096)
             cache.remember("origin", "digest", source)
             self.assertIsNone(cache.pin("origin", "digest", root))
@@ -130,7 +130,7 @@ class PublishedLocalCacheTests(unittest.TestCase):
             owner = StorageVolumeOwner("volume", "sandbox", 1)
             service.converge_volume(owner, action="prepare", operation_id="create", virtual_size=1 << 30)
             service.converge_volume(owner, action="release", operation_id="park")
-            with patch("ucloud_sandboxes.storage_native_daemon.LOGGER.warning"):
+            with patch("sandboxes.storage_native_daemon.LOGGER.warning"):
                 published = service.converge_volume(owner, action="publish", operation_id="publish")
             self.assertEqual(published.state, StorageVolumeState.PUBLISHED)
 

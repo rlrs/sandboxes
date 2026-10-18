@@ -12,7 +12,7 @@ WorkingDirectory=/work/ucloud-sandboxes
 # chunks; the gateway's API processes never hold the key.
 EnvironmentFile=-/etc/ucloud-sandboxes/s3.env
 EnvironmentFile=-/etc/ucloud-sandboxes/chunk-store.env
-ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/ucloud-sandboxes serve-sandbox-builds --config /etc/ucloud-sandboxes/deployment.json
+ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/sandboxes serve-sandbox-builds --config /etc/ucloud-sandboxes/deployment.json
 # Filtering and stacking share this host with the gateway's API: they yield to it.
 Nice=10
 Restart=always

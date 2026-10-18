@@ -380,8 +380,8 @@ def recorded_build_failed(receipt, previous):
 
 def catalog_publication(item, key):
     """Recover a registry pointer; callers must verify its signed closure first."""
-    from ucloud_sandboxes.images import ImageRecord
-    from ucloud_sandboxes.models import utc_now
+    from sandboxes.images import ImageRecord
+    from sandboxes.models import utc_now
     if not item or item.get("status") != "ready" or item.get("key") != key:
         return None
     if item.get("image_id") != "precomputed-" + key[:32]:
@@ -409,7 +409,7 @@ def register_import_alias(store, record, alias):
     Publication is insert-only under the existing image-store transaction. An
     existing import is never replaced by a preparation snapshot of a mutable tag.
     """
-    from ucloud_sandboxes.image_import import import_image_id
+    from sandboxes.image_import import import_image_id
     target = replace(record, id=import_image_id(alias), source="registry")
     with store._transaction(write=True) as connection:
         previous = connection.execute(
@@ -444,15 +444,15 @@ def main():
         parser.error("workers must be 1..32")
     sys.path.insert(0, str(args.sdk_wheel))
     import ucloud_sandboxes_sdk as sdk
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.gateway.registry_refs import _persist_registry_image_protection
-    from ucloud_sandboxes.environment_artifact import load_image_environment
-    from ucloud_sandboxes.environment_config import environment_registry_from_deployment
-    from ucloud_sandboxes.environment_dependencies import EnvironmentDependencyResolver
-    from ucloud_sandboxes.host_locks import HOST_LOCKS
-    from ucloud_sandboxes.images import ImageRecord, ImageStore
-    from ucloud_sandboxes.managed_registry import RegistryUsageStore, registry_repository_tag_from_image_ref
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.gateway.registry_refs import _persist_registry_image_protection
+    from sandboxes.environment_artifact import load_image_environment
+    from sandboxes.environment_config import environment_registry_from_deployment
+    from sandboxes.environment_dependencies import EnvironmentDependencyResolver
+    from sandboxes.host_locks import HOST_LOCKS
+    from sandboxes.images import ImageRecord, ImageStore
+    from sandboxes.managed_registry import RegistryUsageStore, registry_repository_tag_from_image_ref
+    from sandboxes.registry_disk import registry_disk_usage
 
     config = DeploymentConfig.from_dict(json.loads(args.config.read_text()))
     HOST_LOCKS.configure(config.control_state_file().parent / "gateway-locks")
@@ -680,7 +680,7 @@ def main():
                     aliases.add(repository + separator + selector)
                 result["import_aliases"] = {alias: register_import_alias(image_store, record, alias)
                                             for alias in sorted(aliases)}
-                from ucloud_sandboxes.prepared_images import PreparedImageCatalog, catalog_path as prepared_catalog_path
+                from sandboxes.prepared_images import PreparedImageCatalog, catalog_path as prepared_catalog_path
                 PreparedImageCatalog(prepared_catalog_path(config.image_file())).register_source(result)
         except Exception as error:
             result = {**item, "status": "deferred" if str(error).startswith("deferred:") else "failed",

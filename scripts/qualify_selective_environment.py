@@ -47,7 +47,7 @@ def file_digest(path):
 
 
 def capture_registry(client, repository, trusted_keys):
-    from ucloud_sandboxes.environment_artifact import EnvironmentArtifactRegistry, canonical_bytes, content_digest
+    from sandboxes.environment_artifact import EnvironmentArtifactRegistry, canonical_bytes, content_digest
 
     class CapturedRegistry(EnvironmentArtifactRegistry):
         def __init__(self):
@@ -109,11 +109,11 @@ def require_exact_publications(publications, selected_tags):
 
 
 def compare(args):
-    from ucloud_sandboxes import environment_builder
-    from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, MAX_LAYER_GROUPS, publication_metrics
-    from ucloud_sandboxes.environment_config import load_trusted_keys
-    from ucloud_sandboxes.image_rootfs import DockerOverlay2RootfsStore
-    from ucloud_sandboxes.managed_registry import RegistryClient
+    from sandboxes import environment_builder
+    from sandboxes.environment_builder import FreshEnvironmentBuilder, MAX_LAYER_GROUPS, publication_metrics
+    from sandboxes.environment_config import load_trusted_keys
+    from sandboxes.image_rootfs import DockerOverlay2RootfsStore
+    from sandboxes.managed_registry import RegistryClient
 
     url = urlsplit(args.registry_url)
     if url.scheme not in {"http", "https"} or not url.netloc or url.username or url.password or url.query or url.fragment:

@@ -227,14 +227,14 @@ TURN_COMMANDS = {
 # -- think modes ---------------------------------------------------------------
 THINK_MODES = ("sleep", "relay", "park")
 # Heartbeat runtime_metrics.resident_wait values that are levels, not counters
-# (ucloud_sandboxes/models.py ResidentWaitMetrics); the rest are counters.
+# (sandboxes/models.py ResidentWaitMetrics); the rest are counters.
 RESIDENT_WAIT_GAUGES = frozenset({
     "resident_waits", "checkpoint_inflight", "reclaim_target_bytes", "projected_reclaim_bytes",
     "cache_reclaim_inflight", "admitted_demand_bytes", "pending_demand_bytes",
     "unknown_transition_memory_costs", "admitted_ram_backing_bytes", "pending_ram_backing_bytes",
     "paused_sandboxes", "thaw_ms_max"})
 # Inventory states that mean "not resident". A pause keeps the route running
-# (ucloud_sandboxes/pause_tier.py), so paused sandboxes show only per node in
+# (sandboxes/pause_tier.py), so paused sandboxes show only per node in
 # the heartbeat's resident_wait.paused_sandboxes.
 PARKED_STATES = frozenset({"parked", "parking", "waking", "detaching", "detached"})
 RELAY_LEASE_SECONDS = 120.0

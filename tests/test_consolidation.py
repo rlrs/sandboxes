@@ -5,21 +5,21 @@ from tempfile import TemporaryDirectory
 from time import monotonic
 import unittest
 
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.capabilities import RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX
-from ucloud_sandboxes.consolidation import can_consolidate_wake
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.metrics import MetricsStore
-from ucloud_sandboxes.models import (
+from sandboxes import control_plane
+from sandboxes.config import DeploymentConfig
+from sandboxes.capabilities import RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX
+from sandboxes.consolidation import can_consolidate_wake
+from sandboxes.control_state import ControlStateStore
+from sandboxes.metrics import MetricsStore
+from sandboxes.models import (
     NodeHeartbeat,
     NodeRuntimeMetrics,
     ResourceQuantity,
     ScalePolicy,
     utc_now,
 )
-from ucloud_sandboxes.routing import RoutingStore
-from ucloud_sandboxes.deployment import package_version
+from sandboxes.routing import RoutingStore
+from sandboxes.deployment import package_version
 from tests.gateway_support import gateway_services
 from tests.test_control_plane import _portable_snapshot, _sandbox_route, _prepare_wake_route
 

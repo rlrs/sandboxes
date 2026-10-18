@@ -46,9 +46,9 @@ def worker_process(pipe, hold):
 def gateway_process(pipe, root, node_port, asynchronous, concurrency, cpus):
     if hasattr(os, "sched_setaffinity"):
         os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:cpus]))
-    from ucloud_sandboxes.control_plane import build_server
-    from ucloud_sandboxes.models import NodeHeartbeat, utc_now
-    from ucloud_sandboxes.routing import ExecRoute
+    from sandboxes.control_plane import build_server
+    from sandboxes.models import NodeHeartbeat, utc_now
+    from sandboxes.routing import ExecRoute
 
     root = Path(root)
     server = build_server(

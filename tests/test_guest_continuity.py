@@ -18,12 +18,12 @@ from tests.test_cli import (
     ucloud_config,
     write_jobs,
 )
-from ucloud_sandboxes import cli
-from ucloud_sandboxes.autoscaler_state import AutoscalerStateStore
-from ucloud_sandboxes.control_state import (
+from sandboxes import cli
+from sandboxes.autoscaler_state import AutoscalerStateStore
+from sandboxes.control_state import (
     CONTINUITY_VERIFIED_THROUGH, ControlStateStore, QUARANTINE_EPOCH, QUARANTINE_REASON,
 )
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     EPOCH_RETIREMENTS_LABEL,
     InstancePhase,
     SandboxInventoryEntry,
@@ -32,12 +32,12 @@ from ucloud_sandboxes.models import (
     repeatedly_rebooted,
     utc_now,
 )
-from ucloud_sandboxes.providers.ucloud import UCloudProvider
-from ucloud_sandboxes.providers.ucloud.models import instance_from_payload
-from ucloud_sandboxes.registry import heartbeat_to_dict
+from sandboxes.providers.ucloud import UCloudProvider
+from sandboxes.providers.ucloud.models import instance_from_payload
+from sandboxes.registry import heartbeat_to_dict
 from tests.test_control_plane import _gateway_server, _running_server
-from ucloud_sandboxes.routing import RoutingStore
-from ucloud_sandboxes.wake_admission import WakeAdmission
+from sandboxes.routing import RoutingStore
+from sandboxes.wake_admission import WakeAdmission
 
 TEST_TIER = "contract"
 

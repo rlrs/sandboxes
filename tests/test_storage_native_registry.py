@@ -7,8 +7,8 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.storage_native_publisher_support import FakeExporter
-from ucloud_sandboxes.storage_native import StorageNativeLayer
-from ucloud_sandboxes.storage_native_registry import (
+from sandboxes.storage_native import StorageNativeLayer
+from sandboxes.storage_native_registry import (
     PublishedStorageLayer,
     RegistrySnapshotPublisher,
     SNAPSHOT_SCHEMA,

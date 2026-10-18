@@ -5,7 +5,7 @@ from unittest import TestCase
 
 from tests import test_managed_start_retry as fixtures
 from tests.support import requires_sdk
-from ucloud_sandboxes.managed_process import (
+from sandboxes.managed_process import (
     ManagedProcessError,
     ManagedProcessReadUnavailable,
 )

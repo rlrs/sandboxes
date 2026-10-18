@@ -28,10 +28,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from tests.test_environment_artifact import MemoryRegistry
-from ucloud_sandboxes.chunk_index import (ChunkIndex, ChunkIndexClient, ChunkIndexServer, ChunkIndexService,
+from sandboxes.chunk_index import (ChunkIndex, ChunkIndexClient, ChunkIndexServer, ChunkIndexService,
                                           ChunkObjectStore, S3Presigner)
-from ucloud_sandboxes.chunk_store import round_up, zstd_compress
-from ucloud_sandboxes.environment_artifact import CHUNK_BYTES, EnvironmentArtifactRegistry, OCI_IMAGE, content_digest
+from sandboxes.chunk_store import round_up, zstd_compress
+from sandboxes.environment_artifact import CHUNK_BYTES, EnvironmentArtifactRegistry, OCI_IMAGE, content_digest
 
 REPOSITORY = "library/app"
 NYDUS = os.environ.get("UCLOUD_TEST_NYDUS_IMAGE", "")
@@ -163,7 +163,7 @@ class ChunkStoreFixture:
 
     def __init__(self, test, *, layout="image", nydus=None, signer=None):
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.chunk_convert import RafsConverter
+        from sandboxes.chunk_convert import RafsConverter
         directory = TemporaryDirectory()
         test.addCleanup(directory.cleanup)
         self.root = Path(directory.name).resolve()
@@ -322,7 +322,7 @@ def _create(arguments, blob_toc=False):
 
 def _merge(arguments):
     """``--parent-bootstrap`` keeps a merged parent's blobs and chunks first."""
-    from ucloud_sandboxes.chunk_store import parse_bootstrap
+    from sandboxes.chunk_store import parse_bootstrap
     options, index = {}, 0
     while arguments[index].startswith("-"):
         options[arguments[index]] = arguments[index + 1]

@@ -15,13 +15,13 @@ import re
 
 from aiohttp import web
 
-from ucloud_sandboxes import model_relay as api
-from ucloud_sandboxes.cli import telemetry_from_config
-from ucloud_sandboxes.relay_lifecycle import RelayLifecycleDispatcher
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.routing import RoutingStore
-from ucloud_sandboxes.shared_control.credentials import read_private_dsn
-from ucloud_sandboxes.shared_control.database import PostgresDatabase
+from sandboxes import model_relay as api
+from sandboxes.cli import telemetry_from_config
+from sandboxes.relay_lifecycle import RelayLifecycleDispatcher
+from sandboxes.config import DeploymentConfig
+from sandboxes.routing import RoutingStore
+from sandboxes.shared_control.credentials import read_private_dsn
+from sandboxes.shared_control.database import PostgresDatabase
 
 
 @web.middleware
@@ -91,7 +91,7 @@ def combined_app(config, store, prefix, *, live_store=None):
         live_store = PostgresDatabase(
             read_private_dsn(Path(pg.dsn_file)), config.deployment_id, schema=pg.schema
         )
-    from ucloud_sandboxes.shared_control.migration import assert_relay_cutover
+    from sandboxes.shared_control.migration import assert_relay_cutover
 
     cutover = assert_relay_cutover(
         config.relay_state_file(), live_store.deployment_id, live_store.schema

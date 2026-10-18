@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import socket
 
-from ucloud_sandboxes.storage_native import StorageNativeLayer
+from sandboxes.storage_native import StorageNativeLayer
 
 
 def digest(payload: bytes) -> str:

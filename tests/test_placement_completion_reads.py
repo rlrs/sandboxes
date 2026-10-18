@@ -10,15 +10,15 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
-from ucloud_sandboxes.models import utc_now
-from ucloud_sandboxes.shared_control.database import postgres_transaction_observer
-from ucloud_sandboxes.shared_control.model import TransactionSample, cancel_until_done
-from ucloud_sandboxes.shared_control.placement_queue import (
+from sandboxes.models import utc_now
+from sandboxes.shared_control.database import postgres_transaction_observer
+from sandboxes.shared_control.model import TransactionSample, cancel_until_done
+from sandboxes.shared_control.placement_queue import (
     IsolatedPlacementResponses,
     PlacementQueue,
     PlacementQueueClient,
 )
-from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
 TEST_TIER = "contract"
 

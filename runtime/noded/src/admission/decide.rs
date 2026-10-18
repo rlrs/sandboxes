@@ -1,4 +1,4 @@
-//! The node admission decision: a port of `ucloud_sandboxes/admission_decision.py`
+//! The node admission decision: a port of `sandboxes/admission_decision.py`
 //! (`gate` and `decide`), which `DirectSandboxService._active_admission_guard`
 //! drives. Neither has CPU checks (docs/architecture.md).
 //!

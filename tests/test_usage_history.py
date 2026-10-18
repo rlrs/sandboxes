@@ -3,15 +3,15 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     ResourceQuantity,
     ScalePolicy,
     SandboxDemand,
     SandboxMemoryObservation,
     SandboxPlacementRequest,
 )
-from ucloud_sandboxes.policy import evaluate_scale
-from ucloud_sandboxes.usage_history import (
+from sandboxes.policy import evaluate_scale
+from sandboxes.usage_history import (
     RETENTION_SECONDS,
     UsageHistory,
     demand_with_usage_forecast,

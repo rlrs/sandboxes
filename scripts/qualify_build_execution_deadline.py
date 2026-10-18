@@ -65,14 +65,14 @@ def marked_processes(marker, *, proc_root=Path("/proc")):
 
 
 def run(args):
-    from ucloud_sandboxes.build_deadline import build_execution_deadline
-    import ucloud_sandboxes.build_deadline as deadline_module
-    import ucloud_sandboxes.images as image_module
-    from ucloud_sandboxes.images import (
+    from sandboxes.build_deadline import build_execution_deadline
+    import sandboxes.build_deadline as deadline_module
+    import sandboxes.images as image_module
+    from sandboxes.images import (
         DockerImageRuntime, ImageBuildSpec, ImageBuildStore, ImageManager,
         ImageStore, MaterializedBuildContext,
     )
-    from ucloud_sandboxes.managed_registry import (
+    from sandboxes.managed_registry import (
         RegistryClient, RegistryRequestError, normalize_manifest_digest,
     )
 

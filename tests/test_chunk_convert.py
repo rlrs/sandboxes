@@ -13,10 +13,10 @@ from unittest.mock import patch
 
 from tests.chunk_store_support import (REPOSITORY, ChunkStoreFixture, layer, pseudo_random, push_image,
                                        sample_images, signing)
-from ucloud_sandboxes import chunk_convert, chunk_index, chunk_store
-from ucloud_sandboxes.chunk_convert import (STEPS, compare_trees, expected_tree, overlay_whiteouts,
+from sandboxes import chunk_convert, chunk_index, chunk_store
+from sandboxes.chunk_convert import (STEPS, compare_trees, expected_tree, overlay_whiteouts,
                                             path_ordered_layer, strip_environment_annotation)
-from ucloud_sandboxes.environment_artifact import (ENVIRONMENT_ANNOTATION, RafsEnvironmentComponent, load_image_environment,
+from sandboxes.environment_artifact import (ENVIRONMENT_ANNOTATION, RafsEnvironmentComponent, load_image_environment,
                                                    load_environment)
 
 TEST_TIER = "contract"

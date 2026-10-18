@@ -6,13 +6,13 @@ import time
 import unittest
 from unittest.mock import Mock
 
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.image_import import (
+from sandboxes import control_plane
+from sandboxes.image_import import (
     ImageImportSubmitter,
     import_build_context,
     import_image_id,
 )
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.routing import RoutingStore
 
 from tests import test_control_plane as gateway_fixtures
 from tests.gateway_support import gateway_services
@@ -49,7 +49,7 @@ class ImageImportHelperTests(unittest.TestCase):
         def fail(*_):
             raise RuntimeError("registry down")
         submitter = ImageImportSubmitter(fail, background=False)
-        with self.assertLogs("ucloud_sandboxes.image_import", level="WARNING"):
+        with self.assertLogs("sandboxes.image_import", level="WARNING"):
             self.assertTrue(submitter.ensure_submitted("import-a", EXTERNAL))
 
 

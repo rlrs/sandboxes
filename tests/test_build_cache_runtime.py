@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import Mock
 
 from tests.test_images import _uploaded_context
-from ucloud_sandboxes.images import (
+from sandboxes.images import (
     BUILD_LOG_TAIL_CHARS, DockerImageRuntime, ImageBuildSpec, ImageManager, ImageStore,
 )
-from ucloud_sandboxes.sandbox import CommandResult
+from sandboxes.sandbox import CommandResult
 
 
 class BuildCacheRuntimeTests(unittest.TestCase):

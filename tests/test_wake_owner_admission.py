@@ -7,8 +7,8 @@ import unittest
 
 from tests.gateway_support import gateway_services
 from tests.test_control_plane import _gateway_server, _sandbox_route, build_heartbeat
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.models import ResourceQuantity
+from sandboxes import control_plane
+from sandboxes.models import ResourceQuantity
 
 
 class WakeOwnerAdmissionTests(unittest.TestCase):
@@ -116,7 +116,7 @@ class WakeOwnerAdmissionTests(unittest.TestCase):
 class DurableRelayGatewayTests(unittest.TestCase):
     def test_fenced_payload_requires_capable_owner_and_stale_park_is_skipped(self):
         import json
-        from ucloud_sandboxes.capabilities import RELAY_WAKE_FENCE_CAPABILITY
+        from sandboxes.capabilities import RELAY_WAKE_FENCE_CAPABILITY
         with TemporaryDirectory() as raw:
             server=_gateway_server(Path(raw))
             try:

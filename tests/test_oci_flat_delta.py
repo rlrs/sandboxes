@@ -8,7 +8,7 @@ import tarfile
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.oci_flat_delta import (
+from sandboxes.oci_flat_delta import (
     FileEntry, UnsupportedFlatImage, index_flat_tar, plan_flat_delta, write_flat_delta,
 )
 
@@ -133,7 +133,7 @@ class FlatDeltaCommandTests(unittest.TestCase):
 class SourceFilesystemQualificationTests(unittest.TestCase):
     def test_source_model_includes_link_identity_and_rejects_mismatches(self):
         from copy import deepcopy
-        from ucloud_sandboxes.flat_image_qualification import (
+        from sandboxes.flat_image_qualification import (
             RUNTIME_FILES, RUNTIME_TREES, SCAN_OUTPUT, compare_snapshot, expected_filesystem,
         )
         data = archive(ROOT + [('app/a', tarfile.REGTYPE, 'payload', 0o640),
@@ -166,7 +166,7 @@ class SourceFilesystemQualificationTests(unittest.TestCase):
 
     def test_layout_two_checks_whole_second_file_and_symlink_mtimes_against_the_source(self):
         from copy import deepcopy
-        from ucloud_sandboxes.flat_image_qualification import (
+        from sandboxes.flat_image_qualification import (
             RUNTIME_FILES, RUNTIME_TREES, SCAN_OUTPUT, compare_snapshot, expected_filesystem,
         )
         output = io.BytesIO()
@@ -214,7 +214,7 @@ class SourceFilesystemQualificationTests(unittest.TestCase):
     def test_scan_certificate_requires_identical_bytes_ranges_model_and_runtime(self):
         from copy import deepcopy
         from types import SimpleNamespace
-        from ucloud_sandboxes.flat_image_qualification import qualification_key
+        from sandboxes.flat_image_qualification import qualification_key
         index = index_flat_tar(io.BytesIO(archive(ROOT + [('app/a', tarfile.REGTYPE, 'payload', 0o644)])))
         profile = {'source_layers': ['old-layer'], 'parent': 'old-parent', 'image_digest': 'image',
                    'image_size': 4096, 'chunks': [{'digest': 'range', 'offset': 0, 'length': 4096}],
@@ -241,7 +241,7 @@ class SourceFilesystemQualificationTests(unittest.TestCase):
             qualification_key(index, [component(profile), component(layout2)], config, 'worker-v1')
 
     def test_runtime_tmpfs_contents_are_excluded_but_app_files_are_not(self):
-        from ucloud_sandboxes.flat_image_qualification import expected_filesystem
+        from sandboxes.flat_image_qualification import expected_filesystem
         data = archive(ROOT + [('tmp', tarfile.DIRTYPE, '', 0o1777),
                                ('tmp/installer.tar.gz', tarfile.REGTYPE, 'runtime hides this', 0o644),
                                ('app/required', tarfile.REGTYPE, 'runtime retains this', 0o644)])
@@ -253,7 +253,7 @@ class SourceFilesystemQualificationTests(unittest.TestCase):
     def test_only_an_absent_workspace_gets_the_exact_runtime_created_directory(self):
         from copy import deepcopy
         import stat
-        from ucloud_sandboxes.flat_image_qualification import (
+        from sandboxes.flat_image_qualification import (
             RUNTIME_FILES, RUNTIME_TREES, SCAN_OUTPUT, compare_snapshot, expected_filesystem,
         )
         index = index_flat_tar(io.BytesIO(archive(ROOT)))
@@ -277,7 +277,7 @@ class SourceFilesystemQualificationTests(unittest.TestCase):
         self.assertFalse(compare_snapshot(present, snapshot, layer_formats=formats)['equivalent'])
 
     def test_scanner_output_cannot_hide_a_source_file(self):
-        from ucloud_sandboxes.flat_image_qualification import expected_filesystem
+        from sandboxes.flat_image_qualification import expected_filesystem
         data = archive([('.', tarfile.DIRTYPE, '', 0o755), ('tmp', tarfile.DIRTYPE, '', 0o1777),
                         ('tmp/ucloud-filesystem-proof.json.gz', tarfile.REGTYPE, 'source data', 0o644)])
         with self.assertRaisesRegex(ValueError, 'qualification output'):

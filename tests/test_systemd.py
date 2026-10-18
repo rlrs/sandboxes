@@ -4,8 +4,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.systemd import (
+from sandboxes.config import DeploymentConfig
+from sandboxes.systemd import (
     REGISTRY_CONFIG_PATH,
     REGISTRY_IMAGE,
     registry_gc_command,
@@ -23,12 +23,12 @@ class SystemdHelperTests(unittest.TestCase):
         for command in ('registry-gc', 'registry-pressure'):
             with self.subTest(command=command), TemporaryDirectory() as raw:
                 config = self._filesystem_config(Path(raw))
-                with patch('ucloud_sandboxes.systemd.DeploymentConfig.from_file', return_value=config), \
-                     patch('ucloud_sandboxes.systemd.require_registry_mount'), \
-                     patch('ucloud_sandboxes.systemd.registry_disk_usage', return_value=None), \
-                     patch('ucloud_sandboxes.systemd.run_registry_sweep') as sweep, \
-                     patch('ucloud_sandboxes.systemd.run_registry_pressure_cleanup') as pressure, \
-                     patch('ucloud_sandboxes.systemd.subprocess.run') as run, patch('builtins.print'):
+                with patch('sandboxes.systemd.DeploymentConfig.from_file', return_value=config), \
+                     patch('sandboxes.systemd.require_registry_mount'), \
+                     patch('sandboxes.systemd.registry_disk_usage', return_value=None), \
+                     patch('sandboxes.systemd.run_registry_sweep') as sweep, \
+                     patch('sandboxes.systemd.run_registry_pressure_cleanup') as pressure, \
+                     patch('sandboxes.systemd.subprocess.run') as run, patch('builtins.print'):
                     self.assertEqual(main([command, '--config', '/config']), 0)
                     sweep.assert_not_called()
                     pressure.assert_not_called()
@@ -38,10 +38,10 @@ class SystemdHelperTests(unittest.TestCase):
         for command in ('registry-gc', 'registry-pressure'):
             with self.subTest(command=command), TemporaryDirectory() as raw:
                 config = self._filesystem_config(Path(raw))
-                with patch('ucloud_sandboxes.systemd.DeploymentConfig.from_file', return_value=config), \
-                     patch('ucloud_sandboxes.systemd.require_registry_mount'), \
-                     patch('ucloud_sandboxes.systemd.run_registry_sweep', return_value=None) as sweep, \
-                     patch('ucloud_sandboxes.systemd.run_registry_pressure_cleanup', return_value={}) as pressure, \
+                with patch('sandboxes.systemd.DeploymentConfig.from_file', return_value=config), \
+                     patch('sandboxes.systemd.require_registry_mount'), \
+                     patch('sandboxes.systemd.run_registry_sweep', return_value=None) as sweep, \
+                     patch('sandboxes.systemd.run_registry_pressure_cleanup', return_value={}) as pressure, \
                      patch('builtins.print'):
                     self.assertEqual(main([command, '--config', '/config', '--allow-service-interruption']), 0)
                     (sweep if command == 'registry-gc' else pressure).assert_called_once()

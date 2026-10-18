@@ -7,15 +7,15 @@ import unittest
 
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
-from ucloud_sandboxes.environment_artifact import (ENVIRONMENT_ANNOTATION, OCI_IMAGE,
+from sandboxes.environment_artifact import (ENVIRONMENT_ANNOTATION, OCI_IMAGE,
     attach_environment_to_image, canonical_bytes, content_digest, load_environment, publish_environment)
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest, HOST_EROFS_ABI
-from ucloud_sandboxes.environment_backend import NO_BLOCK_DEVICE
-from ucloud_sandboxes.environment_rootfs import (EnvironmentDeviceCapacityError, EnvironmentImageRuntime,
+from sandboxes.environment_manifest import EnvironmentManifest, HOST_EROFS_ABI
+from sandboxes.environment_backend import NO_BLOCK_DEVICE
+from sandboxes.environment_rootfs import (EnvironmentDeviceCapacityError, EnvironmentImageRuntime,
     EnvironmentRootfsStore)
-from ucloud_sandboxes.images import ImageManager, ImageStore
-from ucloud_sandboxes.image_rootfs import OverlayRootfsManager
-from ucloud_sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
+from sandboxes.images import ImageManager, ImageStore
+from sandboxes.image_rootfs import OverlayRootfsManager
+from sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
 
 
 class EnvironmentRootfsTests(artifact_fixtures.EnvironmentArtifactTests):

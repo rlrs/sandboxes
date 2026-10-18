@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.resident_memory import ResidentMemorySampler
+from sandboxes.resident_memory import ResidentMemorySampler
 
 
 class ResidentMemoryTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class ResidentMemoryTests(unittest.TestCase):
         self.assertEqual(sample.refault_file_pages, 7)
         self.assertEqual(self.sampler.get(("s", 1)), sample)
         with patch(
-            "ucloud_sandboxes.resident_memory.time.monotonic",
+            "sandboxes.resident_memory.time.monotonic",
             return_value=time.monotonic() + 3,
         ):
             self.assertIsNone(self.sampler.get(("s", 1)))
@@ -76,8 +76,8 @@ class ResidentMemoryTests(unittest.TestCase):
         self.assertIsNone(self.sampler.get(("s", 1)))
 
     def test_missing_or_stale_footprint_allows_only_one_capture_probe(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
 
         for stale in (False, True):
             with self.subTest(stale=stale):
@@ -111,8 +111,8 @@ class ResidentMemoryTests(unittest.TestCase):
                         self.assertEqual(policy.snapshot()["checkpoint_inflight"], 1)
 
     def test_unknown_probe_waits_for_measured_capture_to_settle(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
 
         policy = WarmParkPolicy(lambda: Pressure(.01, 20, 50, 1024**3))
         with policy.defer("measured", memory_bytes=1024**3, blocking=False):
@@ -122,9 +122,9 @@ class ResidentMemoryTests(unittest.TestCase):
 
     def test_fresh_pre_wait_sample_cannot_price_a_later_heap(self):
         from tests.test_node_runtime import _WakeService
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-        from ucloud_sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.node_runtime import DirectNodeRuntime
+        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
 
         now = time.monotonic()
         service = _WakeService()
@@ -167,7 +167,7 @@ class ResidentMemoryTests(unittest.TestCase):
         counters.write_text(counters.read_text().replace("shmem 0", "shmem 800"))
         sample = self.sample()
         self.assertEqual(sample.clean_file_bytes, 0)
-        from ucloud_sandboxes.resident_memory import ResidentMemoryReclaimer
+        from sandboxes.resident_memory import ResidentMemoryReclaimer
 
         report = ResidentMemoryReclaimer(self.sampler).reclaim(
             ("s", 1), sample, target_bytes=900, is_current=lambda: True
@@ -176,7 +176,7 @@ class ResidentMemoryTests(unittest.TestCase):
         self.assertEqual(report.requested_bytes, 0)
 
     def test_reclaim_windows_report_actual_progress_and_cancel_on_wake(self):
-        from ucloud_sandboxes.resident_memory import ResidentMemoryReclaimer
+        from sandboxes.resident_memory import ResidentMemoryReclaimer
 
         (self.path / "memory.reclaim").touch()
         sample = self.sample()
@@ -205,7 +205,7 @@ class ResidentMemoryTests(unittest.TestCase):
 
     def test_unsupported_reclaim_does_not_fall_back_to_anonymous_swap(self):
         import errno
-        from ucloud_sandboxes.resident_memory import ResidentMemoryReclaimer
+        from sandboxes.resident_memory import ResidentMemoryReclaimer
 
         (self.path / "memory.reclaim").touch()
         with patch(
@@ -219,7 +219,7 @@ class ResidentMemoryTests(unittest.TestCase):
         self.assertEqual(report.reclaimed_bytes, 0)
 
     def test_cgroup_replacement_cannot_receive_reclaim(self):
-        from ucloud_sandboxes.resident_memory import ResidentMemoryReclaimer
+        from sandboxes.resident_memory import ResidentMemoryReclaimer
 
         sample = self.sample()
         self.path.rename(self.path.with_name("old"))

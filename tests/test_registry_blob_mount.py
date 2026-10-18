@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.managed_registry import RegistryClient, RegistryRequestError
+from sandboxes.managed_registry import RegistryClient, RegistryRequestError
 from tests.test_registry_client_contract import _RegistryHTTPServer
 
 TEST_TIER = "contract"
@@ -83,7 +83,7 @@ class RegistryBlobMountTests(unittest.TestCase):
 
     def test_expired_optional_budget_still_allows_bounded_cleanup(self):
         response = Mock(status=202, headers={'Location': '/v2/target/blobs/uploads/id'})
-        with patch('ucloud_sandboxes.managed_registry.time.monotonic', side_effect=[0, 3]), \
+        with patch('sandboxes.managed_registry.time.monotonic', side_effect=[0, 3]), \
                 patch.object(RegistryClient, '_request', side_effect=[response, Mock()]) as request:
             self.assertFalse(RegistryClient('http://registry').mount_blob('target', 'source', DIGEST, timeout_seconds=2))
         self.assertEqual(request.call_args.kwargs['timeout_seconds'], 1)

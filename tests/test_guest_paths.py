@@ -4,7 +4,7 @@ from itertools import product
 from pathlib import PurePosixPath
 import unittest
 
-from ucloud_sandboxes.guest_paths import (
+from sandboxes.guest_paths import (
     validate_guest_path,
     validate_setup_path,
     validate_workspace_path,

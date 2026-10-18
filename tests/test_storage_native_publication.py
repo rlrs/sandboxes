@@ -7,10 +7,10 @@ from unittest.mock import patch
 
 from tests.test_storage_native_registry import FakeRegistry
 from tests.test_storage_native_s3 import FakeS3
-from ucloud_sandboxes.storage_native_publication import PublicationGate
-from ucloud_sandboxes.storage_native_registry import RegistrySnapshotPublisher
-from ucloud_sandboxes.storage_native_s3 import S3SnapshotPublisher
-from ucloud_sandboxes.telemetry import Telemetry
+from sandboxes.storage_native_publication import PublicationGate
+from sandboxes.storage_native_registry import RegistrySnapshotPublisher
+from sandboxes.storage_native_s3 import S3SnapshotPublisher
+from sandboxes.telemetry import Telemetry
 
 TEST_TIER = "contract"
 
@@ -19,8 +19,8 @@ class PublicationCancellationTests(unittest.TestCase):
     def test_stream_chunks_remain_immutable_across_buffer_reuse_and_partial_tail(self):
         import hashlib
         import socket
-        from ucloud_sandboxes.storage_native import StorageNativeLayer
-        from ucloud_sandboxes.storage_native_registry import consume_export_stream
+        from sandboxes.storage_native import StorageNativeLayer
+        from sandboxes.storage_native_registry import consume_export_stream
 
         payload = bytes(range(251)) * 401
         chunk_size = 8192
@@ -78,8 +78,8 @@ class PublicationCancellationTests(unittest.TestCase):
     def test_superseded_active_export_stops_upload_and_cleans_partial_objects(self):
         import hashlib
         import socket
-        from ucloud_sandboxes.storage_native import StorageNativeLayer
-        from ucloud_sandboxes.storage_native_registry import SnapshotPublisherRouter
+        from sandboxes.storage_native import StorageNativeLayer
+        from sandboxes.storage_native_registry import SnapshotPublisherRouter
 
         payload = b'x' * (20 * 1024 * 1024)
         for backend in ('registry', 's3'):
@@ -164,7 +164,7 @@ class PublicationCancellationTests(unittest.TestCase):
 
     def test_superseded_stream_without_output_closes_exporter_connection(self):
         import socket
-        from ucloud_sandboxes.storage_native_registry import consume_export_stream
+        from sandboxes.storage_native_registry import consume_export_stream
 
         connected, ended = threading.Event(), threading.Event()
 

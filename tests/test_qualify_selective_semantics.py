@@ -5,7 +5,7 @@ import tarfile
 import unittest
 
 from scripts.qualify_selective_semantics import append_documents, fixture_layers
-from ucloud_sandboxes.oci_layer_materialize import UnsupportedLayer, _members
+from sandboxes.oci_layer_materialize import UnsupportedLayer, _members
 
 
 class SemanticFixtureTests(unittest.TestCase):

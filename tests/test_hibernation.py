@@ -9,7 +9,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.hibernation import (
+from sandboxes.hibernation import (
     HibernationArtifactStore,
     HibernationAuthority,
     HibernationValidationError,
@@ -449,7 +449,7 @@ class HibernationTests(unittest.TestCase):
                         raise TimeoutError("test did not release the checkpoint flush")
                 real_fsync(descriptor)
 
-            with patch("ucloud_sandboxes.hibernation.os.fsync", side_effect=slow_memory_flush):
+            with patch("sandboxes.hibernation.os.fsync", side_effect=slow_memory_flush):
                 with ThreadPoolExecutor(max_workers=3) as workers:
                     publishing = workers.submit(store.publish_complete, manifests[0])
                     try:

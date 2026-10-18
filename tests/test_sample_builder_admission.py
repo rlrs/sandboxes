@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.test_image_build_admission import record
-from ucloud_sandboxes.images import ImageBuildStore
+from sandboxes.images import ImageBuildStore
 
 
 SPEC = importlib.util.spec_from_file_location(

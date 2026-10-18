@@ -11,13 +11,13 @@ from tempfile import TemporaryDirectory
 import sqlite3
 import unittest
 
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     DirectRegistryCapacityUnavailable,
     DirectSandboxRegistry,
     DiskClaim,
 )
-from ucloud_sandboxes.direct_warden import DirectSandbox
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.direct_warden import DirectSandbox
+from sandboxes.sandbox import SandboxSpec
 
 TEST_TIER = "contract"
 
@@ -192,7 +192,7 @@ class GatewayInitialClaimTests(unittest.TestCase):
         )
 
     def test_in_flight_create_is_charged_the_advertised_initial_claim(self):
-        from ucloud_sandboxes.placement_accounting import _node_reserved_route_resources
+        from sandboxes.placement_accounting import _node_reserved_route_resources
         full = _spec("burst").requested_resources().disk_mb
         charged = _node_reserved_route_resources(self._heartbeat(), [self._route()])
         self.assertEqual(charged.disk_mb, 1024 + 64)

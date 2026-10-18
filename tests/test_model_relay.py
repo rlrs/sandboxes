@@ -11,7 +11,7 @@ from unittest.mock import patch
 from aiohttp import ClientSession, web
 
 
-from ucloud_sandboxes.model_relay import create_model_relay_app
+from sandboxes.model_relay import create_model_relay_app
 from tests.postgres_fixture import postgres_database
 from tests.support import requires_sdk
 
@@ -202,7 +202,7 @@ class ModelRelayTests(unittest.IsolatedAsyncioTestCase):
     async def test_maintenance_only_checks_outstanding_caller_incarnations(self):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
-        from ucloud_sandboxes.model_relay import _model_relay_maintenance_loop
+        from sandboxes.model_relay import _model_relay_maintenance_loop
 
         for candidates in (set(), {("current", 2)}):
             terminal = {("current", 2): "node_lost"}
@@ -213,7 +213,7 @@ class ModelRelayTests(unittest.IsolatedAsyncioTestCase):
             )
             lookup = AsyncMock(return_value=terminal)
             with patch(
-                "ucloud_sandboxes.model_relay.asyncio.sleep",
+                "sandboxes.model_relay.asyncio.sleep",
                 side_effect=asyncio.CancelledError,
             ):
                 with self.assertRaises(asyncio.CancelledError):
@@ -248,7 +248,7 @@ class ModelRelayTests(unittest.IsolatedAsyncioTestCase):
                     # As a psycopg wait_for that raced readiness on 3.10.
                     consumed.append(True)
 
-        with patch("ucloud_sandboxes.shared_control.relay.PostgresRelayState", State):
+        with patch("sandboxes.shared_control.relay.PostgresRelayState", State):
             app = create_model_relay_app(
                 postgres_store=object(), maintenance_interval_seconds=60
             )
@@ -369,7 +369,7 @@ class ModelRelayTests(unittest.IsolatedAsyncioTestCase):
         # Node-local model waits: a sandbox on the private plaintext path is
         # answered at once and its acknowledgment cancels the wake.
         from unittest.mock import AsyncMock
-        from ucloud_sandboxes import model_relay
+        from sandboxes import model_relay
         park, wake = AsyncMock(return_value="epoch"), AsyncMock(return_value="epoch")
         with patch.object(model_relay, "_direct_caller", lambda _request: True):
             async with relay_app(sandbox_bearer_token="sandbox-token", worker_bearer_token="worker-token",

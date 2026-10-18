@@ -20,14 +20,14 @@ from unittest.mock import patch
 
 from tests import test_direct_provisioner as fixtures
 from tests.noded_admission import TOKEN, NodedHarness, install
-from ucloud_sandboxes.admission_backend import NodedAdmission, NodedSnapshotUnavailable
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.http_server import UnixSocketServerMixin
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.noded_client import NodedClient, NodedLink
-from ucloud_sandboxes.sandbox import SandboxRestoreBusyError, SandboxStartupBusyError, compose_activity_revision
-from ucloud_sandboxes.transition_admission import TransitionCost, TransitionKind
+from sandboxes.admission_backend import NodedAdmission, NodedSnapshotUnavailable
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.http_server import UnixSocketServerMixin
+from sandboxes.models import ResourceQuantity
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.noded_client import NodedClient, NodedLink
+from sandboxes.sandbox import SandboxRestoreBusyError, SandboxStartupBusyError, compose_activity_revision
+from sandboxes.transition_admission import TransitionCost, TransitionKind
 
 TEST_TIER = "contract"
 
@@ -230,7 +230,7 @@ class LostAnswerTests(unittest.TestCase):
             admission.launch(registration, "primary", "a" * 64)
         # A publication is skipped, a capture proceeds unobserved.
         self.assertIsNone(admission.publication(("sandbox", 7)))
-        with self.assertLogs("ucloud_sandboxes.admission_backend", "WARNING"):
+        with self.assertLogs("sandboxes.admission_backend", "WARNING"):
             with admission.observe(("sandbox", 7), TransitionCost(TransitionKind.CAPTURE, None)):
                 pass
 

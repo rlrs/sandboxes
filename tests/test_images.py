@@ -17,7 +17,7 @@ from unittest.mock import patch
 
 from hypothesis import given, settings, strategies as st
 
-from ucloud_sandboxes.images import (
+from sandboxes.images import (
     COMMAND_OUTPUT_TAIL_CHARS,
     COMMAND_OUTPUT_TRUNCATION_MARKER,
     DockerImageRuntime,
@@ -34,8 +34,8 @@ from ucloud_sandboxes.images import (
     image_build_fingerprint,
     image_id_from_tag,
 )
-from ucloud_sandboxes.models import utc_now
-from ucloud_sandboxes.sandbox import CommandResult
+from sandboxes.models import utc_now
+from sandboxes.sandbox import CommandResult
 
 TEST_TIER = "contract"
 
@@ -670,7 +670,7 @@ class ImageTests(unittest.TestCase):
 
             with (
                 patch(
-                    "ucloud_sandboxes.images.Thread.start",
+                    "sandboxes.images.Thread.start",
                     side_effect=RuntimeError("cannot start build worker"),
                 ),
                 self.assertRaisesRegex(RuntimeError, "cannot start"),

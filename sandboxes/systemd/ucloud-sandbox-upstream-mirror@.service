@@ -8,7 +8,7 @@ Requires=docker.service
 Type=simple
 # Exits 78 (EX_CONFIG) without starting a container when deployment.json no
 # longer configures %i in upstream_mirror; that instance then stays stopped.
-ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/python -m ucloud_sandboxes.systemd upstream-mirror --config /etc/ucloud-sandboxes/deployment.json --upstream %i
+ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/python -m sandboxes.systemd upstream-mirror --config /etc/ucloud-sandboxes/deployment.json --upstream %i
 ExecStop=/usr/bin/docker stop ucloud-sandbox-upstream-mirror-%i
 Restart=always
 RestartSec=5

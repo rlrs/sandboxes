@@ -1,14 +1,14 @@
 import unittest
 from dataclasses import replace
 
-from ucloud_sandboxes.capabilities import DISK_QUOTA_CAPABILITY
-from ucloud_sandboxes.models import (
+from sandboxes.capabilities import DISK_QUOTA_CAPABILITY
+from sandboxes.models import (
     NodeHeartbeat,
     NodeRuntimeMetrics,
     ResourceQuantity,
     utc_now,
 )
-from ucloud_sandboxes.resource_admission import (
+from sandboxes.resource_admission import (
     dynamic_pressure_error,
     dynamic_request_fits,
     node_accepts_dynamic_request,

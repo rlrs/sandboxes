@@ -8,7 +8,7 @@ import argparse
 from pathlib import Path
 import sqlite3
 
-from ucloud_sandboxes.control_state import ControlStateStore
+from sandboxes.control_state import ControlStateStore
 
 
 def verify(path: Path) -> int:

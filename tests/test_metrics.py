@@ -8,8 +8,8 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.agent import build_heartbeat as _build_heartbeat
-from ucloud_sandboxes.metrics import (
+from sandboxes.agent import build_heartbeat as _build_heartbeat
+from sandboxes.metrics import (
     GatewayBusySampler,
     MetricEvent,
     MetricsStore,
@@ -18,13 +18,13 @@ from ucloud_sandboxes.metrics import (
     record_autoscaler_cycle,
     record_vm_observed,
 )
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     NodeRuntimeMetrics,
     ResourceQuantity,
     ScalePolicy,
     utc_now,
 )
-from ucloud_sandboxes.routing import (
+from sandboxes.routing import (
     PendingSandboxDemand,
     ProgramRequestState,
     RoutingState,
@@ -54,15 +54,15 @@ class MetricsTests(unittest.TestCase):
     def frozen_now(self):
         """Pin the snapshot clock to the fixture clock, so ages are exact."""
         now = utc_now()
-        clock = patch("ucloud_sandboxes.metrics.utc_now", return_value=now)
+        clock = patch("sandboxes.metrics.utc_now", return_value=now)
         clock.start()
         self.addCleanup(clock.stop)
         return now
 
     def test_kernel_io_stalls_trigger_headroom_without_cpu_or_queue_saturation(self):
         from tests.test_policy import node
-        from ucloud_sandboxes.models import SandboxDemand
-        from ucloud_sandboxes.policy import evaluate_scale
+        from sandboxes.models import SandboxDemand
+        from sandboxes.policy import evaluate_scale
         now = self.frozen_now()
         events = [MetricEvent(
             timestamp=(now - timedelta(seconds=offset)).isoformat(), kind="node_heartbeat",
@@ -136,7 +136,7 @@ class MetricsTests(unittest.TestCase):
                 raise sqlite3.OperationalError("database is locked")
 
             with (
-                patch("ucloud_sandboxes.metrics._sqlite_storage_bytes", return_value=10**9),
+                patch("sandboxes.metrics._sqlite_storage_bytes", return_value=10**9),
                 patch.object(store, "_try_reclaim_sqlite_space_locked", side_effect=fail_cleanup),
             ):
                 store.append("during")
@@ -483,7 +483,7 @@ class MetricsTests(unittest.TestCase):
         )
         self.assertEqual(event.data["interrupted_at"], observed.job.interrupted_at.isoformat())
         # A suspend and resume between two polls is still a transition.
-        from ucloud_sandboxes.cli import record_observed_vm_metrics
+        from sandboxes.cli import record_observed_vm_metrics
 
         later = replace(observed, job=replace(observed.job, interrupted_at=utc_now()))
         with TemporaryDirectory() as raw_dir:
@@ -498,7 +498,7 @@ class MetricsTests(unittest.TestCase):
             sampler = GatewayBusySampler(store, min_interval_seconds=60)
 
             with patch(
-                "ucloud_sandboxes.metrics.time.monotonic",
+                "sandboxes.metrics.time.monotonic",
                 side_effect=[0.0, *([1.0] * 99), 61.0],
             ):
                 emitted = [
@@ -813,7 +813,7 @@ class MetricsTests(unittest.TestCase):
 
         with TemporaryDirectory() as raw_dir:
             store = MetricsStore(Path(raw_dir) / "metrics.sqlite")
-            from ucloud_sandboxes.metrics import record_node_heartbeat
+            from sandboxes.metrics import record_node_heartbeat
 
             record_node_heartbeat(store, heartbeat)
             snapshot = build_metrics_snapshot(

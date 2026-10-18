@@ -20,9 +20,9 @@ import shutil
 import threading
 from typing import Callable, Iterable, Iterator, Mapping
 
-from ucloud_sandboxes.direct_warden import DirectWardenError
-from ucloud_sandboxes.environment_manifest import DOCKER_OVERLAY2_ABI, EnvironmentManifest
-from ucloud_sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
+from sandboxes.direct_warden import DirectWardenError
+from sandboxes.environment_manifest import DOCKER_OVERLAY2_ABI, EnvironmentManifest
+from sandboxes.image_rootfs import DockerImageConfig, MaterializedRootfs
 
 
 @dataclass(frozen=True)

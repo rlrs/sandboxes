@@ -8,4 +8,4 @@ Type=oneshot
 User=ucloud
 Group=ucloud
 EnvironmentFile=-/etc/ucloud-sandboxes/snapshot-store.env
-ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/ucloud-sandboxes-snapshot-gc --config /etc/ucloud-sandboxes/deployment.json --grace-days 7 --max-delete-objects 10000 --execute
+ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/sandboxes-snapshot-gc --config /etc/ucloud-sandboxes/deployment.json --grace-days 7 --max-delete-objects 10000 --execute

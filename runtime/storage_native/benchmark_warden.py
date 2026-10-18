@@ -19,31 +19,31 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPOSITORY_ROOT))
 
-from ucloud_sandboxes.direct_warden import (  # noqa: E402
+from sandboxes.direct_warden import (  # noqa: E402
     DirectRunscWarden,
     DirectRunscWardenConfig,
 )
-from ucloud_sandboxes.storage_native_migration import (  # noqa: E402
+from sandboxes.storage_native_migration import (  # noqa: E402
     MIGRATION_CONNECTION_POLICY_NONE,
     StorageNativeMigration,
     StorageNativeMigrationStore,
     StorageNativeSandboxManifest,
 )
-from ucloud_sandboxes.hibernation import (  # noqa: E402
+from sandboxes.hibernation import (  # noqa: E402
     HibernationRuntimeFingerprint,
 )
-from ucloud_sandboxes.image_rootfs import (  # noqa: E402
+from sandboxes.image_rootfs import (  # noqa: E402
     DockerImageConfig,
     MaterializedRootfs,
     OverlayRootfsManager,
 )
-from ucloud_sandboxes.managed_registry import RegistryClient  # noqa: E402
-from ucloud_sandboxes.sandbox import (  # noqa: E402
+from sandboxes.managed_registry import RegistryClient  # noqa: E402
+from sandboxes.sandbox import (  # noqa: E402
     SandboxSpec,
     sandbox_spec_fingerprint,
 )
-from ucloud_sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
-from ucloud_sandboxes.storage_native_daemon import (  # noqa: E402
+from sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
+from sandboxes.storage_native_daemon import (  # noqa: E402
     StorageNativeNodeClient,
     StorageNativeNodeConfig,
     StorageNativeNodeServer,
@@ -51,7 +51,7 @@ from ucloud_sandboxes.storage_native_daemon import (  # noqa: E402
     StorageVolumeOwner,
     StorageVolumeState,
 )
-from ucloud_sandboxes.storage_native_registry import (  # noqa: E402
+from sandboxes.storage_native_registry import (  # noqa: E402
     RegistrySnapshotPublisher,
 )
 
@@ -231,7 +231,7 @@ def _cpu_features_sha256() -> str:
 
 
 def _runtime_fingerprint(runsc: Path, commit: str) -> HibernationRuntimeFingerprint:
-    from ucloud_sandboxes.gvisor_distribution import installed_sidecar_fingerprints
+    from sandboxes.gvisor_distribution import installed_sidecar_fingerprints
 
     companions = installed_sidecar_fingerprints(runsc, commit)
     boot_identity = json.dumps({"qualification": "storage-native-warden-qualification-v1", "companions": companions}, sort_keys=True).encode()

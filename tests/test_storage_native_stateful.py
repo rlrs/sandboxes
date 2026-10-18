@@ -11,7 +11,7 @@ from tests.test_storage_native_daemon import (
     FakeHost,
     FakePublisher,
 )
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.storage_native_daemon import (
     StorageNativeConflictError,
     StorageNativeNodeConfig,
     StorageNativeNodeService,
@@ -19,7 +19,7 @@ from ucloud_sandboxes.storage_native_daemon import (
     StorageVolumeRecord,
     StorageVolumeState,
 )
-from ucloud_sandboxes.storage_native_registry import (
+from sandboxes.storage_native_registry import (
     PublishedStorageLayer,
     StorageSnapshotPublication,
 )

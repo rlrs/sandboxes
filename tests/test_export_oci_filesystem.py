@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
 from export_oci_filesystem import bounded_output, export_tar, oci_manifest
-from ucloud_sandboxes.oci_flat_delta import index_flat_tar
+from sandboxes.oci_flat_delta import index_flat_tar
 
 
 class FilesystemExportTests(unittest.TestCase):

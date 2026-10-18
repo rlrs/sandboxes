@@ -15,9 +15,9 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from psycopg import sql  # noqa: E402
-from ucloud_sandboxes.shared_control.database import PostgresDatabase  # noqa: E402
-from ucloud_sandboxes.shared_control.relay import PostgresRelayState  # noqa: E402
-from ucloud_sandboxes import model_relay as api  # noqa: E402
+from sandboxes.shared_control.database import PostgresDatabase  # noqa: E402
+from sandboxes.shared_control.relay import PostgresRelayState  # noqa: E402
+from sandboxes import model_relay as api  # noqa: E402
 
 DEPLOYMENT = "relay-crash-test"
 

@@ -2,15 +2,15 @@ from dataclasses import replace
 from datetime import timedelta
 import unittest
 
-from ucloud_sandboxes.consolidation import observed_memory_mb
-from ucloud_sandboxes.models import (
+from sandboxes.consolidation import observed_memory_mb
+from sandboxes.models import (
     NodeHeartbeat,
     ResourceQuantity,
     SandboxInventoryEntry,
     SandboxMemoryObservation,
     utc_now,
 )
-from ucloud_sandboxes.routing import SandboxRoute
+from sandboxes.routing import SandboxRoute
 
 
 class MemoryObservationTests(unittest.TestCase):

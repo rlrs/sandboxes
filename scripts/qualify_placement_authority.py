@@ -16,9 +16,9 @@ from uuid import uuid4
 import psycopg
 from psycopg import sql
 
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import SandboxRouteAllocation
-from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import SandboxRouteAllocation
+from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
 
 def qualify(count, nodes):

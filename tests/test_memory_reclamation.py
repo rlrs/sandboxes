@@ -5,8 +5,8 @@ from threading import Event
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.memory_backing import FilesystemTrim, MemoryBackingStore
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.memory_backing import FilesystemTrim, MemoryBackingStore
 from tests.test_split_memory_lifecycle import FakeQuota
 
 
@@ -24,8 +24,8 @@ class MemoryReclamationTests(unittest.TestCase):
             self.assertTrue(begin.wait(3))
         def trim():
             passes.append(1)
-        with patch("ucloud_sandboxes.memory_backing.time.sleep", settle), patch(
-            "ucloud_sandboxes.memory_backing.Future", ObservedFuture
+        with patch("sandboxes.memory_backing.time.sleep", settle), patch(
+            "sandboxes.memory_backing.Future", ObservedFuture
         ), ThreadPoolExecutor(2) as threads:
             barrier = FilesystemTrim(trim)
             first = threads.submit(barrier.release)

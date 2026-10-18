@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.direct_warden import CommandResult, DirectWardenError, SubprocessCommandRunner
-from ucloud_sandboxes.image_rootfs import _mount_present
-from ucloud_sandboxes.mount_status import _Statx, linux_mount_root
+from sandboxes.direct_warden import CommandResult, DirectWardenError, SubprocessCommandRunner
+from sandboxes.image_rootfs import _mount_present
+from sandboxes.mount_status import _Statx, linux_mount_root
 
 
 class MountStatusTests(unittest.TestCase):
@@ -25,19 +25,19 @@ class MountStatusTests(unittest.TestCase):
             output._obj.attributes = 0x2000 if mounted.pop(0) else 0
             return 0
 
-        with patch("ucloud_sandboxes.mount_status._statx_function", return_value=query):
+        with patch("sandboxes.mount_status._statx_function", return_value=query):
             self.assertIs(linux_mount_root(Path('/image')), True)
             self.assertIs(linux_mount_root(Path('/image')), False)
         for query in (None, lambda *args: -1, lambda *args: 0):
-            with patch("ucloud_sandboxes.mount_status._statx_function", return_value=query):
+            with patch("sandboxes.mount_status._statx_function", return_value=query):
                 self.assertIsNone(linux_mount_root(Path('/image')))
 
     def test_fast_path_does_not_spawn_and_failure_uses_existing_helper(self):
         runner = SubprocessCommandRunner()
-        with patch("ucloud_sandboxes.image_rootfs.linux_mount_root", return_value=True), patch.object(runner, 'run') as run:
+        with patch("sandboxes.image_rootfs.linux_mount_root", return_value=True), patch.object(runner, 'run') as run:
             self.assertTrue(_mount_present(Path('/image'), runner, 'mountpoint'))
             run.assert_not_called()
-        with patch("ucloud_sandboxes.image_rootfs.linux_mount_root", return_value=None), patch.object(runner, 'run') as run:
+        with patch("sandboxes.image_rootfs.linux_mount_root", return_value=None), patch.object(runner, 'run') as run:
             for status, expected in ((0, True), (1, False), (32, False)):
                 run.return_value = CommandResult((), status, '', '')
                 self.assertIs(_mount_present(Path('/image'), runner, 'mountpoint'), expected)
@@ -47,7 +47,7 @@ class MountStatusTests(unittest.TestCase):
 
     def test_custom_helper_is_respected(self):
         runner = SubprocessCommandRunner()
-        with patch("ucloud_sandboxes.image_rootfs.linux_mount_root") as query, patch.object(runner, 'run', return_value=CommandResult((), 32, '', '')) as run:
+        with patch("sandboxes.image_rootfs.linux_mount_root") as query, patch.object(runner, 'run', return_value=CommandResult((), 32, '', '')) as run:
             self.assertFalse(_mount_present(Path('/image'), runner, '/custom/mountpoint'))
             query.assert_not_called()
             run.assert_called_once_with(('/custom/mountpoint', '--quiet', '/image'), timeout=60)

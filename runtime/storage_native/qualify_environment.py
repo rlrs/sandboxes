@@ -30,7 +30,7 @@ from types import SimpleNamespace
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes.environment_artifact import (
     EnvironmentArtifactRegistry,
     OCI_IMAGE,
     attach_environment_to_image,
@@ -39,19 +39,19 @@ from ucloud_sandboxes.environment_artifact import (
     publish_environment,
     sign_component,
 )
-from ucloud_sandboxes.environment_backend import (
+from sandboxes.environment_backend import (
     EnvironmentBackend,
     EnvironmentBackendClient,
     EnvironmentBackendServer,
     PrefetchPolicy,
 )
-from ucloud_sandboxes.environment_builder import allowlisted_build_view
-from ucloud_sandboxes.environment_config import configured_environment_registry
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest
-from ucloud_sandboxes.environment_metadata import sign_metadata_hint
-from ucloud_sandboxes.environment_rootfs import EnvironmentRootfsStore
-from ucloud_sandboxes.image_rootfs import OverlayRootfsManager
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.environment_builder import allowlisted_build_view
+from sandboxes.environment_config import configured_environment_registry
+from sandboxes.environment_manifest import EnvironmentManifest
+from sandboxes.environment_metadata import sign_metadata_hint
+from sandboxes.environment_rootfs import EnvironmentRootfsStore
+from sandboxes.image_rootfs import OverlayRootfsManager
+from sandboxes.managed_registry import RegistryRequestError
 
 
 class FixtureRegistry:
@@ -119,8 +119,8 @@ def frontend(path):
     manager = OverlayRootfsManager(
         store, writable_root=root / "writable", bundle_root=root / "bundles"
     )
-    from ucloud_sandboxes.environment_rootfs import EnvironmentImageRuntime
-    from ucloud_sandboxes.images import ImageManager, ImageStore
+    from sandboxes.environment_rootfs import EnvironmentImageRuntime
+    from sandboxes.images import ImageManager, ImageStore
     image_api = ImageManager(ImageStore(root / "images.sqlite"), EnvironmentImageRuntime(store))
     record, result = image_api.pull(settings["image_ref"], image_id="environment-probe")
     if result.exit_code or not record.manifest_digest:
@@ -416,7 +416,7 @@ def main():
 
         def backend_command(directory):
             if not args.prefetch:
-                return [sys.executable, "-m", "ucloud_sandboxes.cli", "serve-environment-io",
+                return [sys.executable, "-m", "sandboxes.cli", "serve-environment-io",
                         "--root", str(directory / "backend"), "--socket", str(directory / "backend.sock"),
                         "--environment-registry-url", url, "--environment-registry-repository", "environments",
                         "--environment-trusted-keys", str(directory / "keys.json")]

@@ -13,15 +13,15 @@ import stat
 import subprocess
 import time
 
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes.environment_artifact import (
     OCI_IMAGE, attach_environment_to_image, canonical_bytes,
     publish_environment,
 )
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, WHOLE_IMAGE_EXCLUDED
-from ucloud_sandboxes.environment_config import configured_environment_registry
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest
-from ucloud_sandboxes.environment_rootfs import EnvironmentRootfsStore
-from ucloud_sandboxes.image_rootfs import DockerOverlay2RootfsStore, OverlayRootfsManager
+from sandboxes.environment_builder import FreshEnvironmentBuilder, WHOLE_IMAGE_EXCLUDED
+from sandboxes.environment_config import configured_environment_registry
+from sandboxes.environment_manifest import EnvironmentManifest
+from sandboxes.environment_rootfs import EnvironmentRootfsStore
+from sandboxes.image_rootfs import DockerOverlay2RootfsStore, OverlayRootfsManager
 
 
 def tree_identity(root):

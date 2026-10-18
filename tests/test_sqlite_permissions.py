@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.control_state import ControlStateStore
+from sandboxes.routing import RoutingStore
 
 TEST_TIER = "contract"
 

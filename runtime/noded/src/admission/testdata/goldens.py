@@ -29,16 +29,16 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
 
 from tests.test_admission_properties import FairHarness  # noqa: E402
-from ucloud_sandboxes import direct_service  # noqa: E402
-from ucloud_sandboxes.admission import FairCapacity  # noqa: E402
-from ucloud_sandboxes.admission_decision import AdmissionNode, AdmissionRequest, Grant, Wait, decide, gate  # noqa: E402
-from ucloud_sandboxes.direct_registry import ManagedGrowthIntent  # noqa: E402
-from ucloud_sandboxes.direct_service import DirectSandboxService  # noqa: E402
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now  # noqa: E402
-from ucloud_sandboxes.resident_memory import ResidentMemorySample  # noqa: E402
-from ucloud_sandboxes.resource_evidence import MemoryBackingCapacity  # noqa: E402
-from ucloud_sandboxes.sandbox import SandboxAdmissionClosedError, SandboxCapacityUnavailableError  # noqa: E402
-from ucloud_sandboxes.transition_admission import TransitionCost, TransitionKind, TransitionLedger  # noqa: E402
+from sandboxes import direct_service  # noqa: E402
+from sandboxes.admission import FairCapacity  # noqa: E402
+from sandboxes.admission_decision import AdmissionNode, AdmissionRequest, Grant, Wait, decide, gate  # noqa: E402
+from sandboxes.direct_registry import ManagedGrowthIntent  # noqa: E402
+from sandboxes.direct_service import DirectSandboxService  # noqa: E402
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now  # noqa: E402
+from sandboxes.resident_memory import ResidentMemorySample  # noqa: E402
+from sandboxes.resource_evidence import MemoryBackingCapacity  # noqa: E402
+from sandboxes.sandbox import SandboxAdmissionClosedError, SandboxCapacityUnavailableError  # noqa: E402
+from sandboxes.transition_admission import TransitionCost, TransitionKind, TransitionLedger  # noqa: E402
 
 MIB, GIB = 1024**2, 1024**3
 KINDS = list(TransitionKind)

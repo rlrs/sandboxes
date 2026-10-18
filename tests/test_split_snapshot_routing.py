@@ -3,15 +3,15 @@ from types import SimpleNamespace
 import unittest
 
 from tests.test_control_plane import _portable_snapshot, _sandbox_route
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef, WorkspaceCaptureRef
-from ucloud_sandboxes.checkpoint_registry import (
+from sandboxes.checkpoint_components import MemoryBackingRef, WorkspaceCaptureRef
+from sandboxes.checkpoint_registry import (
     CheckpointReference, MemoryArtifactBlob, MemoryArtifactPublication, OCI_IMAGE, OCI_INDEX,
 )
-from ucloud_sandboxes.hibernation import HibernationArtifactStore
-from ucloud_sandboxes.models import SandboxInventoryEntry
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.routing import is_portable_parked_route, route_with_inventory_snapshot
-from ucloud_sandboxes.storage_native_migration import SPLIT_MIGRATION_SCHEMA, SPLIT_RUNTIME_SCHEMA
+from sandboxes.hibernation import HibernationArtifactStore
+from sandboxes.models import SandboxInventoryEntry
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.routing import is_portable_parked_route, route_with_inventory_snapshot
+from sandboxes.storage_native_migration import SPLIT_MIGRATION_SCHEMA, SPLIT_RUNTIME_SCHEMA
 
 
 def split_snapshot():

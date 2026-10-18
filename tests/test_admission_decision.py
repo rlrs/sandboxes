@@ -2,7 +2,7 @@
 from dataclasses import replace
 import unittest
 
-from ucloud_sandboxes.admission_decision import (
+from sandboxes.admission_decision import (
     CLOSED,
     PROJECTED,
     PROJECTED_RAM,
@@ -16,10 +16,10 @@ from ucloud_sandboxes.admission_decision import (
     decide,
     gate,
 )
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.resource_evidence import MemoryBackingCapacity
-from ucloud_sandboxes.sandbox import SandboxAdmissionClosedError, SandboxCapacityUnavailableError
-from ucloud_sandboxes.transition_admission import TransitionCost, TransitionKind, TransitionLedger
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.resource_evidence import MemoryBackingCapacity
+from sandboxes.sandbox import SandboxAdmissionClosedError, SandboxCapacityUnavailableError
+from sandboxes.transition_admission import TransitionCost, TransitionKind, TransitionLedger
 
 MIB, GIB = 1024**2, 1024**3
 SHAPE_64G = ResourceQuantity(vcpu=8.0, memory_mb=65536)

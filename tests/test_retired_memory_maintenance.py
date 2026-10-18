@@ -10,8 +10,8 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_split_memory_lifecycle import FakeQuota
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.memory_backing import (
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.memory_backing import (
     MemoryBackingStore, MemoryBackingError, RetainedCheckpointRef, XfsMemoryQuota,
 )
 
@@ -138,7 +138,7 @@ class RetiredMemoryMaintenanceTests(unittest.TestCase):
     def test_xfs_batch_performs_one_trim_before_all_project_releases(self):
         quota = XfsMemoryQuota()
         quota.filesystem_root = Path("/xfs")
-        with patch("ucloud_sandboxes.memory_backing.subprocess.run") as command, \
+        with patch("sandboxes.memory_backing.subprocess.run") as command, \
                 patch.object(quota._trim, "release") as trim:
             command.return_value.stdout = "/dev/loop0\n"
             quota.release_many(Path("/xfs/memory"), (101, 102, 103))

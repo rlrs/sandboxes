@@ -361,7 +361,7 @@ class DirectNodeRuntime:
         if rust_admission and not rust_pause_tier:
             raise ValueError("Rust admission needs the Rust pause tier")
         # --rust-execs: noded runs execs; transitions fence them through
-        # flock files and their activity clock (ucloud_sandboxes/exec_fence.py).
+        # flock files and their activity clock (sandboxes/exec_fence.py).
         self.exec_fence = None
         if rust_execs:
             self.exec_fence = service.exec_fence = ExecFence(

@@ -8,12 +8,12 @@ import subprocess
 import sys
 import unittest
 
-GATEWAY = Path(__file__).resolve().parents[1] / "ucloud_sandboxes" / "gateway"
+GATEWAY = Path(__file__).resolve().parents[1] / "sandboxes" / "gateway"
 
 
 def gateway_modules() -> list[str]:
     return sorted(
-        "ucloud_sandboxes.gateway" + ("" if path.stem == "__init__" else "." + path.stem)
+        "sandboxes.gateway" + ("" if path.stem == "__init__" else "." + path.stem)
         for path in GATEWAY.glob("*.py")
     )
 
@@ -49,14 +49,14 @@ class GatewayLayeringTests(unittest.TestCase):
                 result = subprocess.run(
                     [sys.executable, "-c",
                      f"import sys, {module}; "
-                     "sys.exit('ucloud_sandboxes.control_plane' in sys.modules)"],
+                     "sys.exit('sandboxes.control_plane' in sys.modules)"],
                     cwd=GATEWAY.parents[1], capture_output=True, text=True, timeout=60,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_handler_implements_every_exchange_method(self):
-        from ucloud_sandboxes.control_plane import ControlPlaneHandler
-        from ucloud_sandboxes.gateway.exchange import Exchange
+        from sandboxes.control_plane import ControlPlaneHandler
+        from sandboxes.gateway.exchange import Exchange
 
         def shape(function):
             # Names, kinds and optionality; Protocol defaults are ``...``.

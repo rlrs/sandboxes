@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import Barrier, Event, Lock, Thread
 import unittest
 
-from ucloud_sandboxes.image_inventory_cache import (
+from sandboxes.image_inventory_cache import (
     ImageInventoryCache,
     ImageInventorySnapshot,
 )

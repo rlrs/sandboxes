@@ -2,7 +2,7 @@ from dataclasses import replace
 import hashlib
 import unittest
 
-from ucloud_sandboxes.environment_manifest import (
+from sandboxes.environment_manifest import (
     DOCKER_OVERLAY2_ABI,
     EnvironmentManifest,
 )

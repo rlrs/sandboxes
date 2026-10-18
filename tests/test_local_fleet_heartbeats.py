@@ -10,7 +10,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.models import utc_now
+from sandboxes.models import utc_now
 
 from tests.harness import LocalFleet
 from tests.harness import fleet as harness

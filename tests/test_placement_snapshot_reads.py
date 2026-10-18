@@ -4,8 +4,8 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.test_control_plane import build_heartbeat, _sandbox_route
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.control_state import ControlStateStore
+from sandboxes.routing import RoutingStore
 
 TEST_TIER = "contract"
 

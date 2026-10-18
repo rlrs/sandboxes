@@ -12,8 +12,8 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 from scripts import benchmark_sandbox_density as benchmark
-from ucloud_sandboxes.sandbox import SandboxOperation, SandboxSpec
-from ucloud_sandboxes.sandbox_exec import SandboxExecSpec
+from sandboxes.sandbox import SandboxOperation, SandboxSpec
+from sandboxes.sandbox_exec import SandboxExecSpec
 
 TEST_TIER = "contract"
 

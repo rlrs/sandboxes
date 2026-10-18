@@ -32,7 +32,7 @@ import time
 from urllib import error, request
 from uuid import uuid4
 
-from ucloud_sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
+from sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
 
 
 # A persistent process holds dirty anonymous memory, a Unix socket, an open

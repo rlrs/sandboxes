@@ -1,5 +1,5 @@
 //! The sandbox spec as the gateway sends it and its OCI `config.json`, as
-//! ucloud_sandboxes/sandbox.py (`SandboxSpec.from_dict`, `validate`),
+//! sandboxes/sandbox.py (`SandboxSpec.from_dict`, `validate`),
 //! guest_identity.py and direct_oci.py (`DirectOciConfigBuilder.build`,
 //! `validate_management_helper`) define them. Spec §1.1 and S6 of the phase 1
 //! create-pipeline specification.

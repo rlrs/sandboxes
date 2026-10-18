@@ -4,7 +4,7 @@ import unittest
 from datetime import timedelta
 from unittest.mock import patch
 
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     InstancePhase,
     NodeHeartbeat,
     NodeRuntimeMetrics,
@@ -15,7 +15,7 @@ from ucloud_sandboxes.models import (
     sandbox_route_state_from_observation,
     utc_now,
 )
-from ucloud_sandboxes.providers.ucloud.models import instance_from_payload
+from sandboxes.providers.ucloud.models import instance_from_payload
 
 
 class TimestampParsingTests(unittest.TestCase):

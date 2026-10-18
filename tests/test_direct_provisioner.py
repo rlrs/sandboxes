@@ -13,31 +13,31 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from urllib import error, request
 
-from ucloud_sandboxes.capabilities import HIBERNATE_LOCAL_CAPABILITY
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.direct_provisioner import DirectSandboxProvisioner
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_service import DirectExecResult, DirectSandboxService
-from ucloud_sandboxes.direct_warden import DirectSandbox, DirectWardenError
-from ucloud_sandboxes.hibernation import (
+from sandboxes.capabilities import HIBERNATE_LOCAL_CAPABILITY
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.direct_provisioner import DirectSandboxProvisioner
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_service import DirectExecResult, DirectSandboxService
+from sandboxes.direct_warden import DirectSandbox, DirectWardenError
+from sandboxes.hibernation import (
     HibernationArtifactStore,
     HibernationRuntimeFingerprint,
     HibernationState,
 )
-from ucloud_sandboxes.image_rootfs import (
+from sandboxes.image_rootfs import (
     DockerImageConfig,
     MaterializedRootfs,
     OverlayRootfsLease,
     OverlayRootfsManager,
 )
-from ucloud_sandboxes.images import DockerImageRuntime
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.node_agent import (
+from sandboxes.images import DockerImageRuntime
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.node_agent import (
     build_direct_node_agent_server as _build_direct_node_agent_server,
 )
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.runtime_metrics import SingleFlightRuntimeMetricsSampler
-from ucloud_sandboxes.sandbox import (
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.runtime_metrics import SingleFlightRuntimeMetricsSampler
+from sandboxes.sandbox import (
     SandboxAdmissionClosedError,
     SandboxBusyError,
     SandboxCapacityUnavailableError,
@@ -49,7 +49,7 @@ from ucloud_sandboxes.sandbox import (
     SandboxSpec,
     sandbox_spec_fingerprint,
 )
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.storage_native_daemon import (
     StorageNativeCapacityError,
     StorageNativeConflictError,
     StorageNativeNodeError,
@@ -1276,7 +1276,7 @@ class DirectProvisionerTests(unittest.TestCase):
             self.assertEqual(service.activity_snapshot().active_operations, 0)
 
     def test_wake_that_loses_a_storage_fence_stays_parked_and_retryable(self):
-        from ucloud_sandboxes.storage_native_daemon import (
+        from sandboxes.storage_native_daemon import (
             StorageNativeCapacityError, StorageNativeConflictError,
         )
         with TemporaryDirectory() as raw:
@@ -1296,8 +1296,8 @@ class DirectProvisionerTests(unittest.TestCase):
             self.assertEqual(service.activity_snapshot().active_operations, 0)
 
     def test_relay_park_deferral_returns_without_holding_http_or_lifecycle(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkPolicy
         with TemporaryDirectory() as raw:
             root = Path(raw).resolve()
             provisioner, _, _, _, _ = self.make(root)
@@ -1612,7 +1612,7 @@ class DirectProvisionerTests(unittest.TestCase):
             )
             with (
                 patch(
-                    "ucloud_sandboxes.direct_service.time.monotonic",
+                    "sandboxes.direct_service.time.monotonic",
                     side_effect=lambda: now[0],
                 ),
                 patch.object(
@@ -2210,7 +2210,7 @@ class DirectProvisionerTests(unittest.TestCase):
                 migration_sha256="e" * 64,
             )
             manager = DirectNodeRuntime(service)
-            with patch("ucloud_sandboxes.sandbox.SandboxRecord.is_expired", return_value=True):
+            with patch("sandboxes.sandbox.SandboxRecord.is_expired", return_value=True):
                 records = manager.list()
             self.assertEqual([r.spec.id for r in records], [created.spec.id])
             self.assertEqual(registry.get(created.spec.id), moving)

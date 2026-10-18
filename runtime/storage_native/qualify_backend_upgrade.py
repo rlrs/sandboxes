@@ -19,7 +19,7 @@ sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from runtime.storage_native.qualify_volume import GIB, Qualifier  # noqa: E402
 from runtime.storage_native.range_blob_server import RangeBlobHandler  # noqa: E402
-from ucloud_sandboxes.storage_native import StorageNativeError  # noqa: E402
+from sandboxes.storage_native import StorageNativeError  # noqa: E402
 
 
 def serve_blobs(root: str, port_pipe):

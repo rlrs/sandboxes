@@ -11,13 +11,13 @@ from unittest.mock import patch
 
 from hypothesis import given, settings, strategies as st
 
-import ucloud_sandboxes.vm_init as vm_init
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.providers.ucloud.bootstrap import (
+import sandboxes.vm_init as vm_init
+from sandboxes.models import ResourceQuantity
+from sandboxes.providers.ucloud.bootstrap import (
     bootstrap_access_from_payload,
     extract_ssh_command,
 )
-from ucloud_sandboxes.vm_init import (
+from sandboxes.vm_init import (
     BUILDER_RUNTIME_PACKAGES,
     PINNED_STORAGE_NATIVE_AGENTENV_COMMIT,
     PINNED_STORAGE_NATIVE_PATCHES,
@@ -129,7 +129,7 @@ class VmInitTests(unittest.TestCase):
         )
         for immutable, expected_user in ((False, "$UCLOUD_SERVICE_USER"), (True, "root")):
             with self.subTest(immutable=immutable), patch(
-                "ucloud_sandboxes.environment_bootstrap.settings",
+                "sandboxes.environment_bootstrap.settings",
                 return_value=(" --environment-test" if immutable else "", "", ""),
             ):
                 script = render_vm_init_script(options)
@@ -427,7 +427,7 @@ else:
                 render_vm_init_script(self._options(**{field: ""}))
 
     def test_new_gvisor_requires_verified_complete_companions(self):
-        from ucloud_sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
+        from sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
 
         script = render_vm_init_script(self._options(direct_runsc_commit=GVISOR_COMMIT))
         start = script.index("import hashlib\nimport json\nimport os")
@@ -694,7 +694,7 @@ else:
                 self.assertEqual(completed.stdout.strip().split("\t"), expected)
 
     def test_a_bundled_nydusd_is_pinned_verified_and_installed(self) -> None:
-        from ucloud_sandboxes.environment_config import PINNED_NYDUS_COMMIT
+        from sandboxes.environment_config import PINNED_NYDUS_COMMIT
         _script, validator = self._bundle_validator()
         for corruption in (None, "binary", "commit"):
             with self.subTest(corruption=corruption), TemporaryDirectory() as raw_dir:
@@ -798,8 +798,8 @@ else:
         payload["status"]["state"] = "IN_QUEUE"
         self.assertFalse(bootstrap_access_from_payload(payload).runnable)
         # On the control plane's private network the hostname wins, announced or not.
-        from ucloud_sandboxes.providers.ucloud.bootstrap import bootstrap_access
-        from ucloud_sandboxes.providers.ucloud.models import instance_from_payload
+        from sandboxes.providers.ucloud.bootstrap import bootstrap_access
+        from sandboxes.providers.ucloud.models import instance_from_payload
         payload.update(status={"state": "RUNNING"}, updates=[], specification={
             "hostname": "sandbox-node-ab12-1", "resources": [{"type": "private_network", "id": "net"}]})
         private = bootstrap_access(instance_from_payload(payload), private_network_ids=frozenset({"net"}))

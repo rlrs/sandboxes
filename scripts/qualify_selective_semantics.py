@@ -107,11 +107,11 @@ def run(args):
     # Use the sibling reviewed helper whether run from the repo or a staged directory.
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from qualify_selective_environment import compare, signing_key
-    from ucloud_sandboxes.environment_artifact import EnvironmentArtifactRegistry
-    from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
-    from ucloud_sandboxes.environment_config import load_trusted_keys
-    from ucloud_sandboxes.image_rootfs import DockerOverlay2RootfsStore
-    from ucloud_sandboxes.managed_registry import RegistryClient, RegistryRequestError
+    from sandboxes.environment_artifact import EnvironmentArtifactRegistry
+    from sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
+    from sandboxes.environment_config import load_trusted_keys
+    from sandboxes.image_rootfs import DockerOverlay2RootfsStore
+    from sandboxes.managed_registry import RegistryClient, RegistryRequestError
 
     url = urlsplit(args.registry_url)
     if url.scheme not in {"http", "https"} or not url.netloc or url.username or url.password or url.query or url.fragment:

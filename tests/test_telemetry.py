@@ -8,7 +8,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
-from ucloud_sandboxes.telemetry import (
+from sandboxes.telemetry import (
     OPERATION_DURATION_BUCKET_BOUNDARIES_SECONDS,
     NonBlockingBatchSpanProcessor,
     Telemetry,

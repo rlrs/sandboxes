@@ -18,63 +18,63 @@ from urllib import error, request
 import unittest
 from unittest.mock import Mock, patch
 
-from ucloud_sandboxes.agent import (
+from sandboxes.agent import (
     build_heartbeat as _agent_build_heartbeat,
     post_heartbeat,
     post_heartbeat_with_headers,
 )
-from ucloud_sandboxes import control_plane
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.capabilities import HIBERNATE_LOCAL_CAPABILITY
-from ucloud_sandboxes.gateway import auth, image_resolution, node_rpc, placement, registry_refs
-from ucloud_sandboxes.gateway.image_resolution import RegistryManifestResolutionCache
-from ucloud_sandboxes.image_inventory_cache import ImageInventoryCache, ImageInventorySnapshot
+from sandboxes import control_plane
+from sandboxes.control_state import ControlStateStore
+from sandboxes.capabilities import HIBERNATE_LOCAL_CAPABILITY
+from sandboxes.gateway import auth, image_resolution, node_rpc, placement, registry_refs
+from sandboxes.gateway.image_resolution import RegistryManifestResolutionCache
+from sandboxes.image_inventory_cache import ImageInventoryCache, ImageInventorySnapshot
 from tests.gateway_support import gateway_services
-from ucloud_sandboxes.control_plane import (
+from sandboxes.control_plane import (
     build_server as _build_server,
 )
-from ucloud_sandboxes.deployment import package_version
-from ucloud_sandboxes.images import (
+from sandboxes.deployment import package_version
+from sandboxes.images import (
     DockerImageRuntime,
     ImageRecord,
     ImageStore,
 )
-from ucloud_sandboxes.managed_registry import (
+from sandboxes.managed_registry import (
     RegistryClient,
     RegistryUsageStore,
 )
-from ucloud_sandboxes.managed_process import ManagedProcessRecord
-from ucloud_sandboxes.hibernation import (
+from sandboxes.managed_process import ManagedProcessRecord
+from sandboxes.hibernation import (
     HibernationArtifactFile,
     HibernationFileRole,
     HibernationRuntimeFingerprint,
 )
-from ucloud_sandboxes.models import (
+from sandboxes.models import (
     NodeHeartbeat,
     NodeRuntimeMetrics,
     ResourceQuantity,
     SandboxInventoryEntry,
     utc_now,
 )
-from ucloud_sandboxes.node_agent import (
+from sandboxes.node_agent import (
     build_builder_node_agent_server as _build_builder_node_agent_server,
 )
-from ucloud_sandboxes.routing import (
+from sandboxes.routing import (
     RoutingStore,
     SandboxRoute,
     SandboxRouteAllocation,
     SandboxRouteConflictError,
     route_with_inventory_snapshot,
 )
-from ucloud_sandboxes.sandbox import (
+from sandboxes.sandbox import (
     SandboxSpec,
     sandbox_spec_fingerprint,
 )
-from ucloud_sandboxes.storage_native_migration import (
+from sandboxes.storage_native_migration import (
     StorageNativeMigration,
     StorageNativeSandboxManifest,
 )
-from ucloud_sandboxes.storage_native_registry import (
+from sandboxes.storage_native_registry import (
     PublishedStorageLayer,
     StorageSnapshotPublication,
 )
@@ -2104,7 +2104,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(len(set(client_ports)), 1)
 
     def test_capable_node_reuses_only_completely_consumed_json_requests(self) -> None:
-        from ucloud_sandboxes.http_server import JsonHttpHandler, HighBacklogThreadingHTTPServer
+        from sandboxes.http_server import JsonHttpHandler, HighBacklogThreadingHTTPServer
         ports = []
         class Node(JsonHttpHandler):
             def do_POST(self):

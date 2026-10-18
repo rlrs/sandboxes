@@ -13,11 +13,11 @@ from unittest.mock import patch
 
 from tests.test_oci_layer_materialize import MemoryRegistry, directory, layer, member, sha256
 from tests.test_registry_client_contract import _RegistryHTTPServer
-from ucloud_sandboxes import environment_prepare
-from ucloud_sandboxes.environment_builder import squash_layer_diffs
-from ucloud_sandboxes.environment_prepare import PreparationError, prepare_in_subprocess
-from ucloud_sandboxes.managed_registry import RegistryClient
-from ucloud_sandboxes.oci_layer_materialize import materialize_layers
+from sandboxes import environment_prepare
+from sandboxes.environment_builder import squash_layer_diffs
+from sandboxes.environment_prepare import PreparationError, prepare_in_subprocess
+from sandboxes.managed_registry import RegistryClient
+from sandboxes.oci_layer_materialize import materialize_layers
 
 TEST_TIER = "contract"
 
@@ -135,7 +135,7 @@ class PreparationSubprocessIsolationTests(unittest.TestCase):
 
     def test_actual_child_uses_selected_package_despite_shadow_package_in_cwd(self):
         shadow = self.root / "shadow"
-        package = shadow / "ucloud_sandboxes"
+        package = shadow / "sandboxes"
         package.mkdir(parents=True)
         marker = self.root / "wrong-package-executed"
         (package / "__init__.py").write_text("")

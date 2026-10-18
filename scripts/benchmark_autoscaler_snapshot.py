@@ -18,8 +18,8 @@ from tempfile import TemporaryDirectory
 import time
 from uuid import uuid4
 
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import ExecRoute, RoutingStore, SandboxRoute
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import ExecRoute, RoutingStore, SandboxRoute
 
 
 def measure(store, *, include_exec_sessions):
@@ -101,7 +101,7 @@ def main():
             if args.backend == "postgres":
                 import psycopg
                 from psycopg import sql
-                from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+                from sandboxes.shared_control.routing_repository import PostgresRoutingStore
                 dsn = os.environ["UCLOUD_TEST_POSTGRES_DSN"]
                 schema = "ucloud_routing_benchmark_" + uuid4().hex
                 store = PostgresRoutingStore(path, dsn=dsn, schema=schema)

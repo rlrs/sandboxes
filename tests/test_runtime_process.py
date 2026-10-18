@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from ucloud_sandboxes.runtime_process import (
+from sandboxes.runtime_process import (
     RuntimeProcessIdentityError,
     owned_runtime_process_ticks,
 )

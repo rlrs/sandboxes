@@ -5,13 +5,13 @@ from unittest.mock import Mock
 
 from tests import test_control_plane as fixtures
 from tests import test_resident_wait_ranking as ranking_fixtures
-from ucloud_sandboxes.capabilities import (
+from sandboxes.capabilities import (
     RELAY_WAKE_FENCE_CAPABILITY,
     RESOURCE_PHASE_CAPABILITY,
 )
-from ucloud_sandboxes.control_plane import ControlPlaneHandler
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.warm_park import WarmParkDeferred
+from sandboxes.control_plane import ControlPlaneHandler
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.warm_park import WarmParkDeferred
 
 
 class ResourcePhaseForwardingTests(TestCase):

@@ -19,10 +19,10 @@ from uuid import uuid4
 from tests.harness import LocalFleet
 from tests.harness.assembly import fixed_metrics
 from tests.test_placement_choice import SHAPE, FakeClock, heartbeat
-from ucloud_sandboxes.gateway.node_rpc import ProxiedResponse
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.placement_choice import FleetView, InflightOverlay, PlacementRequest, PowerOfKChooser
-from ucloud_sandboxes.routing import RoutingStore, SandboxGroup, SandboxGroupDeletedError, SandboxRouteAllocation
+from sandboxes.gateway.node_rpc import ProxiedResponse
+from sandboxes.models import ResourceQuantity
+from sandboxes.placement_choice import FleetView, InflightOverlay, PlacementRequest, PowerOfKChooser
+from sandboxes.routing import RoutingStore, SandboxGroup, SandboxGroupDeletedError, SandboxRouteAllocation
 
 TEST_TIER = "contract"
 DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
@@ -233,7 +233,7 @@ class SqliteGroupFenceTests(GroupIntentFences, unittest.TestCase):
 @unittest.skipUnless(DSN, "requires real PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)")
 class PostgresGroupFenceTests(GroupIntentFences, unittest.TestCase):
     def setUp(self):
-        from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
         self.temp = TemporaryDirectory()
         self.schema = "ucloud_routing_group_" + uuid4().hex

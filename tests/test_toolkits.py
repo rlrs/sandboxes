@@ -12,13 +12,13 @@ from types import SimpleNamespace
 
 from tests.harness import LocalFleet
 from tests.test_environment_artifact import MemoryRegistry
-from ucloud_sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
-from ucloud_sandboxes.environment_artifact import (CHUNK_BYTES, EnvironmentArtifactRegistry, content_digest,
+from sandboxes.capabilities import ENVIRONMENT_RAFS_CAPABILITY, ENVIRONMENT_ROOT_CAPABILITY
+from sandboxes.environment_artifact import (CHUNK_BYTES, EnvironmentArtifactRegistry, content_digest,
                                                    load_environment, publish_environment, sign_component,
                                                    sign_rafs_component)
-from ucloud_sandboxes.environment_manifest import EnvironmentManifest
-from ucloud_sandboxes.gateway.toolkits import ToolkitComposer, ToolkitError, ToolkitStore
-from ucloud_sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
+from sandboxes.environment_manifest import EnvironmentManifest
+from sandboxes.gateway.toolkits import ToolkitComposer, ToolkitError, ToolkitStore
+from sandboxes.sandbox import SandboxSpec, sandbox_spec_fingerprint
 
 TEST_TIER = "contract"
 PINNED = "vf-harness@sha256:" + "d" * 64

@@ -11,14 +11,14 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.direct_warden import (
+from sandboxes.direct_warden import (
     CommandResult,
     DirectRunscWarden,
     DirectRunscWardenConfig,
     DirectSandbox,
     DirectWardenError,
 )
-from ucloud_sandboxes.hibernation import (
+from sandboxes.hibernation import (
     HibernationGenerationInventory,
     HibernationValidationError,
     HibernationFileRole,
@@ -29,8 +29,8 @@ from ucloud_sandboxes.hibernation import (
     LocalHibernationArtifactFile,
     classify_hibernation_recovery,
 )
-from ucloud_sandboxes.managed_process import load_parked_managed_state, managed_state_mount
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.managed_process import load_parked_managed_state, managed_state_mount
+from sandboxes.storage_native_daemon import (
     StorageNativeConflictError,
     StorageVolumeOwner,
     StorageVolumeRecord,
@@ -680,7 +680,7 @@ class DirectRunscWardenTests(unittest.TestCase):
                         self.assertTrue(marker.exists())
 
     def test_shared_cgroup_parent_is_created_with_controllers(self):
-        from ucloud_sandboxes.direct_warden import ensure_sandbox_cgroup_parent
+        from sandboxes.direct_warden import ensure_sandbox_cgroup_parent
         with TemporaryDirectory() as raw:
             root = Path(raw)
             self.assertFalse(ensure_sandbox_cgroup_parent(root / "ucloud-sandboxes"))
@@ -728,7 +728,7 @@ class DirectRunscWardenTests(unittest.TestCase):
             return original(first, second)
 
         with patch(
-            "ucloud_sandboxes.runtime_process.os.path.samefile",
+            "sandboxes.runtime_process.os.path.samefile",
             side_effect=exit_during_read,
         ):
             self.warden._delete_runtime(self.sandbox)

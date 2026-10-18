@@ -11,12 +11,12 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.chunk_store_support import IndexFixture, ObjectServer
-from ucloud_sandboxes import chunk_index
-from ucloud_sandboxes.chunk_index import (BUSY, CHUNK_RESERVE_SECONDS, KNOWN, RESERVED, ChunkIndexClient,
+from sandboxes import chunk_index
+from sandboxes.chunk_index import (BUSY, CHUNK_RESERVE_SECONDS, KNOWN, RESERVED, ChunkIndexClient,
                                           ChunkIndexService, ChunkObjectStore, MissingChunks, S3Presigner,
                                           http_range, redact, retried)
-from ucloud_sandboxes.chunk_store import RAW, PackWriter, chunk_map_key, encode_tail, pack_key
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.chunk_store import RAW, PackWriter, chunk_map_key, encode_tail, pack_key
+from sandboxes.managed_registry import RegistryRequestError
 
 TEST_TIER = "contract"
 
@@ -299,9 +299,9 @@ class IndexTests(unittest.TestCase):
 
     def test_register_requires_every_chunk_and_serves_locators(self):
         from tests.test_chunk_store_formats import bootstrap
-        from ucloud_sandboxes.chunk_store import chunk_map_from_bootstrap, parse_bootstrap
+        from sandboxes.chunk_store import chunk_map_from_bootstrap, parse_bootstrap
         from tests.chunk_store_support import pseudo_random
-        from ucloud_sandboxes.chunk_store import bootstrap_key, zstd_compress
+        from sandboxes.chunk_store import bootstrap_key, zstd_compress
         chunk_map = chunk_map_from_bootstrap(parse_bootstrap(bootstrap()))
         encoded = chunk_map.encode()
         map_digest = "sha256:" + hashlib.sha256(encoded).hexdigest()

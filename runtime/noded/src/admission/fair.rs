@@ -1,4 +1,4 @@
-//! `FairCapacity` (ucloud_sandboxes/admission.py) on tokio: weighted FIFO
+//! `FairCapacity` (sandboxes/admission.py) on tokio: weighted FIFO
 //! admission that waits before allocating, without retry races.
 //!
 //! A release grants eligible heads before any new caller can take the

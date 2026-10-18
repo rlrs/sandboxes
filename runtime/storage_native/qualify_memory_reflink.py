@@ -14,8 +14,8 @@ import os
 from pathlib import Path
 import time
 
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.memory_backing import MemoryBackingStore
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.memory_backing import MemoryBackingStore
 
 
 def run(root):

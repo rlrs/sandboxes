@@ -16,8 +16,8 @@ import random
 from statistics import median
 import unittest
 
-from ucloud_sandboxes.deployment import package_version
-from ucloud_sandboxes.models import (
+from sandboxes.deployment import package_version
+from sandboxes.models import (
     SOFT_DRAIN_LABEL,
     NodeHeartbeat,
     NodeRuntimeMetrics,
@@ -26,11 +26,11 @@ from ucloud_sandboxes.models import (
     is_soft_drained,
     utc_now,
 )
-from ucloud_sandboxes.placement_accounting import (
+from sandboxes.placement_accounting import (
     PlacementReservation,
     _node_available_resources,
 )
-from ucloud_sandboxes.placement_choice import (
+from sandboxes.placement_choice import (
     PENDING_RESIDENCY,
     RESIDENCY_WEIGHT,
     FleetView,
@@ -43,7 +43,7 @@ from ucloud_sandboxes.placement_choice import (
     initial_charge,
     node_fits,
 )
-from ucloud_sandboxes.resource_admission import node_pressure_score
+from sandboxes.resource_admission import node_pressure_score
 
 NOW = utc_now()
 SHAPE = ResourceQuantity(1, 2048, 8192)
@@ -440,7 +440,7 @@ class LexicographicFidelityTests(unittest.TestCase):
         # Fails rather than skips when the live ranking moves (C6.1) or goes
         # (C4.3 wiring): the simulation's baseline must not drift unchecked.
         from tests.gateway_support import gateway_services
-        from ucloud_sandboxes.gateway.placement import NodePlacementState
+        from sandboxes.gateway.placement import NodePlacementState
 
         placement = gateway_services(create_target_concurrency_per_node=8).placement
         rng, contested = random.Random(42), 0

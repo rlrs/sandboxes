@@ -34,10 +34,10 @@ host in `guest_relay_url`.
 missing keys and older schemas fail loading. Start from:
 
 ```bash
-uv run ucloud-sandboxes sample-config > deployment.json
+uv run sandboxes sample-config > deployment.json
 ```
 
-All keys and defaults are in `ucloud_sandboxes/config.py`. The ones an
+All keys and defaults are in `sandboxes/config.py`. The ones an
 operator must set:
 
 | Key | Set to |
@@ -64,7 +64,7 @@ variable, and the UCloud session is a separate file. Apply changes with
 2. **Create the gateway VM.** Review the payload, then add `--execute`:
 
    ```bash
-   uv run ucloud-sandboxes submit-vm --config deployment.json \
+   uv run sandboxes submit-vm --config deployment.json \
      --role gateway --mount <project-drive-path> --hostname <gateway-host> \
      --output json
    ```
@@ -79,19 +79,19 @@ variable, and the UCloud session is a separate file. Apply changes with
    sudo -u postgres createuser --login ucloud
    sudo -u postgres createdb -O ucloud ucloud
    echo 'host=/var/run/postgresql dbname=ucloud user=ucloud' > <dsn-file>   # mode 0600, owner ucloud
-   python -m ucloud_sandboxes.shared_control migrate --dsn-file <dsn-file> --deployment-id <id>
+   python -m sandboxes.shared_control migrate --dsn-file <dsn-file> --deployment-id <id>
    ```
 
    Name `<dsn-file>` in `relay_postgres.dsn_file`. To keep routing in PostgreSQL
    too (production does), run
-   `python -m ucloud_sandboxes.shared_control.routing_cutover --routing-file <data_root>/routes.sqlite --dsn-file <dsn-file> --schema <schema>`
+   `python -m sandboxes.shared_control.routing_cutover --routing-file <data_root>/routes.sqlite --dsn-file <dsn-file> --schema <schema>`
    once, with the gateway, relay and autoscaler stopped.
 4. **Converge the gateway.** Inspect the script, then rerun with `--execute`:
 
    ```bash
-   uv run ucloud-sandboxes deploy-all-in-one <gateway-job-id> \
+   uv run sandboxes deploy-all-in-one <gateway-job-id> \
      --config deployment.json \
-     --wheel dist/ucloud_sandboxes-<version>-py3-none-any.whl \
+     --wheel dist/sandboxes-<version>-py3-none-any.whl \
      --direct-runsc <path>/ucloud-direct-runsc \
      --managed-init <path>/managed-init \
      --storage-native-manifest <path>/storage-native-manifest.json \
@@ -129,7 +129,7 @@ variable, and the UCloud session is a separate file. Apply changes with
 ### Service convergence
 
 ```bash
-sudo python -m ucloud_sandboxes.systemd gateway-reconcile \
+sudo python -m sandboxes.systemd gateway-reconcile \
   --config /etc/ucloud-sandboxes/deployment.json
 ```
 
@@ -145,7 +145,7 @@ A release is the wheel plus two digest-pinned node bundles
 `.sha256`). Nodes never contact a package repository.
 
 ```bash
-uv build                                   # dist/ucloud_sandboxes-<version>-py3-none-any.whl
+uv build                                   # dist/sandboxes-<version>-py3-none-any.whl
 python scripts/verify_installed_wheel.py   # in a venv with the wheel installed
 ```
 
@@ -189,7 +189,7 @@ and inspect.
    `/etc/systemd/system/`.
 5. Point `node_package_root` at the new release directory and apply any config
    change `CHANGELOG.md` calls for. Apply new PostgreSQL tables before
-   restarting (`python -m ucloud_sandboxes.shared_control migrate ...`).
+   restarting (`python -m sandboxes.shared_control migrate ...`).
 6. Run `gateway-reconcile`, confirm `/healthz` reports the new version, and
    `systemctl start ucloud-sandbox-registry-prune.timer`.
 7. Workers and builders take the new bundle at their next VM init. Old nodes
@@ -205,7 +205,7 @@ back only the gateway while newer workers are still admitted.
 The autoscaler initializes workers and builders. To replay init on one VM:
 
 ```bash
-ucloud-sandboxes init-vm <job-id> --config /etc/ucloud-sandboxes/deployment.json \
+sandboxes init-vm <job-id> --config /etc/ucloud-sandboxes/deployment.json \
   --role sandbox|builder|store --package-spec <release>/sandbox-node-package.tar.gz \
   --ssh-private-key-file <data_root>/ssh/gateway-init [--execute]
 ```
@@ -268,7 +268,7 @@ prefix; workers never reach S3 themselves. Design and config are in
 - **Health:** `GET /healthz` (ops-watch alerts on it); `GET /v1/metrics`
   with the index read token.
 - **Warm before a burst:**
-  `ucloud-sandboxes warm-chunk-store --config /etc/ucloud-sandboxes/deployment.json --component sha256:... --wait`.
+  `sandboxes warm-chunk-store --config /etc/ucloud-sandboxes/deployment.json --component sha256:... --wait`.
 - **Remove a bad object:** `DELETE /v1/objects/<key>` with the write token.
 - **Never open the live cache as root** (for example constructing an
   `ExtentCache` in a diagnostic): it recreates `cache/tmp` owned by root and
@@ -292,7 +292,7 @@ RAFS reads stop until it returns. Keep the hostname so no config changes.
    with `--execute`:
 
    ```bash
-   uv run ucloud-sandboxes submit-vm --config /etc/ucloud-sandboxes/deployment.json \
+   uv run sandboxes submit-vm --config /etc/ucloud-sandboxes/deployment.json \
      --role node --hostname <store-host> --no-public-link --product-id <product> \
      --disk-gb <size> --label ucloud-sandboxes/store=true --output json
    ```
@@ -402,10 +402,10 @@ power off, snapshot, and canary one clone (create, exec, park, wake).
 
 ## Adding a provider
 
-Implement `ucloud_sandboxes.providers.base.ComputeProvider` (list, create,
+Implement `sandboxes.providers.base.ComputeProvider` (list, create,
 terminate and SSH bootstrap for instances, with normalized lifecycle states
 and labels preserved for recovery) and register a factory under the
-`ucloud_sandboxes.compute_providers` entry-point group, keyed by the config
+`sandboxes.compute_providers` entry-point group, keyed by the config
 `kind`. Policy, routing and runtime stay unchanged. The target cloud still
 needs privileged Linux VMs with the bundle's kernel modules (`ublk_drv`,
 `erofs`, `nbd`, `nft_log`, `nfnetlink_log`, `virtiofs`), private reachability

@@ -6,18 +6,18 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.direct_registry import (
     DirectSandboxRegistry,
     DirectRegistryConflictError,
 )
-from ucloud_sandboxes.direct_warden import DirectWardenError
-from ucloud_sandboxes.hibernation import HibernationManifest, HibernationState
-from ucloud_sandboxes.memory_backing import MemoryBackingStore, MemoryBackingError
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.direct_warden import DirectWardenError
+from sandboxes.hibernation import HibernationManifest, HibernationState
+from sandboxes.memory_backing import MemoryBackingStore, MemoryBackingError
+from sandboxes.sandbox import SandboxSpec
 from tests import test_direct_warden as fixtures
 from tests import test_storage_native_daemon as storage_fixtures
-from ucloud_sandboxes.storage_native_daemon import (
+from sandboxes.storage_native_daemon import (
     StorageNativeNodeClient, StorageNativeNodeServer, StorageVolumeState,
     storage_operation_id,
 )
@@ -201,7 +201,7 @@ class SplitLifecycleTests(unittest.TestCase):
             if step == "workspace-prepare":
                 return f"{operation_id}:workspace-prepare"
             return storage_operation_id(owner, operation_id, step)
-        with patch("ucloud_sandboxes.direct_warden.storage_operation_id", side_effect=legacy_prepare_id):
+        with patch("sandboxes.direct_warden.storage_operation_id", side_effect=legacy_prepare_id):
             with self.assertRaisesRegex(DirectWardenError, "terminate"):
                 other.warden.park(other.sandbox, operation_id="old-complete")
         before = backend.restack_calls

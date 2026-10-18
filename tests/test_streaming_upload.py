@@ -15,10 +15,10 @@ from unittest.mock import patch
 
 import tests.test_direct_provisioner as fixtures
 from tests.test_control_plane import _gateway_server, _running_server, _seed_gateway_node
-from ucloud_sandboxes.direct_service import DirectExecResult, DirectSandboxService
-from ucloud_sandboxes.http_server import RequestBodyStream, TRANSFER_CHUNK_BYTES
-from ucloud_sandboxes.sandbox import SandboxStartupBusyError
-from ucloud_sandboxes.upload_spool import UploadSpool
+from sandboxes.direct_service import DirectExecResult, DirectSandboxService
+from sandboxes.http_server import RequestBodyStream, TRANSFER_CHUNK_BYTES
+from sandboxes.sandbox import SandboxStartupBusyError
+from sandboxes.upload_spool import UploadSpool
 
 TEST_TIER = "contract"
 
@@ -68,7 +68,7 @@ class UploadSpoolTests(unittest.TestCase):
                         self.assertEqual(small.read(), b'small')
                     return super().read(size)
 
-            with patch('ucloud_sandboxes.upload_spool.os.statvfs', return_value=space):
+            with patch('sandboxes.upload_spool.os.statvfs', return_value=space):
                 with spool.receive(Source(b'x' * 60), 60) as staged:
                     self.assertEqual(staged.read(), b'x' * 60)
             self.assertEqual(spool._unwritten_bytes, 0)
@@ -121,7 +121,7 @@ class StreamingUploadTests(unittest.TestCase):
                     yield gateway, service, runner
 
     def test_small_uploads_use_buffered_rpc_without_stream_connection(self):
-        from ucloud_sandboxes.gateway import node_rpc
+        from sandboxes.gateway import node_rpc
         with self.servers() as (gateway, service, runner):
             with patch.object(node_rpc._NODE_FILE_UPLOAD_HTTP_POOL, 'request',
                               side_effect=AssertionError('small upload opened streaming connection')):
@@ -141,7 +141,7 @@ class StreamingUploadTests(unittest.TestCase):
             self.assertEqual(service.upload_spool._unwritten_bytes, 0)
 
     def test_truncated_small_upload_never_reaches_worker(self):
-        from ucloud_sandboxes.gateway import node_rpc
+        from sandboxes.gateway import node_rpc
         with self.servers() as (gateway, service, runner):
             connection = HTTPConnection(*gateway.server_address, timeout=5)
             try:

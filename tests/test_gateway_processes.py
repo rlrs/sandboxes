@@ -9,10 +9,10 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.host_locks import HostKeyedLocks
-from ucloud_sandboxes.http_server import HighBacklogThreadingHTTPServer, JsonHttpHandler
-from ucloud_sandboxes.shared_control.database import (
+from sandboxes.config import DeploymentConfig
+from sandboxes.host_locks import HostKeyedLocks
+from sandboxes.http_server import HighBacklogThreadingHTTPServer, JsonHttpHandler
+from sandboxes.shared_control.database import (
     GATEWAY_PROCESS_COUNT_ENV,
     process_pool_share,
 )
@@ -65,7 +65,7 @@ class HostKeyedLockTests(unittest.TestCase):
     def test_reentrant_and_same_stripe_nesting_does_not_self_deadlock(self):
         with TemporaryDirectory() as raw:
             locks = HostKeyedLocks(Path(raw))
-            with patch("ucloud_sandboxes.host_locks._STRIPES", 1):
+            with patch("sandboxes.host_locks._STRIPES", 1):
                 with locks.hold("registry-leases", ""):
                     with locks.hold("registry-leases", ""):
                         with locks.hold("registry-leases", "other-key"):

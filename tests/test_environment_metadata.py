@@ -9,12 +9,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from tests.test_environment_artifact import EnvironmentArtifactTests
-from ucloud_sandboxes.build_deadline import ImageBuildTimeoutError, build_execution_deadline
-from ucloud_sandboxes.environment_artifact import (
+from sandboxes.build_deadline import ImageBuildTimeoutError, build_execution_deadline
+from sandboxes.environment_artifact import (
     CHUNK_BYTES, EnvironmentArtifactRegistry, EnvironmentComponent, canonical_bytes, content_digest, sign_component,
 )
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
-from ucloud_sandboxes.environment_metadata import (
+from sandboxes.environment_builder import FreshEnvironmentBuilder, publication_metrics
+from sandboxes.environment_metadata import (
     METADATA_ANNOTATION, MetadataHint, component_digest, read_metadata_hint, sign_hint, sign_metadata_hint,
 )
 
@@ -58,7 +58,7 @@ class MetadataHintTests(EnvironmentArtifactTests):
         self.assertEqual(reader.metadata_hint("sha256:" + "9" * 64), ("absent", None))
 
     def test_registry_retains_only_the_most_recently_loaded_hints(self):
-        from ucloud_sandboxes import environment_artifact
+        from sandboxes import environment_artifact
         hinted = self.registry.publish(self.big, self.big_component, tag="hinted", metadata=self.hint)
         other_hint = sign_hint(self.big_component, [(0, 1)], self.key)
         other = self.registry.publish(self.big, self.big_component, tag="other", metadata=other_hint)
@@ -101,7 +101,7 @@ class MetadataHintTests(EnvironmentArtifactTests):
                                         "size": self.big_component.image_size}],
                             "annotations": {METADATA_ANNOTATION: value, "org.example.other": "kept"}}
                 digest = content_digest(canonical_bytes(document))
-                with self.assertLogs("ucloud_sandboxes.environment_metadata", "WARNING"):
+                with self.assertLogs("sandboxes.environment_metadata", "WARNING"):
                     self.assertEqual(reader.load_document(digest, document), self.big_component)
                 self.assertEqual(reader.metadata_hint(digest), ("unsupported", None))
         # The published binding check refuses a hint for another component.
@@ -128,7 +128,7 @@ class MetadataHintTests(EnvironmentArtifactTests):
         self.assertEqual(self.hint.prefetch_order(max_bytes=99 * CHUNK_BYTES, max_chunks=99), (0, 3, 4, 7, 11))
 
     def test_oversized_hint_keeps_the_densest_chunks_and_says_so(self):
-        from ucloud_sandboxes import environment_metadata
+        from sandboxes import environment_metadata
         with patch.object(environment_metadata, "MAX_HINT_CHUNKS", 3):
             hint = sign_hint(self.big_component, [(0, 1), (3, 100), (4, 90000), (7, 8192), (11, 50)], self.key)
         self.assertFalse(hint.complete)
@@ -148,8 +148,8 @@ class BuilderHintTests(EnvironmentArtifactTests):
 
     def test_expired_build_deadline_is_not_mistaken_for_an_unsupported_image(self):
         expired = ImageBuildTimeoutError("image build exceeded its server execution deadline")
-        with patch("ucloud_sandboxes.environment_builder.remaining_build_execution_seconds", side_effect=expired), \
-             patch("ucloud_sandboxes.erofs_metadata.walk", side_effect=lambda *a, check, **k: check()), \
+        with patch("sandboxes.environment_builder.remaining_build_execution_seconds", side_effect=expired), \
+             patch("sandboxes.erofs_metadata.walk", side_effect=lambda *a, check, **k: check()), \
              self.assertRaises(ImageBuildTimeoutError):
             self.builder()._publish_component(self.image, self.component, "fixture")
         self.assertEqual(list(self.client.manifests), [self.digest])

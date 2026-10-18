@@ -23,10 +23,10 @@ def sha(path):
 
 
 def audit_package(source, members):
-    expected = {name: body for name, body in members.items() if name.startswith('ucloud_sandboxes/')}
+    expected = {name: body for name, body in members.items() if name.startswith('sandboxes/')}
     if not expected:
         raise ValueError('Wheel has no runtime package')
-    package = source / 'ucloud_sandboxes'
+    package = source / 'sandboxes'
     if package.is_symlink():
         raise ValueError('Runtime package is unexpectedly symlinked')
     actual = set()
@@ -50,12 +50,12 @@ def verify_import_origin(state):
     # Match the running -m interpreter's first search entry and environment.
     # PathFinder resolves package/module locations without executing app code.
     program = ("import importlib.machinery,json,sys;"
-               "p=importlib.machinery.PathFinder.find_spec('ucloud_sandboxes',sys.path);"
-               "m=importlib.machinery.PathFinder.find_spec('ucloud_sandboxes.cli',p.submodule_search_locations);"
+               "p=importlib.machinery.PathFinder.find_spec('sandboxes',sys.path);"
+               "m=importlib.machinery.PathFinder.find_spec('sandboxes.cli',p.submodule_search_locations);"
                "print(json.dumps([p.origin,m.origin]))")
     result = subprocess.run([state['argv'][0], '-c', program], env=state['env'], cwd=cwd,
                             capture_output=True, text=True, timeout=10)
-    expected = [state['source'] / 'ucloud_sandboxes' / name for name in ('__init__.py', 'cli.py')]
+    expected = [state['source'] / 'sandboxes' / name for name in ('__init__.py', 'cli.py')]
     if result.returncode or [Path(value).resolve(strict=True) for value in json.loads(result.stdout)] != expected:
         raise ValueError('Builder import origin differs from audited runtime')
     return cwd

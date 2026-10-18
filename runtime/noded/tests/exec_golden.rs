@@ -170,12 +170,12 @@ from threading import Condition
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
-from ucloud_sandboxes.direct_warden import DirectRunscWarden
-from ucloud_sandboxes.hibernation import HibernationAuthority
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.node_runtime import DirectExecRuntime
-from ucloud_sandboxes.sandbox_exec import ExecEvent, ExecSession, ExecSessionManager, SandboxExecSpec
-from ucloud_sandboxes.telemetry import Telemetry
+from sandboxes.direct_warden import DirectRunscWarden
+from sandboxes.hibernation import HibernationAuthority
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.node_runtime import DirectExecRuntime
+from sandboxes.sandbox_exec import ExecEvent, ExecSession, ExecSessionManager, SandboxExecSpec
+from sandboxes.telemetry import Telemetry
 
 RUNSC = "/usr/local/bin/runsc"
 ROOT = "/run/ucloud/runsc root"

@@ -43,7 +43,7 @@ WAVES = {"1": ("SWE-smith", "OpenSWE"), "2": ("TMax", "Terminal-Lego"),
 # root their spec pinned; any other owner keeps the old closure, which blocks
 # that image's release.
 DURABLE_OWNERS = ("image-pool:", "image-foundation:", "shared-task:", "shared-source:")
-CLI = "import sys; from ucloud_sandboxes.cli import main; sys.exit(main(sys.argv[1:]))"
+CLI = "import sys; from sandboxes.cli import main; sys.exit(main(sys.argv[1:]))"
 
 
 def pinned_references(values):

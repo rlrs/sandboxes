@@ -1,5 +1,5 @@
 [Unit]
-Description=UCloud Sandbox gateway/control plane
+Description=UCloud Sandbox model relay
 After=network-online.target
 Wants=network-online.target
 
@@ -8,7 +8,7 @@ Type=simple
 User=ucloud
 Group=ucloud
 WorkingDirectory=/work/ucloud-sandboxes
-ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/ucloud-sandboxes serve-control-plane --config /etc/ucloud-sandboxes/deployment.json
+ExecStart=/work/ucloud-sandboxes/gateway-venv/bin/sandboxes serve-model-relay --config /etc/ucloud-sandboxes/deployment.json
 Restart=always
 RestartSec=2
 LimitNOFILE=65536

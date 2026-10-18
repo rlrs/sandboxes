@@ -1,5 +1,5 @@
 """Step 3c.0 of docs/architecture.md, the agent's half: the client for
-noded's internal socket (ucloud_sandboxes/noded_client.py), the hello at
+noded's internal socket (sandboxes/noded_client.py), the hello at
 agent start, the ``admission`` block of the create configuration, and the
 ``--rust-admission`` flag. runtime/noded/tests/internal_admission.rs runs the
 same client against the daemon's real listener.
@@ -22,19 +22,19 @@ from tests import test_direct_provisioner as fixtures
 from tests import test_vm_init as vm_init_fixtures
 from tests.test_pause_tier import _PausingWarden
 from tests.test_rust_create_handoff import _UnixConnection
-from ucloud_sandboxes import noded_client
-from ucloud_sandboxes.admission_backend import LocalAdmission, NodedAdmission
-from ucloud_sandboxes.cli import build_parser, vm_init_options_to_dict
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.http_server import UnixSocketServerMixin
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.resident_memory import PublishedResidentMemory, ResidentMemorySampler
-from ucloud_sandboxes.noded_client import (
+from sandboxes import noded_client
+from sandboxes.admission_backend import LocalAdmission, NodedAdmission
+from sandboxes.cli import build_parser, vm_init_options_to_dict
+from sandboxes.config import DeploymentConfig
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.http_server import UnixSocketServerMixin
+from sandboxes.models import ResourceQuantity
+from sandboxes.resident_memory import PublishedResidentMemory, ResidentMemorySampler
+from sandboxes.noded_client import (
     NodedClient, NodedLink, NodedLost, NodedProtocolError, NodedRefused, NodedUnavailable,
 )
-from ucloud_sandboxes.vm_init import render_vm_init_script
+from sandboxes.vm_init import render_vm_init_script
 
 TEST_TIER = "contract"
 TOKEN = "node-secret"
@@ -257,7 +257,7 @@ def _service(root: Path, **kwargs) -> DirectSandboxService:
 
 class AdmissionConfigTests(unittest.TestCase):
     def test_the_block_reads_the_live_service_under_the_digest(self) -> None:
-        from ucloud_sandboxes.create_handoff import admission_config, create_config
+        from sandboxes.create_handoff import admission_config, create_config
 
         with TemporaryDirectory() as directory:
             service = _service(Path(directory).resolve(), max_concurrent_startups=12, max_concurrent_restores=3)

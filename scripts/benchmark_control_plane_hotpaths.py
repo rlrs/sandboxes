@@ -10,10 +10,10 @@ import sqlite3
 from tempfile import TemporaryDirectory
 import time
 
-from ucloud_sandboxes.agent import build_heartbeat
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.metrics import MetricsStore
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry
+from sandboxes.agent import build_heartbeat
+from sandboxes.control_state import ControlStateStore
+from sandboxes.metrics import MetricsStore
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry
 
 
 def benchmark_reads(root: Path) -> dict:

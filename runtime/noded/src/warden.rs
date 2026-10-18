@@ -1,4 +1,4 @@
-//! The create half of the Warden (ucloud_sandboxes/direct_warden.py): the
+//! The create half of the Warden (sandboxes/direct_warden.py): the
 //! per-incarnation warden lock, `discard_unjournaled`, the runtime delete with
 //! its metadata fence, and `create` (runsc create, start, state, sentry
 //! verification, lifecycle journal). Everything after a sandbox runs stays with

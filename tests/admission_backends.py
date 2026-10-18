@@ -16,8 +16,8 @@ import secrets
 import time
 
 from tests import noded_admission
-from ucloud_sandboxes.admission_backend import _cost, _owner
-from ucloud_sandboxes.transition_admission import TransitionCost, TransitionKind
+from sandboxes.admission_backend import _cost, _owner
+from sandboxes.transition_admission import TransitionCost, TransitionKind
 
 
 class AdmissionBackendCase:

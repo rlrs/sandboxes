@@ -5,8 +5,8 @@ import argparse
 import json
 from pathlib import Path
 
-from ucloud_sandboxes.environment_contract import describe_environment
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.environment_contract import describe_environment
+from sandboxes.sandbox import SandboxSpec
 
 
 def main() -> int:

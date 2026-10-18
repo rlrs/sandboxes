@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-from ucloud_sandboxes.image_eviction import ImageCacheEvictor
+from sandboxes.image_eviction import ImageCacheEvictor
 
 GIB = 1024**3
 
@@ -112,7 +112,7 @@ class ImageCacheEvictorTests(unittest.TestCase):
         self.assertEqual(restarted.evict_if_needed(), ())
 
     def test_docker_times_in_both_formats(self):
-        from ucloud_sandboxes.image_rootfs import _docker_time_seconds
+        from sandboxes.image_rootfs import _docker_time_seconds
         self.assertEqual(_docker_time_seconds("2026-09-26T18:40:01.5Z"), 1790448001.5)
         self.assertEqual(_docker_time_seconds("2026-09-26 18:40:01.5 +0000 UTC"), 1790448001.5)
         self.assertEqual(_docker_time_seconds("0001-01-01T00:00:00Z"), 0.0)

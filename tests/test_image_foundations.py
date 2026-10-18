@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 import sys
 
-from ucloud_sandboxes.image_foundations import openswe_foundation, terminal_foundation, tmax_foundation, tmax_inline_foundation
+from sandboxes.image_foundations import openswe_foundation, terminal_foundation, tmax_foundation, tmax_inline_foundation
 
 TEST_TIER = "contract"
 
@@ -153,8 +153,8 @@ class ImageFoundationTests(unittest.TestCase):
     def check_preparer_resume(self, generation):
         preparer = self.load_script("prepare_image_foundations")
         pool = self.load_script("prepare_image_pool")
-        from ucloud_sandboxes.images import ImageRecord
-        from ucloud_sandboxes.models import utc_now
+        from sandboxes.images import ImageRecord
+        from sandboxes.models import utc_now
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             foundations = [tmax_foundation(PREFIX, text, ubuntu_base=BASE) for text in (b"bad", b"good")]
@@ -194,22 +194,22 @@ class ImageFoundationTests(unittest.TestCase):
             # Keep patched modules loaded across patch.dict(sys.modules) cleanup.
             for module in ("config", "environment_config", "managed_registry", "environment_dependencies",
                            "images", "control_plane", "environment_artifact", "registry_disk", "host_locks"):
-                importlib.import_module("ucloud_sandboxes." + module)
+                importlib.import_module("sandboxes." + module)
             with ExitStack() as stack:
                 stack.enter_context(patch.dict(sys.modules, {"ucloud_sandboxes_sdk": sdk, "prepare_image_pool": pool}))
                 stack.enter_context(patch.object(sys, "path", list(sys.path)))
                 stack.enter_context(patch.object(sys, "argv", ["prepare", "--root", str(root), "--sdk-wheel", "unused",
                     "--config", str(root / "config.json"), "--gateway", "https://example.invalid", "--limit", "2"]))
                 replacements = {
-                    "ucloud_sandboxes.config.DeploymentConfig.from_dict": config,
-                    "ucloud_sandboxes.environment_config.environment_registry_from_deployment": Mock(),
-                    "ucloud_sandboxes.managed_registry.RegistryUsageStore": Mock(),
-                    "ucloud_sandboxes.environment_dependencies.EnvironmentDependencyResolver": Mock(),
-                    "ucloud_sandboxes.images.ImageStore": store,
-                    "ucloud_sandboxes.gateway.registry_refs._persist_registry_image_protection": True,
-                    "ucloud_sandboxes.environment_artifact.load_image_environment": ("root", SimpleNamespace(components=[])),
-                    "ucloud_sandboxes.registry_disk.registry_disk_usage": SimpleNamespace(used_bytes=0, available_bytes=1024**4),
-                    "ucloud_sandboxes.host_locks.HOST_LOCKS.configure": None,
+                    "sandboxes.config.DeploymentConfig.from_dict": config,
+                    "sandboxes.environment_config.environment_registry_from_deployment": Mock(),
+                    "sandboxes.managed_registry.RegistryUsageStore": Mock(),
+                    "sandboxes.environment_dependencies.EnvironmentDependencyResolver": Mock(),
+                    "sandboxes.images.ImageStore": store,
+                    "sandboxes.gateway.registry_refs._persist_registry_image_protection": True,
+                    "sandboxes.environment_artifact.load_image_environment": ("root", SimpleNamespace(components=[])),
+                    "sandboxes.registry_disk.registry_disk_usage": SimpleNamespace(used_bytes=0, available_bytes=1024**4),
+                    "sandboxes.host_locks.HOST_LOCKS.configure": None,
                 }
                 for target, value in replacements.items():
                     stack.enter_context(patch(target, return_value=value))

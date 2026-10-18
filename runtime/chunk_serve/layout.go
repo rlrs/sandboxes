@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// The formats of ucloud_sandboxes/chunk_store.py: a blob's tail object (its
+// The formats of sandboxes/chunk_store.py: a blob's tail object (its
 // chunk table, then the bytes after its last chunk) and its layout (a locator
 // over the same chunks, built at registration).
 const (

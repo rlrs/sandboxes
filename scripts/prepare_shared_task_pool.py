@@ -63,8 +63,8 @@ def main():
     if (not 1 <= args.workers <= 8 or not 1 <= args.max_delta_mib <= 1024
             or min(args.limit, args.growth_limit_gib, args.free_floor_gib) < 1):
         parser.error('invalid bounds')
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.registry_disk import registry_disk_usage
     c = DeploymentConfig.from_dict(json.loads(args.config.read_text()))
     resolver = SourceResolver(c.control_state_file().parent / 'image-pool-locks', clock=time.time)
     registry_health = RegistryHealthGate(c.registry_url)

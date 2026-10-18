@@ -6,8 +6,8 @@ import tempfile
 
 from runtime.storage_native.benchmark_delta_compaction import apply_layer, write_layer
 from runtime.storage_native.qualify_local_compaction import qualify
-from ucloud_sandboxes.storage_native_local_cache import PublishedLocalCache
-from ucloud_sandboxes.storage_native_registry import consume_export_stream
+from sandboxes.storage_native_local_cache import PublishedLocalCache
+from sandboxes.storage_native_registry import consume_export_stream
 
 
 def exercise(root, config, client):

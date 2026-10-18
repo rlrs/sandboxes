@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
 
-from ucloud_sandboxes.exec_routing import ExecRoutingService, ExecRouteUnavailable
-from ucloud_sandboxes.exec_session_routes import (
+from sandboxes.exec_routing import ExecRoutingService, ExecRouteUnavailable
+from sandboxes.exec_session_routes import (
     ExecSessionRoutes,
     SignedExecRoute,
     valid_session_prefix,

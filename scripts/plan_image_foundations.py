@@ -16,7 +16,7 @@ from collections import Counter
 from pathlib import Path
 import sqlite3
 
-from ucloud_sandboxes.image_foundations import openswe_foundation, terminal_foundation, tmax_foundation, tmax_inline_foundation
+from sandboxes.image_foundations import openswe_foundation, terminal_foundation, tmax_foundation, tmax_inline_foundation
 
 
 def plan(root: Path, output: Path, base: str, revision: str):

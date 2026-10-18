@@ -18,12 +18,12 @@ from uuid import uuid4
 
 from tests.test_control_plane import _gateway_server, _running_server
 from tests.test_registry import build_heartbeat
-from ucloud_sandboxes.control_plane import ControlPlaneHandler, _sandbox_list_bytes
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.fleet_reader import FleetResponseRenderer, FleetSnapshotReader, status_ids
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
-from ucloud_sandboxes.registry import heartbeat_to_dict
-from ucloud_sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.control_plane import ControlPlaneHandler, _sandbox_list_bytes
+from sandboxes.control_state import ControlStateStore
+from sandboxes.fleet_reader import FleetResponseRenderer, FleetSnapshotReader, status_ids
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
+from sandboxes.registry import heartbeat_to_dict
+from sandboxes.routing import RoutingStore, SandboxRoute
 
 TEST_TIER = "contract"
 
@@ -106,9 +106,9 @@ class StatusProjectionContracts:
         self.assertEqual(self.assert_projection()[0]["state"], "unknown")
         writer.quarantine_node("job", "untrusted absence")
         self.assertEqual(self.assert_projection()[0]["state"], "parked")
-        with (patch("ucloud_sandboxes.models.utc_now", return_value=self.now + timedelta(seconds=121)),
-              patch("ucloud_sandboxes.control_plane.utc_now", return_value=self.now + timedelta(seconds=121)),
-              patch("ucloud_sandboxes.exec_routing.utc_now", return_value=self.now + timedelta(seconds=121))):
+        with (patch("sandboxes.models.utc_now", return_value=self.now + timedelta(seconds=121)),
+              patch("sandboxes.control_plane.utc_now", return_value=self.now + timedelta(seconds=121)),
+              patch("sandboxes.exec_routing.utc_now", return_value=self.now + timedelta(seconds=121))):
             self.assertEqual(self.assert_projection()[0]["state"], "unknown")
         self.routes.delete_sandbox("agent")
         self.assertEqual(self.read()["sandboxes"], [])
@@ -211,7 +211,7 @@ class FleetStatusTests(StatusProjectionContracts, unittest.TestCase):
             handler._list_sandbox_statuses(ids)
             return handler.response
 
-        with (patch("ucloud_sandboxes.control_plane.Future", ObservedFuture),
+        with (patch("sandboxes.control_plane.Future", ObservedFuture),
               ThreadPoolExecutor(max_workers=2) as pool):
             first = pool.submit(read, ("a",))
             self.assertTrue(entered.wait(3))
@@ -237,7 +237,7 @@ class PostgresFleetStatusTests(StatusProjectionContracts, unittest.TestCase):
     def make_routes(self, path):
         import psycopg
         from psycopg import sql
-        from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
         dsn = os.environ["UCLOUD_TEST_POSTGRES_DSN"]
         schema = "ucloud_routing_status_test_" + uuid4().hex
         store = PostgresRoutingStore(path, dsn=dsn, schema=schema)

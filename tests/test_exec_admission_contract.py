@@ -6,12 +6,12 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from tests import test_direct_provisioner as fixtures
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.direct_warden import DirectWardenError
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.sandbox import SandboxAdmissionClosedError
-from ucloud_sandboxes.sandbox_exec import ExecSessionManager, SandboxExecSpec
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.direct_warden import DirectWardenError
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.sandbox import SandboxAdmissionClosedError
+from sandboxes.sandbox_exec import ExecSessionManager, SandboxExecSpec
 
 
 class ExecAdmissionContractTests(TestCase):

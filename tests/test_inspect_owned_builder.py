@@ -19,10 +19,10 @@ class InstalledRuntimeTests(unittest.TestCase):
     def test_full_file_set_and_bytes_required_ignoring_only_bytecode(self):
         with TemporaryDirectory() as temporary:
             source = Path(temporary)
-            package = source / 'ucloud_sandboxes'
+            package = source / 'sandboxes'
             package.mkdir()
             (package / 'images.py').write_bytes(b'original')
-            members = {'ucloud_sandboxes/images.py': b'original', 'dist-info/METADATA': b'ignored'}
+            members = {'sandboxes/images.py': b'original', 'dist-info/METADATA': b'ignored'}
             (package / '__pycache__').mkdir()
             (package / '__pycache__' / 'images.pyc').write_bytes(b'bytecode')
             self.assertEqual(inspect.audit_package(source, members), 1)
@@ -45,7 +45,7 @@ class InstalledRuntimeTests(unittest.TestCase):
             source.mkdir()
             cwd.mkdir()
             for location in (source, cwd):
-                package = location / 'ucloud_sandboxes'
+                package = location / 'sandboxes'
                 package.mkdir()
                 (package / '__init__.py').write_text('')
                 (package / 'cli.py').write_text('')
@@ -55,9 +55,9 @@ class InstalledRuntimeTests(unittest.TestCase):
                              env={**os.environ, 'PYTHONPATH': str(source)})
                 with self.assertRaisesRegex(ValueError, 'import origin'):
                     inspect.verify_import_origin(state)
-                (cwd / 'ucloud_sandboxes' / 'cli.py').unlink()
-                (cwd / 'ucloud_sandboxes' / '__init__.py').unlink()
-                (cwd / 'ucloud_sandboxes').rmdir()
+                (cwd / 'sandboxes' / 'cli.py').unlink()
+                (cwd / 'sandboxes' / '__init__.py').unlink()
+                (cwd / 'sandboxes').rmdir()
                 self.assertEqual(inspect.verify_import_origin(state), cwd)
             finally:
                 child.terminate()
@@ -69,8 +69,8 @@ class InstalledRuntimeTests(unittest.TestCase):
             wheel = root / 'wheel'
             wheel.write_bytes(b'owned')
             source = root / 'site-packages'
-            (source / 'ucloud_sandboxes').mkdir(parents=True)
-            (source / 'ucloud_sandboxes' / 'images.py').write_bytes(b'original')
+            (source / 'sandboxes').mkdir(parents=True)
+            (source / 'sandboxes' / 'images.py').write_bytes(b'original')
             state = dict(source=source, pid=100, argv=['python', '--max-finishing-image-builds', '2'],
                          node_epoch='epoch', job_id='101')
             args = SimpleNamespace(wheel=wheel, wheel_sha256=inspect.sha(wheel),
@@ -78,7 +78,7 @@ class InstalledRuntimeTests(unittest.TestCase):
             heartbeat = dict(draining=False, admission_open=True, labels={helper.LABEL: '4'})
             with patch.object(helper, 'discover', return_value=state) as discover, \
                     patch.object(helper, 'heartbeat', return_value=heartbeat), \
-                    patch.object(helper, 'wheel_members', return_value={'ucloud_sandboxes/images.py': b'original'}), \
+                    patch.object(helper, 'wheel_members', return_value={'sandboxes/images.py': b'original'}), \
                     patch.object(inspect, 'verify_import_origin', return_value=root):
                 receipt = inspect.inspect(args, helper)
                 self.assertFalse(receipt['service_changed'])

@@ -7,13 +7,13 @@ from unittest.mock import patch
 
 from tests import test_split_memory_lifecycle as fixtures
 from tests.admission_backends import AdmissionBackendCase
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.memory_backing import MemoryBackingStore
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.resource_evidence import MemoryBackingCapacity
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.hibernation import HibernationState
+from sandboxes.memory_backing import MemoryBackingStore
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.resource_evidence import MemoryBackingCapacity
+from sandboxes.sandbox import SandboxSpec
 
 # The noded half starts ucloud-noded (tests/noded_admission.py).
 TEST_TIER = "contract"
@@ -43,7 +43,7 @@ class HybridMemoryAdmissionTests(AdmissionBackendCase, unittest.TestCase):
         f.storage.mount_path.mkdir()
         f.warden.storage = f.storage
         f.rootfs.events = f.storage.events
-        with patch("ucloud_sandboxes.memory_backing.subprocess.run",
+        with patch("sandboxes.memory_backing.subprocess.run",
                    return_value=SimpleNamespace(stdout="tmpfs rw,noswap\n")):
             f.warden.memory_backing = MemoryBackingStore(f.config.memory_root,
                 f.root / "allocations.sqlite", hard_capacity_bytes=64 << 30,

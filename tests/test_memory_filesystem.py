@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
-from ucloud_sandboxes.memory_filesystem import (
+from sandboxes.memory_filesystem import (
     _provision_locked, MemoryFilesystemError, provision_ram_filesystem,
 )
 
@@ -19,12 +19,12 @@ class RamFilesystemTests(unittest.TestCase):
         self.info = {"target": "/", "source": "/dev/root", "fstype": "ext4", "options": "rw"}
         self.commands = []
         self.addCleanup(patch.stopall)
-        patch("ucloud_sandboxes.memory_filesystem.os.geteuid", return_value=0).start()
-        patch("ucloud_sandboxes.memory_filesystem._private").start()
-        patch("ucloud_sandboxes.memory_filesystem.Path.read_text", return_value="MemTotal: 1048576 kB\n").start()
-        patch("ucloud_sandboxes.memory_filesystem._mount", side_effect=lambda _: self.info).start()
-        patch("ucloud_sandboxes.memory_filesystem.os.statvfs", return_value=SimpleNamespace(f_blocks=self.size // 4096, f_frsize=4096)).start()
-        patch("ucloud_sandboxes.memory_filesystem._run", side_effect=self.mount).start()
+        patch("sandboxes.memory_filesystem.os.geteuid", return_value=0).start()
+        patch("sandboxes.memory_filesystem._private").start()
+        patch("sandboxes.memory_filesystem.Path.read_text", return_value="MemTotal: 1048576 kB\n").start()
+        patch("sandboxes.memory_filesystem._mount", side_effect=lambda _: self.info).start()
+        patch("sandboxes.memory_filesystem.os.statvfs", return_value=SimpleNamespace(f_blocks=self.size // 4096, f_frsize=4096)).start()
+        patch("sandboxes.memory_filesystem._run", side_effect=self.mount).start()
 
     def mount(self, *command):
         self.commands.append(command)
@@ -43,9 +43,9 @@ class RamFilesystemTests(unittest.TestCase):
     def test_pause_tier_mount_is_swappable_and_sized_with_swap(self):
         swap = 2 * 1024**3
         size = (1024**3 * 95 // 100 + swap) // 4096 * 4096
-        patch("ucloud_sandboxes.memory_filesystem.Path.read_text",
+        patch("sandboxes.memory_filesystem.Path.read_text",
               return_value=f"MemTotal: 1048576 kB\nSwapTotal: {swap // 1024} kB\n").start()
-        patch("ucloud_sandboxes.memory_filesystem.os.statvfs",
+        patch("sandboxes.memory_filesystem.os.statvfs",
               return_value=SimpleNamespace(f_blocks=size // 4096, f_frsize=4096)).start()
 
         def mount(*command):
@@ -53,7 +53,7 @@ class RamFilesystemTests(unittest.TestCase):
             self.info = {"target": str(self.root), "source": "ucloud-application-memory",
                          "fstype": "tmpfs", "options": "rw,nodev,nosuid"}
 
-        patch("ucloud_sandboxes.memory_filesystem._run", side_effect=mount).start()
+        patch("sandboxes.memory_filesystem._run", side_effect=mount).start()
         record = provision_ram_filesystem(self.root, capacity_bytes=2 * 1024**3, swappable=True)
         self.assertEqual((record["capacity_bytes"], record["noswap"]), (size, False))
         self.assertNotIn("noswap", self.commands[0][4])
@@ -102,13 +102,13 @@ class MemoryFilesystemTests(unittest.TestCase):
         self.partial_format = False
         self.addCleanup(patch.stopall)
         patch(
-            "ucloud_sandboxes.memory_filesystem._mount",
+            "sandboxes.memory_filesystem._mount",
             side_effect=lambda _path: self.mount_info(),
         ).start()
         patch(
-            "ucloud_sandboxes.memory_filesystem._run", side_effect=self.run_command
+            "sandboxes.memory_filesystem._run", side_effect=self.run_command
         ).start()
-        patch("ucloud_sandboxes.memory_filesystem.XfsMemoryQuota.validate_root").start()
+        patch("sandboxes.memory_filesystem.XfsMemoryQuota.validate_root").start()
 
     def mount_info(self):
         return {

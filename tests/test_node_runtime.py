@@ -4,8 +4,8 @@ from threading import Event, Thread
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.sandbox import (
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.sandbox import (
     NodeDrainState,
     SandboxBusyError,
     SandboxConflictError,
@@ -363,7 +363,7 @@ if __name__ == "__main__":
 class RelayLifecycleFenceTests(unittest.TestCase):
     def test_wake_intent_prevents_late_park_even_when_restore_failed(self):
         from unittest.mock import Mock
-        from ucloud_sandboxes.sandbox import SandboxConflictError
+        from sandboxes.sandbox import SandboxConflictError
         seen=set()
         registry=Mock()
         def fence(sandbox,generation,request,*,record=False):
@@ -385,10 +385,10 @@ class RelayLifecycleFenceTests(unittest.TestCase):
 
 class WarmRelayParkTests(unittest.TestCase):
     def test_reply_during_grace_avoids_checkpoint_and_durable_fence_survives_new_manager(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkPolicy
-        from ucloud_sandboxes.sandbox import SandboxConflictError
-        from ucloud_sandboxes.warm_park import WarmParkDeferred
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkPolicy
+        from sandboxes.sandbox import SandboxConflictError
+        from sandboxes.warm_park import WarmParkDeferred
         seen = set()
         service = _WakeService()
         def fence(sandbox, generation, request, *, record=False):
@@ -421,12 +421,12 @@ class WarmRelayParkTests(unittest.TestCase):
 
 class LocalRelayParkTests(unittest.TestCase):
     def make_runtime(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkPolicy
         service = _WakeService()
         seen = set()
         def fence(sandbox, generation, request, *, record=False):
-            from ucloud_sandboxes.direct_registry import DirectRegistryConflictError
+            from sandboxes.direct_registry import DirectRegistryConflictError
             if generation != service.provisioner.registry._registrations[0].sandbox_generation:
                 raise DirectRegistryConflictError('generation changed')
             key = (sandbox, generation, request)
@@ -449,7 +449,7 @@ class LocalRelayParkTests(unittest.TestCase):
             task.result(timeout=2)
 
     def defer(self, manager):
-        from ucloud_sandboxes.warm_park import WarmParkDeferred
+        from sandboxes.warm_park import WarmParkDeferred
         with self.assertRaises(WarmParkDeferred) as raised:
             manager.park_with_activity_revision('agent', generation=1,
                 operation_id='park:req', relay_request_id='request')
@@ -457,7 +457,7 @@ class LocalRelayParkTests(unittest.TestCase):
         self.assertEqual(len(manager._deferred_relay_parks), 1)
 
     def test_pressure_parks_without_another_http_request_or_polling_registry(self):
-        from ucloud_sandboxes.background_io import Pressure
+        from sandboxes.background_io import Pressure
         manager, service, pressure = self.make_runtime()
         self.defer(manager)
         original = service.provisioner.registry.relay_wake_fence
@@ -472,7 +472,7 @@ class LocalRelayParkTests(unittest.TestCase):
         self.assertFalse(manager._deferred_relay_parks)
 
     def test_wake_cancels_local_park_and_replay(self):
-        from ucloud_sandboxes.background_io import Pressure
+        from sandboxes.background_io import Pressure
         manager, service, pressure = self.make_runtime()
         self.defer(manager)
         manager.wake_with_activity_revision('agent', generation=1,
@@ -483,7 +483,7 @@ class LocalRelayParkTests(unittest.TestCase):
         self.assertFalse(service.park_calls)
 
     def test_replaced_generation_cannot_be_parked(self):
-        from ucloud_sandboxes.background_io import Pressure
+        from sandboxes.background_io import Pressure
         manager, service, pressure = self.make_runtime()
         self.defer(manager)
         service.provisioner.registry._registrations[0].sandbox_generation = 2
@@ -493,7 +493,7 @@ class LocalRelayParkTests(unittest.TestCase):
         self.assertFalse(service.park_calls)
 
     def test_failed_checkpoint_keeps_intent(self):
-        from ucloud_sandboxes.background_io import Pressure
+        from sandboxes.background_io import Pressure
         manager, service, pressure = self.make_runtime()
         self.defer(manager)
         pressure[0] = Pressure(.01, 20)
@@ -512,8 +512,8 @@ class LocalRelayParkTests(unittest.TestCase):
         self.assertFalse(manager._deferred_relay_parks)
 
     def test_restarted_worker_accepts_durable_retry(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkPolicy
         manager, service, pressure = self.make_runtime()
         self.defer(manager)
         restarted = DirectNodeRuntime(service)
@@ -537,9 +537,9 @@ class LocalRelayParkTests(unittest.TestCase):
 
     def test_slow_checkpoint_does_not_block_another_selected_safe_wait(self):
         from copy import copy
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkDeferred
-        from ucloud_sandboxes.resident_memory import ResidentMemorySample
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkDeferred
+        from sandboxes.resident_memory import ResidentMemorySample
         manager, service, pressure = self.make_runtime()
         sample = ResidentMemorySample(
             current_bytes=1024**3, anonymous_bytes=1024**3, file_bytes=0,
@@ -590,8 +590,8 @@ class LocalRelayParkTests(unittest.TestCase):
 
     def test_missing_footprints_do_not_fan_out_foreground_or_background_captures(self):
         from copy import copy
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.warm_park import WarmParkDeferred
+        from sandboxes.background_io import Pressure
+        from sandboxes.warm_park import WarmParkDeferred
 
         manager, service, pressure = self.make_runtime()
         manager._relay_park_workers = 32
@@ -638,7 +638,7 @@ class LocalRelayParkTests(unittest.TestCase):
                 task.result(timeout=2)
 
     def test_stopped_local_recheck_keeps_durable_intent_without_parking(self):
-        from ucloud_sandboxes.background_io import Pressure
+        from sandboxes.background_io import Pressure
         manager, service, pressure = self.make_runtime()
         self.defer(manager)
         pressure[0] = Pressure(.01, 20)

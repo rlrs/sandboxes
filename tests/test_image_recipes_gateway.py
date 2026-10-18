@@ -7,8 +7,8 @@ from urllib import error, request
 
 from tests.test_control_plane import (ContextRecordingRuntime, _gateway_server, _running_server, _tar_gz_context,
                                       _temporary_root, build_builder_node_agent_server, build_heartbeat)
-from ucloud_sandboxes.agent import post_heartbeat_with_headers
-from ucloud_sandboxes.models import ResourceQuantity
+from sandboxes.agent import post_heartbeat_with_headers
+from sandboxes.models import ResourceQuantity
 
 TOKEN = {"Authorization": "Bearer gateway-secret"}
 
@@ -90,7 +90,7 @@ class ImageRecipeGatewayTests(unittest.TestCase):
     def test_prepared_names_and_the_index_views(self):
         from types import SimpleNamespace
         from urllib.parse import quote
-        from ucloud_sandboxes.gateway.image_roots import ImageRootsStore
+        from sandboxes.gateway.image_roots import ImageRootsStore
         digest = "sha256:" + "d" * 64
         repository = "ucloud-managed/precomputed-abc"
         name = "aweaiteam/scaleswe:beetbox_beets_pr3661"
@@ -133,7 +133,7 @@ class ImageRecipeGatewayTests(unittest.TestCase):
                 from argparse import Namespace
                 from contextlib import redirect_stdout
                 import io
-                from ucloud_sandboxes.image_index_cli import cmd_export_task_ids, cmd_summary
+                from sandboxes.image_index_cli import cmd_export_task_ids, cmd_summary
                 (root / "token").write_text("gateway-secret\n")
                 cli = dict(gateway_url=base, api_token_file=root / "token", json=False)
                 printed = io.StringIO()

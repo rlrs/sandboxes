@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / 'scripts'))
 from prepare_shared_task_image import read_flat_index, write_flat_index
 from score_shared_task_anchors import rank_indices
 from tests.test_oci_flat_delta import ROOT, archive
-from ucloud_sandboxes.oci_flat_delta import index_flat_tar
+from sandboxes.oci_flat_delta import index_flat_tar
 
 
 class SharedAnchorScoreTests(unittest.TestCase):

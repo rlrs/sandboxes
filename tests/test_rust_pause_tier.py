@@ -4,7 +4,7 @@ runtime/noded owns the pause tier with --rust-pause-tier: the agent starts none
 of its loops, fences its own ops with A shared, marks its thaws on the marker's
 flock, executes escalations and growth events for noded, publishes the demand
 paused reclaim bills and adds noded's counters to its heartbeat
-(ucloud_sandboxes/pause_handoff.py). Subprocesses play noded's locks.
+(sandboxes/pause_handoff.py). Subprocesses play noded's locks.
 """
 
 from dataclasses import fields, replace
@@ -24,16 +24,16 @@ from tests import test_direct_provisioner as fixtures
 from tests import test_vm_init as vm_init_fixtures
 from tests.test_pause_tier import PauseWardenTests, _PausingWarden
 from tests.test_rust_exec_fence import TOKEN, _UnixConnection
-from ucloud_sandboxes import local_wait, pause_handoff, pause_tier
-from ucloud_sandboxes.cli import build_parser, vm_init_options_to_dict
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.sandbox import SandboxExecAdmissionDeferredError
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.models import ResidentWaitMetrics
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.transition_admission import MemoryDemand
-from ucloud_sandboxes.vm_init import render_vm_init_script
-from ucloud_sandboxes.warm_park import WarmParkDeferred
+from sandboxes import local_wait, pause_handoff, pause_tier
+from sandboxes.cli import build_parser, vm_init_options_to_dict
+from sandboxes.config import DeploymentConfig
+from sandboxes.sandbox import SandboxExecAdmissionDeferredError
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.models import ResidentWaitMetrics
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.transition_admission import MemoryDemand
+from sandboxes.vm_init import render_vm_init_script
+from sandboxes.warm_park import WarmParkDeferred
 
 TEST_TIER = "contract"
 # noded's lock attempts, one per argument "<path>:<operation>", in order:

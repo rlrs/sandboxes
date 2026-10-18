@@ -15,12 +15,12 @@ from pathlib import Path
 import select
 import signal
 
-from ucloud_sandboxes.direct_warden import (
+from sandboxes.direct_warden import (
     DirectWardenError,
     LinuxPidfdFencer,
     LinuxPidfdHandle,
 )
-from ucloud_sandboxes.hibernation import hibernation_process_identity_matches
+from sandboxes.hibernation import hibernation_process_identity_matches
 
 # The unified syscall table gives these numbers on every Linux architecture.
 _SYS_PIDFD_SEND_SIGNAL = 424

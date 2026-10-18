@@ -8,13 +8,13 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
-from ucloud_sandboxes.control_plane import (
+from sandboxes.control_plane import (
     ControlPlaneHandler,
     ProxiedResponse,
 )
-from ucloud_sandboxes.gateway.node_rpc import _node_transport_error_response
-from ucloud_sandboxes.images import ImageRecord, ImageStore
-from ucloud_sandboxes.models import utc_now
+from sandboxes.gateway.node_rpc import _node_transport_error_response
+from sandboxes.images import ImageRecord, ImageStore
+from sandboxes.models import utc_now
 from tests.gateway_support import gateway_services
 
 
@@ -31,7 +31,7 @@ class ImagePollingTests(unittest.TestCase):
         return h
 
     def test_terminal_build_timings_survive_builder_removal_without_log_payloads(self):
-        from ucloud_sandboxes.metrics import MetricsStore
+        from sandboxes.metrics import MetricsStore
         with TemporaryDirectory() as directory:
             h = self.handler()
             path = Path(directory) / "metrics.sqlite"
@@ -101,7 +101,7 @@ class ImagePollingTests(unittest.TestCase):
             images.cached_raw_inventory.assert_not_called()
 
     def test_deleted_or_unpublished_local_image_uses_discovery(self):
-        from ucloud_sandboxes.image_inventory_cache import ImageInventorySnapshot
+        from sandboxes.image_inventory_cache import ImageInventorySnapshot
 
         with TemporaryDirectory() as directory:
             store = ImageStore(Path(directory) / "images.sqlite")

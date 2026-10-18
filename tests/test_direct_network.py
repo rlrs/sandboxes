@@ -6,7 +6,7 @@ import json
 import unittest
 import threading
 
-from ucloud_sandboxes.direct_network import (
+from sandboxes.direct_network import (
     DirectNetworkError,
     DirectNetworkManager,
     DirectNetworkTcpEgress,
@@ -34,7 +34,7 @@ class DirectNetworkManagerTests(unittest.TestCase):
             "*nat\n-A POSTROUTING -s 100.96.0.0/16 -j MASQUERADE\nCOMMIT\n"
         )
         with patch(
-            "ucloud_sandboxes.direct_network.subprocess.run",
+            "sandboxes.direct_network.subprocess.run",
             return_value=Mock(returncode=0, stdout=raw),
         ):
             snapshot = DirectNetworkManager._iptables_snapshot()
@@ -59,10 +59,10 @@ class DirectNetworkManagerTests(unittest.TestCase):
         ]
         for result in cases:
             with self.subTest(result=result), patch(
-                "ucloud_sandboxes.direct_network.subprocess.run", return_value=result
+                "sandboxes.direct_network.subprocess.run", return_value=result
             ):
                 self.assertIsNone(DirectNetworkManager._iptables_snapshot())
-        with patch("ucloud_sandboxes.direct_network.subprocess.run", side_effect=FileNotFoundError):
+        with patch("sandboxes.direct_network.subprocess.run", side_effect=FileNotFoundError):
             self.assertIsNone(DirectNetworkManager._iptables_snapshot())
 
     def test_missing_snapshot_rule_uses_original_check_and_repair(self) -> None:
@@ -71,7 +71,7 @@ class DirectNetworkManagerTests(unittest.TestCase):
             manager.runner = Mock()
             check = ("iptables", "-C", "INPUT", "-j", "DROP")
             install = ("iptables", "-I", "INPUT", "1", "-j", "DROP")
-            with patch("ucloud_sandboxes.direct_network.subprocess.run",
+            with patch("sandboxes.direct_network.subprocess.run",
                        return_value=Mock(returncode=1)) as run:
                 manager._ensure_iptables(check, install, snapshot=set())
             self.assertEqual(run.call_args.args[0], check)
@@ -88,7 +88,7 @@ class DirectNetworkManagerTests(unittest.TestCase):
                 manager._ensure_host_rules()
             all_rules = {manager._iptables_rule_key(check) for check in checks}
             with patch.object(manager, "_iptables_snapshot", side_effect=[all_rules, set()]) as snapshot, patch(
-                "ucloud_sandboxes.direct_network.subprocess.run", return_value=Mock(returncode=0)
+                "sandboxes.direct_network.subprocess.run", return_value=Mock(returncode=0)
             ) as run:
                 manager._ensure_host_rules()
                 run.assert_not_called()
@@ -196,7 +196,7 @@ class DirectNetworkManagerTests(unittest.TestCase):
                 runner=lambda command: commands.append(tuple(command)),
             )
             with patch(
-                "ucloud_sandboxes.direct_network.subprocess.run",
+                "sandboxes.direct_network.subprocess.run",
                 return_value=Mock(returncode=1),
             ):
                 manager._ensure_host_rules()
@@ -228,7 +228,7 @@ class DirectNetworkManagerTests(unittest.TestCase):
             )
             with (
                 patch(
-                    "ucloud_sandboxes.direct_network.subprocess.run",
+                    "sandboxes.direct_network.subprocess.run",
                     return_value=Mock(returncode=1),
                 ),
                 patch.object(
@@ -263,7 +263,7 @@ class DirectNetworkManagerTests(unittest.TestCase):
                 resolver=lambda _host: (_ for _ in ()).throw(OSError("DNS down")),
             )
             with patch(
-                "ucloud_sandboxes.direct_network.subprocess.run",
+                "sandboxes.direct_network.subprocess.run",
                 return_value=Mock(returncode=1),
             ):
                 reopened._ensure_host_rules()

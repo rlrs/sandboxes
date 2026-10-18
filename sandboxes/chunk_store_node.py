@@ -1360,7 +1360,7 @@ def store_init_script(options):
     from .environment_config import ChunkStoreConfig
     store = ChunkStoreConfig.from_dict(json.loads(options.chunk_store_config_json))
     node, user, work = store.store_node, options.service_user, options.work_dir.rstrip("/")
-    agent_bin, runtime = f"{work}/bin/ucloud-sandboxes", f"{work}/chunk-store-runtime"
+    agent_bin, runtime = f"{work}/bin/sandboxes", f"{work}/chunk-store-runtime"
     host, port = node.listen.rsplit(":", 1)
     probe = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::', '[::]') else host}:{port}/healthz"
     b64 = lambda text: shlex.quote(base64.b64encode(text.encode()).decode())  # noqa: E731
@@ -1470,10 +1470,10 @@ PY
 $SUDO rm -rf "$UCLOUD_RUNTIME.tmp"
 $SUDO install -d -m 0755 "$UCLOUD_RUNTIME.tmp"
 $SUDO tar --no-same-owner --no-same-permissions -xf "$UCLOUD_BUNDLE_TMP/runtime/agent/node-agent-runtime.tar" -C "$UCLOUD_RUNTIME.tmp"
-test -d "$UCLOUD_RUNTIME.tmp/site-packages/ucloud_sandboxes"
+test -d "$UCLOUD_RUNTIME.tmp/site-packages/sandboxes"
 $SUDO rm -rf "$UCLOUD_RUNTIME"
 $SUDO mv "$UCLOUD_RUNTIME.tmp" "$UCLOUD_RUNTIME"
-printf '#!/bin/sh\nexec env PYTHONPATH=%s/site-packages /usr/bin/python3 -m ucloud_sandboxes.cli "$@"\n' "$UCLOUD_RUNTIME" \
+printf '#!/bin/sh\nexec env PYTHONPATH=%s/site-packages /usr/bin/python3 -m sandboxes.cli "$@"\n' "$UCLOUD_RUNTIME" \
   | $SUDO tee "$UCLOUD_AGENT_BIN" >/dev/null
 $SUDO chmod 0755 "$UCLOUD_AGENT_BIN"
 {native}

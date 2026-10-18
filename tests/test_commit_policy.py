@@ -10,14 +10,14 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes import commit_policy
-from ucloud_sandboxes.commit_policy import (
+from sandboxes import commit_policy
+from sandboxes.commit_policy import (
     CommitBuild, CommitExport, CommitExportRequest, CommitPolicy, CommitRefused, FilterResult, filter_upper,
     staging_repository,
 )
-from ucloud_sandboxes.commit_steps import commit_build, commit_policy as policy_for, export_step, secret_digests
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.environment_prepare import MAX_REQUEST_BYTES
+from sandboxes.commit_steps import commit_build, commit_policy as policy_for, export_step, secret_digests
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.environment_prepare import MAX_REQUEST_BYTES
 
 TOKEN = "0123456789abcdef0123456789abcdef"
 DIGEST = "sha256:" + "a" * 64
@@ -230,7 +230,7 @@ class NormalizationTests(unittest.TestCase):
     def test_the_layer_is_in_the_converters_path_order(self):
         # Converting an out-of-order layer rewrites it whole first (GBs for OpenSWE commits).
         from tempfile import TemporaryDirectory
-        from ucloud_sandboxes.chunk_convert import path_ordered_layer
+        from sandboxes.chunk_convert import path_ordered_layer
         members = [ROOT, directory("./usr"), directory("./usr/lib"), directory("./usr/lib/python3.12"),
                    entry("./usr/lib/python3.12/x.py", b"x"), directory("./usr/lib/python3"),
                    entry("./usr/lib/python3/y.py", b"y"), entry("./usr/lib/python3.12.conf", b"c"),

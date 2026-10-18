@@ -7,10 +7,10 @@ from tempfile import TemporaryDirectory, TemporaryFile
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.direct_service import DirectProcessRunner, DirectSandboxService
-from ucloud_sandboxes.memory_backing import MemoryBackingBusyError, MemoryBackingStore
-from ucloud_sandboxes.sandbox import SandboxDeleteBusyError, SandboxFileTooLargeError
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.direct_service import DirectProcessRunner, DirectSandboxService
+from sandboxes.memory_backing import MemoryBackingBusyError, MemoryBackingStore
+from sandboxes.sandbox import SandboxDeleteBusyError, SandboxFileTooLargeError
 from tests.test_split_memory_lifecycle import FakeQuota
 
 TEST_TIER = "contract"
@@ -137,7 +137,7 @@ class DirectDeleteDrainTests(unittest.TestCase):
     def test_delete_deadline_raises_retryable_error_and_retry_completes(self) -> None:
         store, registry = self.provisioner.store, self.provisioner.registry
         with store.read_lease(self.reference, sandbox_id="s", sandbox_generation=1):
-            with patch("ucloud_sandboxes.direct_service._DELETE_DRAIN_DEADLINE_SECONDS", 0.3):
+            with patch("sandboxes.direct_service._DELETE_DRAIN_DEADLINE_SECONDS", 0.3):
                 with self.assertRaises(SandboxDeleteBusyError) as raised:
                     self.service.delete("s", generation=1)
         self.assertIsInstance(raised.exception.__cause__, MemoryBackingBusyError)

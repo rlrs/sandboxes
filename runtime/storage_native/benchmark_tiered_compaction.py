@@ -12,8 +12,8 @@ import time
 
 from benchmark_delta_compaction import apply_layer, write_layer
 from qualify_volume import Qualifier
-from ucloud_sandboxes.storage_native_publication import snapshot_compaction_start
-from ucloud_sandboxes.storage_native_registry import consume_export_stream
+from sandboxes.storage_native_publication import snapshot_compaction_start
+from sandboxes.storage_native_registry import consume_export_stream
 
 MIB = 1024**2
 

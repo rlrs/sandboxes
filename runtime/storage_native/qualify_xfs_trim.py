@@ -16,7 +16,7 @@ import time
 import threading
 
 from qualify_volume import Qualifier
-from ucloud_sandboxes.storage_native_registry import consume_export_stream
+from sandboxes.storage_native_registry import consume_export_stream
 
 MIB = 1024**2
 

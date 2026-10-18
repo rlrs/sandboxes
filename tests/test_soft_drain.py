@@ -7,17 +7,17 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 
-from ucloud_sandboxes import cli, control_plane
-from ucloud_sandboxes.autoscaler_state import AutoscalerStateStore
-from ucloud_sandboxes.capabilities import (
+from sandboxes import cli, control_plane
+from sandboxes.autoscaler_state import AutoscalerStateStore
+from sandboxes.capabilities import (
     RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX,
     RUNTIME_CPU_CAPABILITY_PREFIX,
 )
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.control_state import SOFT_DRAIN, ControlStateStore
-from ucloud_sandboxes.deployment import package_version
-from ucloud_sandboxes.gateway import placement as placement_rules
-from ucloud_sandboxes.models import (
+from sandboxes.config import DeploymentConfig
+from sandboxes.control_state import SOFT_DRAIN, ControlStateStore
+from sandboxes.deployment import package_version
+from sandboxes.gateway import placement as placement_rules
+from sandboxes.models import (
     LiveScaleSignals,
     EPOCH_RETIREMENTS_LABEL,
     NodeHeartbeat,
@@ -29,8 +29,8 @@ from ucloud_sandboxes.models import (
     is_soft_drained,
     utc_now,
 )
-from ucloud_sandboxes.policy import evaluate_scale, plan_soft_drain
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.policy import evaluate_scale, plan_soft_drain
+from sandboxes.routing import RoutingStore
 from tests.test_cli import (
     autoscaler_args, owned_heartbeat, owned_node_job, reconcile, save_heartbeats,
     temporary_root, ucloud_config, write_jobs,

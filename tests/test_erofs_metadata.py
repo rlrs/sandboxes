@@ -25,8 +25,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder, WHOLE_IMAGE_EXCLUDED
-from ucloud_sandboxes.erofs_metadata import UnsupportedErofs, metadata_ranges, symlink_targets, walk
+from sandboxes.environment_builder import FreshEnvironmentBuilder, WHOLE_IMAGE_EXCLUDED
+from sandboxes.erofs_metadata import UnsupportedErofs, metadata_ranges, symlink_targets, walk
 
 MKFS = shutil.which("mkfs.erofs")
 DUMP = shutil.which("dump.erofs")

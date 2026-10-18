@@ -5,7 +5,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.direct_warden import SubprocessCommandRunner
+from sandboxes.direct_warden import SubprocessCommandRunner
 
 TEST_TIER = "contract"
 
@@ -29,7 +29,7 @@ class SubprocessCommandRunnerTests(unittest.TestCase):
             children.append(process)
             return process
 
-        with patch("ucloud_sandboxes.direct_warden.subprocess.Popen", side_effect=launch):
+        with patch("sandboxes.direct_warden.subprocess.Popen", side_effect=launch):
             with self.assertRaises(subprocess.TimeoutExpired):
                 SubprocessCommandRunner().run(
                     (sys.executable, "-c", "import time; time.sleep(30)"), timeout=0.05,

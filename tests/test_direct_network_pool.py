@@ -15,7 +15,7 @@ import subprocess
 import sys
 import unittest
 
-from ucloud_sandboxes.direct_network import DirectNetworkError, DirectNetworkManager
+from sandboxes.direct_network import DirectNetworkError, DirectNetworkManager
 
 
 class FakeKernel:
@@ -282,7 +282,7 @@ class NetworkPoolTests(unittest.TestCase):
             synced.append(stat.S_ISDIR(os.fstat(descriptor).st_mode))
             fsync(descriptor)
 
-        with patch("ucloud_sandboxes.direct_network.os.fsync", recorded):
+        with patch("sandboxes.direct_network.os.fsync", recorded):
             lease = manager.ensure("a", 1)
             self.assertEqual(synced, [False, True])
             durable = (self.root / "network-slots.json").read_bytes()
@@ -335,7 +335,7 @@ class NetworkPoolTests(unittest.TestCase):
         self.kernel.run(("ip", "netns", "add", manager._lease("stale", 1, 1).namespace))
         stale = manager.ensure("stale", 1)
         with patch.object(manager, "_attach_namespace", side_effect=OSError("bind refused")), \
-                self.assertLogs("ucloud_sandboxes.direct_network", "WARNING"):
+                self.assertLogs("sandboxes.direct_network", "WARNING"):
             refused = manager.ensure("refused", 1)
 
         self.assertEqual((stale.slot, refused.slot), (1, 2))
@@ -412,7 +412,7 @@ class NetworkPoolTests(unittest.TestCase):
         owner, other = self.manager(2), self.manager(2)
         owner.start_pool()
         wait_for(lambda: len(owner._pool_ready) == 2)
-        with self.assertLogs("ucloud_sandboxes.direct_network", "WARNING"):
+        with self.assertLogs("sandboxes.direct_network", "WARNING"):
             other.start_pool()
             other._pool_thread.join(5)
         self.assertEqual(len(other._pool_ready), 0)
@@ -424,8 +424,8 @@ class NetworkPoolTests(unittest.TestCase):
         self.kernel.fail_namespace = "ucloud-pool-1"
         manager = self.manager(1)
         attempt = ("ip", "netns", "add", "ucloud-pool-1")
-        with patch("ucloud_sandboxes.direct_network._POOL_RETRY_SECONDS", 0.01), \
-                self.assertLogs("ucloud_sandboxes.direct_network", "ERROR"):
+        with patch("sandboxes.direct_network._POOL_RETRY_SECONDS", 0.01), \
+                self.assertLogs("sandboxes.direct_network", "ERROR"):
             manager.start_pool()
             wait_for(lambda: [c for _n, c in self.kernel.commands].count(attempt) >= 2)
             self.assertEqual(len(manager._pool_ready), 0)

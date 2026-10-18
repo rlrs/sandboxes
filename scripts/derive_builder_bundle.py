@@ -22,7 +22,7 @@ from scripts.repack_node_bundle import (
     sha256_file,
     validate_source_bundle,
 )
-from ucloud_sandboxes.vm_init import (
+from sandboxes.vm_init import (
     BUILDER_RUNTIME_PACKAGES,
     SANDBOX_RUNTIME_PACKAGES,
 )

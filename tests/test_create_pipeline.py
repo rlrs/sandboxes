@@ -17,12 +17,12 @@ from unittest.mock import patch
 
 from tests.test_direct_network_pool import FakeKernel, wait_for
 from tests.test_direct_provisioner import FakeImageStore, FakeOverlays, FakeStorage, FakeWarden
-from ucloud_sandboxes.direct_network import DirectNetworkManager
-from ucloud_sandboxes.direct_oci import DirectOciConfigBuilder
-from ucloud_sandboxes.direct_provisioner import DirectSandboxProvisioner
-from ucloud_sandboxes.direct_registry import DirectRegistryConflictError, DirectSandboxRegistry
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.sandbox import SandboxSecuritySpec, SandboxSpec
+from sandboxes.direct_network import DirectNetworkManager
+from sandboxes.direct_oci import DirectOciConfigBuilder
+from sandboxes.direct_provisioner import DirectSandboxProvisioner
+from sandboxes.direct_registry import DirectRegistryConflictError, DirectSandboxRegistry
+from sandboxes.hibernation import HibernationState
+from sandboxes.sandbox import SandboxSecuritySpec, SandboxSpec
 
 
 class Crash(BaseException):

@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 import sqlite3
 
-from ucloud_sandboxes.image_foundations import require_pinned_reference
+from sandboxes.image_foundations import require_pinned_reference
 
 
 def select_images(images, limit, per_family, *, balanced=False):

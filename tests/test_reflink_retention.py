@@ -13,15 +13,15 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     DirectSandboxRegistry, DirectRegistryCapacityUnavailable, DirectRegistryConflictError,
 )
-from ucloud_sandboxes.direct_runtime import build_direct_runtime_service
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.direct_warden import DirectRunscWarden, DirectWardenError
-from ucloud_sandboxes.hibernation import HibernationState
-from ucloud_sandboxes.memory_backing import MemoryBackingStore, MemoryBackingError
-from ucloud_sandboxes.sandbox import SandboxSpec
+from sandboxes.direct_runtime import build_direct_runtime_service
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.direct_warden import DirectRunscWarden, DirectWardenError
+from sandboxes.hibernation import HibernationState
+from sandboxes.memory_backing import MemoryBackingStore, MemoryBackingError
+from sandboxes.sandbox import SandboxSpec
 from tests import test_direct_warden as fixtures
 from tests import test_split_memory_lifecycle as split_fixtures
 
@@ -210,7 +210,7 @@ class ReflinkRetentionTests(unittest.TestCase):
             return unlink(name, dir_fd=dir_fd)
 
         self.quota.before_assignment = lambda: None
-        with ThreadPoolExecutor(2) as threads, patch('ucloud_sandboxes.hibernation.os.unlink', side_effect=slow_unlink):
+        with ThreadPoolExecutor(2) as threads, patch('sandboxes.hibernation.os.unlink', side_effect=slow_unlink):
             cleanup = threads.submit(self.warden.reconcile_retired_memory_capacity)
             try:
                 self.assertTrue(entered.wait(2))
@@ -266,7 +266,7 @@ class ReflinkRetentionTests(unittest.TestCase):
                 raise OSError('injected retirement crash after unlink')
             return result
 
-        with patch('ucloud_sandboxes.hibernation.os.unlink', side_effect=crash):
+        with patch('sandboxes.hibernation.os.unlink', side_effect=crash):
             with self.assertRaisesRegex(OSError, 'retirement crash'):
                 self.warden.reconcile_retired_memory_capacity()
         self.assertFalse(self.source.exists())
@@ -367,10 +367,10 @@ class ReflinkRetentionTests(unittest.TestCase):
         self.warden.delete(self.sandbox)
         self.warden.memory_backing.delete(self.sandbox.memory, sandbox_id=self.spec.id, sandbox_generation=1)
         self.assertGreater(self.registry.reflink_overlap_bytes(), 0)
-        with (patch('ucloud_sandboxes.direct_runtime.installed_sidecar_fingerprints', return_value={}),
-              patch('ucloud_sandboxes.direct_runtime._cpu_features_sha256', return_value='a'*64),
-              patch('ucloud_sandboxes.direct_runtime.StorageNativeNodeClient.wait_ready', return_value={'metrics': {}}),
-              patch('ucloud_sandboxes.direct_runtime.DirectRunscWarden') as constructor):
+        with (patch('sandboxes.direct_runtime.installed_sidecar_fingerprints', return_value={}),
+              patch('sandboxes.direct_runtime._cpu_features_sha256', return_value='a'*64),
+              patch('sandboxes.direct_runtime.StorageNativeNodeClient.wait_ready', return_value={'metrics': {}}),
+              patch('sandboxes.direct_runtime.DirectRunscWarden') as constructor):
             with self.assertRaisesRegex(ValueError, 'overlap capacity drains'):
                 build_direct_runtime_service(state_root=self.root, volume_mount_root=self.config.memory_root,
                     runsc=self.config.runsc, runsc_commit='a'*40, init_binary=self.root/'init',

@@ -69,8 +69,8 @@ def main():
     p.add_argument('--scale-campaign-root', type=Path,
                    help='resume existing ScaleSWE seeds last, within a cumulative 192 GiB cap')
     args = p.parse_args()
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.registry_disk import registry_disk_usage
     c = DeploymentConfig.from_file(args.config)
     root = args.root
     with (root / 'expansion.lock').open('a') as lock:

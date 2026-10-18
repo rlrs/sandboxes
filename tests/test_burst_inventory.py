@@ -9,10 +9,10 @@ from unittest.mock import Mock, patch
 
 from tests import test_control_plane as gateway_fixtures
 from tests import test_direct_provisioner as direct_fixtures
-from ucloud_sandboxes.control_plane import ControlPlaneHandler
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.node_agent import NodeAgentHandler
-from ucloud_sandboxes.sandbox import SandboxRestoreBusyError
+from sandboxes.control_plane import ControlPlaneHandler
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.node_agent import NodeAgentHandler
+from sandboxes.sandbox import SandboxRestoreBusyError
 
 
 class BurstInventoryTests(unittest.TestCase):

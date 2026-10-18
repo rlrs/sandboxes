@@ -146,16 +146,16 @@ def main():
     from prepare_image_pool import admission, GIB, rebuild_generation, recorded_build_failed
     sys.path.insert(0, str(args.sdk_wheel))
     import ucloud_sandboxes_sdk as sdk
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.gateway.registry_refs import _persist_registry_image_protection
-    from ucloud_sandboxes.environment_artifact import load_image_environment
-    from ucloud_sandboxes.environment_config import environment_registry_from_deployment
-    from ucloud_sandboxes.environment_dependencies import EnvironmentDependencyResolver
-    from ucloud_sandboxes.host_locks import HOST_LOCKS
-    from ucloud_sandboxes.images import ImageRecord, ImageStore
-    from ucloud_sandboxes.managed_registry import RegistryUsageStore, registry_repository_tag_from_image_ref
-    from ucloud_sandboxes.models import utc_now
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.gateway.registry_refs import _persist_registry_image_protection
+    from sandboxes.environment_artifact import load_image_environment
+    from sandboxes.environment_config import environment_registry_from_deployment
+    from sandboxes.environment_dependencies import EnvironmentDependencyResolver
+    from sandboxes.host_locks import HOST_LOCKS
+    from sandboxes.images import ImageRecord, ImageStore
+    from sandboxes.managed_registry import RegistryUsageStore, registry_repository_tag_from_image_ref
+    from sandboxes.models import utc_now
+    from sandboxes.registry_disk import registry_disk_usage
 
     config = DeploymentConfig.from_dict(json.loads(args.config.read_text()))
     HOST_LOCKS.configure(config.control_state_file().parent / "gateway-locks")
@@ -338,7 +338,7 @@ def main():
                      "retention_owner": owner, "validated": True, "validation": validation,
                      "smoke_seconds": time.monotonic() - started}
             image_store.upsert_if_changed(record)
-            from ucloud_sandboxes.prepared_images import PreparedImageCatalog, catalog_path as prepared_catalog_path
+            from sandboxes.prepared_images import PreparedImageCatalog, catalog_path as prepared_catalog_path
             PreparedImageCatalog(prepared_catalog_path(config.image_file())).register_foundation(ready)
             print(json.dumps({"image": image_id, "status": "ready", "tasks": item["tasks"],
                               "erofs_bytes": sum(c.image_size for c in components)}), flush=True)

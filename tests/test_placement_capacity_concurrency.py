@@ -9,9 +9,9 @@ import unittest
 from uuid import uuid4
 
 from tests.test_routing import sandbox_route
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import SandboxRouteAllocation, SandboxRouteConflictError
-from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import SandboxRouteAllocation, SandboxRouteConflictError
+from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
 TEST_TIER = "contract"
 

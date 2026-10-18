@@ -7,9 +7,9 @@ import time
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
-from ucloud_sandboxes.routing import RoutingStore, SandboxRoute, SandboxRouteAllocation, ExecRoute, SandboxRouteConflictError
-from ucloud_sandboxes.routing_writer import RoutingWriteProcess
+from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
+from sandboxes.routing import RoutingStore, SandboxRoute, SandboxRouteAllocation, ExecRoute, SandboxRouteConflictError
+from sandboxes.routing_writer import RoutingWriteProcess
 
 TEST_TIER = "contract"
 

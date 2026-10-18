@@ -7,14 +7,14 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_control_plane import _portable_snapshot, _sandbox_route
-from ucloud_sandboxes.lifecycle_commit import (
+from sandboxes.lifecycle_commit import (
     InvalidLifecycleReceipt,
     LifecycleCommitter,
     LifecycleRouteChanged,
     SnapshotReferences,
 )
-from ucloud_sandboxes.models import NodeHeartbeat, utc_now
-from ucloud_sandboxes.routing import RoutingStore
+from sandboxes.models import NodeHeartbeat, utc_now
+from sandboxes.routing import RoutingStore
 
 TEST_TIER = "contract"
 

@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_control_plane import _sandbox_route, build_heartbeat
-from ucloud_sandboxes.control_plane import _route_only_sandbox_record
-from ucloud_sandboxes.fleet_reader import FleetResponseRenderer
-from ucloud_sandboxes.models import utc_now
-from ucloud_sandboxes.routing import _sandbox_route_from_row
+from sandboxes.control_plane import _route_only_sandbox_record
+from sandboxes.fleet_reader import FleetResponseRenderer
+from sandboxes.models import utc_now
+from sandboxes.routing import _sandbox_route_from_row
 
 
 def rows(routes):
@@ -47,9 +47,9 @@ class FleetRenderCacheTests(unittest.TestCase):
         heartbeat = self.heartbeat if heartbeat is None else heartbeat
         nodes = {heartbeat.node_id: heartbeat}
         with (
-            patch("ucloud_sandboxes.models.utc_now", return_value=self.now),
-            patch("ucloud_sandboxes.control_plane.utc_now", return_value=self.now),
-            patch("ucloud_sandboxes.exec_routing.utc_now", return_value=self.now),
+            patch("sandboxes.models.utc_now", return_value=self.now),
+            patch("sandboxes.control_plane.utc_now", return_value=self.now),
+            patch("sandboxes.exec_routing.utc_now", return_value=self.now),
         ):
             result = renderer.render(rows(routes), nodes, 120)
             expected = [
@@ -65,7 +65,7 @@ class FleetRenderCacheTests(unittest.TestCase):
         renderer = FleetResponseRenderer()
         self.render(renderer)
         with patch(
-            "ucloud_sandboxes.routing._sandbox_route_from_row",
+            "sandboxes.routing._sandbox_route_from_row",
             wraps=_sandbox_route_from_row,
         ) as encode:
             self.render(renderer)

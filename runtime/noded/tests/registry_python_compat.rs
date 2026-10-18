@@ -1,5 +1,5 @@
 //! Cross-language compatibility of the node registry: Rust and the
-//! repository's Python (`ucloud_sandboxes.direct_registry`, the oracle) write,
+//! repository's Python (`sandboxes.direct_registry`, the oracle) write,
 //! read and take over the same `direct-registry.sqlite`, and must agree byte
 //! for byte on every record. Skipped when the repository's virtualenv is
 //! absent; `UCLOUD_SANDBOXES_PYTHON` overrides the interpreter.
@@ -54,9 +54,9 @@ fn run_python(interpreter: &Path, script: &str, input: Value) -> Value {
 const PRELUDE: &str = r#"
 import json, sys
 from pathlib import Path
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry, DirectRegistryError, DiskClaim
-from ucloud_sandboxes.direct_warden import DirectSandbox
-from ucloud_sandboxes.sandbox import NodeDrainState, SandboxSpec, sandbox_spec_fingerprint
+from sandboxes.direct_registry import DirectSandboxRegistry, DirectRegistryError, DiskClaim
+from sandboxes.direct_warden import DirectSandbox
+from sandboxes.sandbox import NodeDrainState, SandboxSpec, sandbox_spec_fingerprint
 
 args = json.loads(sys.stdin.read())
 

@@ -5,8 +5,8 @@ from threading import Event, Thread
 from time import monotonic, sleep
 import unittest
 
-from ucloud_sandboxes.direct_warden import CommandResult, DirectWardenError
-from ucloud_sandboxes.image_rootfs import (
+from sandboxes.direct_warden import CommandResult, DirectWardenError
+from sandboxes.image_rootfs import (
     DockerOverlay2RootfsStore,
     OverlayRootfsManager,
 )

@@ -55,15 +55,15 @@ from urllib.parse import quote, urlparse
 import uuid
 import weakref
 
-import ucloud_sandboxes
-from ucloud_sandboxes import routing
-from ucloud_sandboxes.agent import fetch_node_agent_heartbeat, post_heartbeat_with_headers
-from ucloud_sandboxes.control_plane import build_server
-from ucloud_sandboxes.direct_registry import DirectSandboxRegistry
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.exec_session_routes import EXEC_SESSION_PREFIX_HEADER
-from ucloud_sandboxes.models import NodeRuntimeMetrics
-from ucloud_sandboxes.storage_native_daemon import (
+import sandboxes
+from sandboxes import routing
+from sandboxes.agent import fetch_node_agent_heartbeat, post_heartbeat_with_headers
+from sandboxes.control_plane import build_server
+from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.exec_session_routes import EXEC_SESSION_PREFIX_HEADER
+from sandboxes.models import NodeRuntimeMetrics
+from sandboxes.storage_native_daemon import (
     StorageNativeNodeClient,
     StorageNativeNodeConfig,
     StorageNativeNodeServer,
@@ -218,7 +218,7 @@ def _fork_node_agent(request: dict) -> int:
         if _ZYGOTE is None or _ZYGOTE.poll() is not None:
             environment = dict(os.environ)
             environment["PYTHONPATH"] = os.pathsep.join(
-                item for item in (str(Path(ucloud_sandboxes.__file__).parent.parent),
+                item for item in (str(Path(sandboxes.__file__).parent.parent),
                                   environment.get("PYTHONPATH", "")) if item)
             _ZYGOTE = subprocess.Popen(
                 # The venv interpreter: PYTHON is its realpath, without site-packages.
@@ -838,7 +838,7 @@ class LocalFleet:
         self.heartbeat()
 
     def _prepare_postgres_routing(self, routing_file: Path) -> None:
-        from ucloud_sandboxes.shared_control.routing_repository import PostgresRoutingStore
+        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
         schema = "ucloud_routing_fleet_" + uuid.uuid4().hex
         store = PostgresRoutingStore(routing_file, dsn=POSTGRES_DSN, schema=schema)
@@ -910,9 +910,9 @@ class LocalFleet:
         job, last interrupted at ``interrupted_at``, and the probe is real.
         Returns the resulting job, heartbeat and the routes it retired.
         """
-        from ucloud_sandboxes import cli
-        from ucloud_sandboxes.deployment import DEPLOYMENT_LABEL, NODE_LABEL
-        from ucloud_sandboxes.models import InstancePhase, ProviderInstance, ScalePolicy
+        from sandboxes import cli
+        from sandboxes.deployment import DEPLOYMENT_LABEL, NODE_LABEL
+        from sandboxes.models import InstancePhase, ProviderInstance, ScalePolicy
 
         handler = self.gateway.RequestHandlerClass
         store, routes = handler.services.fleet.store, handler.routing_store

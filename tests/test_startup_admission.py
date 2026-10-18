@@ -14,9 +14,9 @@ from unittest.mock import patch
 from tests import test_control_plane as gateway_fixtures
 from tests import test_direct_provisioner as direct_fixtures
 from tests.admission_backends import AdmissionBackendCase
-from ucloud_sandboxes.transition_admission import TransitionCost, TransitionKind
-from ucloud_sandboxes.admission import FairCapacity
-from ucloud_sandboxes.direct_service import DirectSandboxService
+from sandboxes.transition_admission import TransitionCost, TransitionKind
+from sandboxes.admission import FairCapacity
+from sandboxes.direct_service import DirectSandboxService
 
 TEST_TIER = "contract"
 
@@ -103,7 +103,7 @@ class StartupAdmissionTests(AdmissionBackendCase, unittest.TestCase):
                 self.assertEqual(future.result(3).state, "running")
 
     def test_busy_cpu_creates_keep_bounded_queue_instead_of_rejecting_node(self):
-        from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+        from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
 
         with TemporaryDirectory() as directory:
             fixture = direct_fixtures.DirectProvisionerTests()
@@ -147,7 +147,7 @@ class StartupAdmissionTests(AdmissionBackendCase, unittest.TestCase):
             self.assertEqual(self.slots_available(service, "startup"), 1)
 
     def test_256_requests_queue_and_release_permits_on_failure(self):
-        from ucloud_sandboxes.models import ResourceQuantity
+        from sandboxes.models import ResourceQuantity
 
         with TemporaryDirectory() as directory:
             fixture = direct_fixtures.DirectProvisionerTests()
@@ -266,9 +266,9 @@ class NodedStartupAdmissionTests(StartupAdmissionTests):
 
 class WarmDemandTests(unittest.TestCase):
     def test_queued_creates_account_actual_memory_without_evicting_warm_work(self):
-        from ucloud_sandboxes.background_io import Pressure
-        from ucloud_sandboxes.direct_service import SandboxStartupBusyError
-        from ucloud_sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
+        from sandboxes.background_io import Pressure
+        from sandboxes.direct_service import SandboxStartupBusyError
+        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
 
         with TemporaryDirectory() as directory:
             fixture = direct_fixtures.DirectProvisionerTests()
@@ -302,7 +302,7 @@ class WarmDemandTests(unittest.TestCase):
                 service._startup_slots.release()
 
     def test_startup_demand_deduplicates_active_lease_and_cleans_failures(self):
-        from ucloud_sandboxes.models import ResourceQuantity
+        from sandboxes.models import ResourceQuantity
 
         with TemporaryDirectory() as directory:
             provisioner, *_ = direct_fixtures.DirectProvisionerTests().make(Path(directory).resolve())
@@ -322,8 +322,8 @@ class WarmDemandTests(unittest.TestCase):
             self.assertEqual(service.warm_park_demand().physical_bytes, 1 << 63)
 
     def test_queued_restore_exposes_demand_and_failure_cleans_it_up(self):
-        from ucloud_sandboxes.models import ResourceQuantity
-        from ucloud_sandboxes.direct_service import SandboxRestoreBusyError
+        from sandboxes.models import ResourceQuantity
+        from sandboxes.direct_service import SandboxRestoreBusyError
         with TemporaryDirectory() as directory:
             provisioner, *_ = direct_fixtures.DirectProvisionerTests().make(Path(directory).resolve())
             service = DirectSandboxService(provisioner, max_concurrent_restores=1)
@@ -351,7 +351,7 @@ class WarmDemandTests(unittest.TestCase):
                 service._restore_slots.release()
 
     def test_restore_demand_and_active_reservation_are_not_double_counted(self):
-        from ucloud_sandboxes.models import ResourceQuantity
+        from sandboxes.models import ResourceQuantity
         with TemporaryDirectory() as directory:
             provisioner, *_ = direct_fixtures.DirectProvisionerTests().make(Path(directory).resolve())
             service = DirectSandboxService(provisioner)
@@ -367,7 +367,7 @@ class WarmDemandTests(unittest.TestCase):
 class ResidentDemandForecastTests(unittest.TestCase):
     def test_burst_prices_next_restore_plus_already_admitted_work(self):
         from contextlib import ExitStack
-        from ucloud_sandboxes.models import ResourceQuantity
+        from sandboxes.models import ResourceQuantity
 
         with TemporaryDirectory() as directory:
             provisioner, *_ = direct_fixtures.DirectProvisionerTests().make(Path(directory).resolve())

@@ -9,8 +9,8 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from tests.legacy_relay_fixture import write_legacy_journal
-from ucloud_sandboxes import model_relay
-from ucloud_sandboxes.shared_control import legacy_relay
+from sandboxes import model_relay
+from sandboxes.shared_control import legacy_relay
 
 TEST_TIER = "contract"
 
@@ -39,10 +39,10 @@ class RelayRetirementTests(TestCase):
     def test_cli_rejects_old_configuration_before_reading_credentials_or_opening_routes(
         self,
     ):
-        from ucloud_sandboxes.cli import cmd_serve_model_relay
+        from sandboxes.cli import cmd_serve_model_relay
 
         with patch(
-            "ucloud_sandboxes.cli.load_config",
+            "sandboxes.cli.load_config",
             return_value=SimpleNamespace(relay_postgres=None),
         ):
             with self.assertRaisesRegex(ValueError, "configure relay_postgres"):

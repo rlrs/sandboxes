@@ -13,11 +13,11 @@ from unittest.mock import Mock, patch
 from tests import test_direct_provisioner as direct_fixtures
 from tests import test_vm_init as vm_fixtures
 from tests.support import make_dirs
-from ucloud_sandboxes import cli
-from ucloud_sandboxes.config import DeploymentConfig
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.vm_init import render_vm_init_script
+from sandboxes import cli
+from sandboxes.config import DeploymentConfig
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.vm_init import render_vm_init_script
 
 TEST_TIER = "contract"
 
@@ -115,7 +115,7 @@ class SplitMemoryWiringTests(unittest.TestCase):
         self.assertIn(" --memory-backing-hard-capacity-bytes ${UCLOUD_STORAGE_NATIVE_HARD_CAPACITY_BYTES}", split)
         self.assertIn(" --checkpoint-registry-url ${UCLOUD_STORAGE_NATIVE_REGISTRY_URL}", split)
         self.assertIn("${UCLOUD_STORAGE_NATIVE_REPOSITORY}", split)
-        self.assertIn("-m ucloud_sandboxes.memory_filesystem", split)
+        self.assertIn("-m sandboxes.memory_filesystem", split)
         self.assertIn("ExecStartPre=/usr/bin/env PYTHONPATH=", split)
         self.assertNotIn("ExecStartPre=/usr/bin/env PYTHONPATH=", legacy)
         self.assertIn("--runtime-root ${UCLOUD_STORAGE_NATIVE_MOUNT_ROOT}/.runtime", split)
@@ -142,8 +142,8 @@ class SplitMemoryWiringTests(unittest.TestCase):
         ])
         server = Mock(server_address=("127.0.0.1", 12345))
         service = Mock()
-        with patch("ucloud_sandboxes.direct_runtime.build_direct_runtime_service", return_value=service) as build, \
-             patch("ucloud_sandboxes.node_agent.build_direct_node_agent_server", return_value=server), \
+        with patch("sandboxes.direct_runtime.build_direct_runtime_service", return_value=service) as build, \
+             patch("sandboxes.node_agent.build_direct_node_agent_server", return_value=server), \
              patch.object(cli, "read_required_token_file", return_value="secret"), \
              patch.object(cli, "telemetry_from_args", return_value=Mock()), \
              redirect_stdout(StringIO()):
@@ -158,8 +158,8 @@ class SplitMemoryWiringTests(unittest.TestCase):
 
     def test_imported_split_workspace_discards_only_inactive_overlay_scratch(self):
         from tests.test_image_rootfs import Overlay2Runner, image_store
-        from ucloud_sandboxes.image_rootfs import OverlayRootfsManager
-        from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
+        from sandboxes.image_rootfs import OverlayRootfsManager
+        from sandboxes.checkpoint_components import MemoryBackingRef
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             runner = Overlay2Runner(root / "docker")

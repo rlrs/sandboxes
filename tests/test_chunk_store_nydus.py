@@ -10,10 +10,10 @@ import tarfile
 import unittest
 
 from tests.chunk_store_support import NYDUS, REPOSITORY, ChunkStoreFixture, sample_images
-from ucloud_sandboxes.chunk_convert import compare_trees, expected_tree, unpack_environment, verify_regeneration
-from ucloud_sandboxes.environment_artifact import load_environment
-from ucloud_sandboxes.environment_cache import VerifiedEnvironmentCache
-from ucloud_sandboxes.environment_rafs import load_rafs_image
+from sandboxes.chunk_convert import compare_trees, expected_tree, unpack_environment, verify_regeneration
+from sandboxes.environment_artifact import load_environment
+from sandboxes.environment_cache import VerifiedEnvironmentCache
+from sandboxes.environment_rafs import load_rafs_image
 
 TEST_TIER = "contract"
 BINARY = NYDUS or shutil.which("nydus-image") or ""

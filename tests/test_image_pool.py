@@ -352,9 +352,9 @@ class ImagePoolTests(unittest.TestCase):
             self.assertEqual(planner.rewrite_bases({"dockerfile": text}, mapping), {"dockerfile": text})
 
     def test_import_alias_is_immediately_resolvable_and_never_overwrites(self):
-        from ucloud_sandboxes.images import ImageRecord, ImageStore
-        from ucloud_sandboxes.image_import import import_image_id
-        from ucloud_sandboxes.models import utc_now
+        from sandboxes.images import ImageRecord, ImageStore
+        from sandboxes.image_import import import_image_id
+        from sandboxes.models import utc_now
         with tempfile.TemporaryDirectory() as directory:
             store = ImageStore(Path(directory) / "images.sqlite")
             record = ImageRecord(id="prepared", tag="registry/repo:tag", source="build:context", state="available",

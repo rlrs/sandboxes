@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ucloud-sandboxes"
+name = "sandboxes"
 version = "0.9.75"
 description = "Provider-aware gVisor sandbox control plane for Linux compute nodes"
 readme = "README.md"
@@ -26,10 +26,10 @@ exclude-newer = "2026-08-07T10:10:16.296145Z"
 postgres = ["psycopg[binary,pool]>=3.2,<4"]
 
 [project.scripts]
-ucloud-sandboxes = "ucloud_sandboxes.cli:main"
-ucloud-sandboxes-storage = "ucloud_sandboxes.storage_native_service:main"
-ucloud-sandboxes-snapshot-gc = "ucloud_sandboxes.storage_native_s3_gc:main"
-ucloud-sandboxes-registry-migrate = "ucloud_sandboxes.registry_storage_migration:main"
+sandboxes = "sandboxes.cli:main"
+sandboxes-storage = "sandboxes.storage_native_service:main"
+sandboxes-snapshot-gc = "sandboxes.storage_native_s3_gc:main"
+sandboxes-registry-migrate = "sandboxes.registry_storage_migration:main"
 
 [dependency-groups]
 dev = [
@@ -38,7 +38,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["ucloud_sandboxes"]
+packages = ["sandboxes"]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/ucloud-sandboxes-sdk"]

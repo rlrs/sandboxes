@@ -1,5 +1,5 @@
 //! Node-local model waits (pause-reclaim item 6; docs/architecture.md;
-//! phase-3 spec §1.5, §3): a port of `ucloud_sandboxes/local_wait.py`.
+//! phase-3 spec §1.5, §3): a port of `sandboxes/local_wait.py`.
 //!
 //! The node sees a sandbox's plaintext HTTP/1.1 calls to a private relay
 //! endpoint (IPv4 literals) at the TCP level. A call is outstanding when the

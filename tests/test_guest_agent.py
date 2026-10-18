@@ -23,8 +23,8 @@ import time
 import unittest
 from unittest import mock
 
-from ucloud_sandboxes import guest_agent
-from ucloud_sandboxes.guest_agent import (
+from sandboxes import guest_agent
+from sandboxes.guest_agent import (
     ExecExit,
     ExecOutput,
     GuestAgentDisconnected,

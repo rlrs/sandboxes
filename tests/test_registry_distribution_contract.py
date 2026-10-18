@@ -5,7 +5,7 @@ import json
 import os
 import unittest
 
-from ucloud_sandboxes.managed_registry import RegistryClient, RegistryRequestError
+from sandboxes.managed_registry import RegistryClient, RegistryRequestError
 
 TEST_TIER = "contract"
 

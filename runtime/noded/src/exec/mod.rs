@@ -1,5 +1,5 @@
 //! Exec sessions on the node (phase 2a): the Rust port of
-//! `ucloud_sandboxes/sandbox_exec.py` (`ExecSessionManager`) and of the exec
+//! `sandboxes/sandbox_exec.py` (`ExecSessionManager`) and of the exec
 //! routes in `node_agent.py`.
 //!
 //! The routes this module answers, once the HTTP front has decided the request

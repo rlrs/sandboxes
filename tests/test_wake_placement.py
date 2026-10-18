@@ -5,11 +5,11 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from tests.test_control_plane import _portable_snapshot, _sandbox_route, build_heartbeat
-from ucloud_sandboxes.control_state import ControlStateStore
-from ucloud_sandboxes.models import ResourceQuantity
-from ucloud_sandboxes.routing import RoutingStore, wake_pending_demand_id
-from ucloud_sandboxes.wake_admission import WakeAdmission
-from ucloud_sandboxes.wake_placement import (
+from sandboxes.control_state import ControlStateStore
+from sandboxes.models import ResourceQuantity
+from sandboxes.routing import RoutingStore, wake_pending_demand_id
+from sandboxes.wake_admission import WakeAdmission
+from sandboxes.wake_placement import (
     WakePlaced,
     WakePlacement,
     WakePlacementPorts,

@@ -20,8 +20,8 @@ import subprocess
 import sys
 import unittest
 
-from ucloud_sandboxes import direct_registry
-from ucloud_sandboxes.direct_registry import (
+from sandboxes import direct_registry
+from sandboxes.direct_registry import (
     DirectRegistryConflictError,
     DirectRegistryError,
     DirectSandboxRegistry,
@@ -328,7 +328,7 @@ class RegistryIndexTests(unittest.TestCase):
             [sys.executable, "-c", (
                 "import sys, time\n"
                 "from pathlib import Path\n"
-                "from ucloud_sandboxes.direct_registry import DirectSandboxRegistry\n"
+                "from sandboxes.direct_registry import DirectSandboxRegistry\n"
                 "from tests.test_direct_registry import DirectRegistryTests\n"
                 "owner = DirectSandboxRegistry(Path(sys.argv[1]), owner=True)\n"
                 "owner.plan(spec=DirectRegistryTests().spec('child'), sandbox_generation=1,\n"

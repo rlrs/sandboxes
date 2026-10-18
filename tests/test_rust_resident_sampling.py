@@ -22,12 +22,12 @@ from unittest.mock import Mock, patch
 
 from tests import test_direct_provisioner as fixtures
 from tests.test_pause_tier import _PausingWarden
-from ucloud_sandboxes import pause_handoff
-from ucloud_sandboxes.direct_service import DirectSandboxService
-from ucloud_sandboxes.managed_process import ManagedProcessStart
-from ucloud_sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.resident_memory import (
+from sandboxes import pause_handoff
+from sandboxes.direct_service import DirectSandboxService
+from sandboxes.managed_process import ManagedProcessStart
+from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.resident_memory import (
     PublishedResidentMemory, ResidentMemorySample, ResidentMemorySampler,
 )
 
@@ -99,7 +99,7 @@ class PublishedResidentMemoryTests(unittest.TestCase):
         self.assertTrue(self.published.load())
         self.assertIsNone(self.published.historical(self.key))
         good = {"sandbox_id": "one", "generation": 7, **asdict(sample())}
-        with self.assertLogs("ucloud_sandboxes.resident_memory", "WARNING"):  # Once a minute.
+        with self.assertLogs("sandboxes.resident_memory", "WARNING"):  # Once a minute.
             for document in ([], {"seq": -1, "session": "s", "samples": []},
                              {"seq": 1, "session": "", "samples": []},
                              {"seq": 1, "session": "s"}, {"seq": True, "session": "s", "samples": []}):

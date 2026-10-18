@@ -10,7 +10,7 @@ from pathlib import Path
 
 from cache_source_receipts import validated
 from prepare_shared_task_image import read_flat_index
-from ucloud_sandboxes.oci_flat_delta import plan_flat_delta
+from sandboxes.oci_flat_delta import plan_flat_delta
 
 
 def rank_indices(target, candidates):
@@ -32,8 +32,8 @@ def main():
     args = parser.parse_args()
     if args.output.exists():
         parser.error('use a new score output path')
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.managed_registry import RegistryClient, RegistryRequestError, registry_repository_tag_from_image_ref
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.managed_registry import RegistryClient, RegistryRequestError, registry_repository_tag_from_image_ref
     identity = json.loads((args.root / 'identity.json').read_text())
     resolved = validated(identity['source'], json.loads((args.root / 'resolved.json').read_text()))
     if resolved['layer_count'] != 1:

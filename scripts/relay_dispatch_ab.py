@@ -7,8 +7,8 @@ does not change production defaults or bypass durable lifecycle ownership.
 import argparse
 import asyncio
 
-from ucloud_sandboxes import cli
-from ucloud_sandboxes.relay_lifecycle import RelayLifecycleDispatcher
+from sandboxes import cli
+from sandboxes.relay_lifecycle import RelayLifecycleDispatcher
 
 
 def dispatcher_with_park_concurrency(concurrency):

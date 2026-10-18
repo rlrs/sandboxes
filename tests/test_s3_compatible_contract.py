@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from ucloud_sandboxes.storage_native_s3 import Boto3S3ObjectClient
+from sandboxes.storage_native_s3 import Boto3S3ObjectClient
 
 TEST_TIER = "contract"
 

@@ -5,9 +5,9 @@ import unittest
 from tests.storage_native_publisher_support import FakeExporter
 from tests.test_storage_native_registry import FakeRegistry
 from tests.test_storage_native_s3 import FakeS3
-from ucloud_sandboxes.storage_native_publication import snapshot_compaction_start
-from ucloud_sandboxes.storage_native_registry import RegistrySnapshotPublisher
-from ucloud_sandboxes.storage_native_s3 import S3SnapshotPublisher
+from sandboxes.storage_native_publication import snapshot_compaction_start
+from sandboxes.storage_native_registry import RegistrySnapshotPublisher
+from sandboxes.storage_native_s3 import S3SnapshotPublisher
 
 
 class StorageCompactionPolicyTests(unittest.TestCase):

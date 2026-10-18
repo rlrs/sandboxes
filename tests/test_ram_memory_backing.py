@@ -5,8 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from tests.test_split_memory_lifecycle import FakeQuota
-from ucloud_sandboxes.checkpoint_components import MemoryBackingRef
-from ucloud_sandboxes.memory_backing import MemoryBackingError, MemoryBackingStore
+from sandboxes.checkpoint_components import MemoryBackingRef
+from sandboxes.memory_backing import MemoryBackingError, MemoryBackingStore
 
 
 class RamMemoryBackingTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class RamMemoryBackingTests(unittest.TestCase):
             active = root / "ram"
             active.mkdir(mode=0o700)
             with patch(
-                "ucloud_sandboxes.memory_backing.subprocess.run",
+                "sandboxes.memory_backing.subprocess.run",
                 return_value=SimpleNamespace(stdout="tmpfs rw,noswap\n"),
             ):
                 store = MemoryBackingStore(
@@ -55,7 +55,7 @@ class RamMemoryBackingTests(unittest.TestCase):
             active = root / "ram"
             active.mkdir(mode=0o700)
             with patch(
-                "ucloud_sandboxes.memory_backing.subprocess.run",
+                "sandboxes.memory_backing.subprocess.run",
                 return_value=SimpleNamespace(stdout="tmpfs rw\n"),
             ):
                 with self.assertRaisesRegex(MemoryBackingError, "requires tmpfs"):
@@ -79,7 +79,7 @@ class PauseTierRamBackingTests(unittest.TestCase):
                 ("rw", True, True), ("rw,noswap", True, False),
             ):
                 with self.subTest(options=options, swappable=swappable), patch(
-                    "ucloud_sandboxes.memory_backing.subprocess.run",
+                    "sandboxes.memory_backing.subprocess.run",
                     return_value=SimpleNamespace(stdout=f"tmpfs {options}\n"),
                 ):
                     def build():

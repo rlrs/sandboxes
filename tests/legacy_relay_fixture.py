@@ -4,7 +4,7 @@ from contextlib import closing
 import json
 import sqlite3
 
-from ucloud_sandboxes.shared_control.legacy_relay import (
+from sandboxes.shared_control.legacy_relay import (
     SQLITE_RELAY_VERSION,
     encode_request,
 )

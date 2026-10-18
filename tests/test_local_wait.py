@@ -9,16 +9,16 @@ from types import SimpleNamespace
 import threading
 import unittest
 
-from ucloud_sandboxes.direct_registry import DirectRegistryConflictError
+from sandboxes.direct_registry import DirectRegistryConflictError
 from unittest.mock import patch
 
-from ucloud_sandboxes import local_wait
-from ucloud_sandboxes.local_wait import (Flow, LocalWaitScheduler, WaitCandidate, nft_script, parse_messages,
+from sandboxes import local_wait
+from sandboxes.local_wait import (Flow, LocalWaitScheduler, WaitCandidate, nft_script, parse_messages,
                                          parse_packet, relay_endpoints)
-from ucloud_sandboxes.node_runtime import DirectNodeRuntime
-from ucloud_sandboxes.pause_tier import PauseStats
-from ucloud_sandboxes.relay_network import NetworkRelay
-from ucloud_sandboxes.sandbox import SandboxBusyError
+from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.pause_tier import PauseStats
+from sandboxes.relay_network import NetworkRelay
+from sandboxes.sandbox import SandboxBusyError
 
 TEST_TIER = "contract"
 NETWORK = ipaddress.IPv4Network("100.96.0.0/16")
@@ -197,7 +197,7 @@ class SchedulerTests(unittest.TestCase):
             failures.append(key)
             raise RuntimeError("busy: a status read holds the request lock")
         thaw, self.scheduler._thaw = self.scheduler._thaw, refuse
-        with self.assertLogs("ucloud_sandboxes.local_wait", "WARNING"):
+        with self.assertLogs("sandboxes.local_wait", "WARNING"):
             self.answer()
             self.run_for(0.03)
         self.assertEqual(len(failures), 4)  # The packet's attempt, then every tick.

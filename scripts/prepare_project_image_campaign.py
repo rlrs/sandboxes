@@ -77,8 +77,8 @@ def main():
     if (not 1 <= args.workers <= 8 or not 1 <= args.seed_max_delta_mib <= 1024
             or min(args.growth_limit_gib, args.free_floor_gib) < 1):
         parser.error('invalid campaign bounds')
-    from ucloud_sandboxes.config import DeploymentConfig
-    from ucloud_sandboxes.registry_disk import registry_disk_usage
+    from sandboxes.config import DeploymentConfig
+    from sandboxes.registry_disk import registry_disk_usage
     args.root.mkdir(parents=True, exist_ok=True)
     with (args.root / 'campaign.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

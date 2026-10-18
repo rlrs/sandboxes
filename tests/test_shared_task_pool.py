@@ -53,10 +53,10 @@ class SharedTaskPoolTests(unittest.TestCase):
         args = ['pool', '--root', str(root), '--config', str(config), '--gateway', 'https://example.invalid',
                 '--sdk-wheel', str(root / 'sdk.whl'), '--workers', '2', '--growth-limit-gib', str(growth), *extra]
         disk = SimpleNamespace(used_bytes=100, available_bytes=600 * 1024**3)
-        with patch('sys.argv', args), patch('ucloud_sandboxes.config.DeploymentConfig.from_dict',
+        with patch('sys.argv', args), patch('sandboxes.config.DeploymentConfig.from_dict',
                    return_value=SimpleNamespace(control_state_file=lambda: root / 'state.sqlite', registry_url='http://registry')), \
              patch.object(pool.RegistryHealthGate, 'ready', return_value=True, side_effect=health), \
-             patch('ucloud_sandboxes.registry_disk.registry_disk_usage', return_value=disk), \
+             patch('sandboxes.registry_disk.registry_disk_usage', return_value=disk), \
              patch.object(pool.subprocess, 'run', side_effect=run) as invoked, contextlib.redirect_stdout(io.StringIO()):
             pool.main()
         return json.loads((root / 'catalog.json').read_text()), invoked

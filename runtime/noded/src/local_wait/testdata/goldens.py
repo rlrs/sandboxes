@@ -1,4 +1,4 @@
-"""Regenerate python_goldens.json from ucloud_sandboxes/local_wait.py.
+"""Regenerate python_goldens.json from sandboxes/local_wait.py.
 
     .venv/bin/python runtime/noded/src/local_wait/testdata/goldens.py
 """
@@ -9,7 +9,7 @@ import socket
 import struct
 from types import SimpleNamespace
 
-from ucloud_sandboxes import local_wait
+from sandboxes import local_wait
 
 NETWORK = ipaddress.IPv4Network("100.96.0.0/16")
 

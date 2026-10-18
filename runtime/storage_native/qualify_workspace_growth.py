@@ -36,9 +36,9 @@ sys.path.insert(0, str(REPOSITORY_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from benchmark_node_service import _start_server, _stop_server  # noqa: E402
-from ucloud_sandboxes.disk_claims import next_grant  # noqa: E402
-from ucloud_sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
-from ucloud_sandboxes.storage_native_daemon import (  # noqa: E402
+from sandboxes.disk_claims import next_grant  # noqa: E402
+from sandboxes.storage_native import AgentEnvUblkClient  # noqa: E402
+from sandboxes.storage_native_daemon import (  # noqa: E402
     LinuxStorageHostOperations,
     StorageNativeNodeClient,
     StorageNativeNodeConfig,

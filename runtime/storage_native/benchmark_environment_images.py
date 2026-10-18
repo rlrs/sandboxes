@@ -23,13 +23,13 @@ import time
 import uuid
 
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-from ucloud_sandboxes.environment_artifact import load_image_environment
-from ucloud_sandboxes.environment_backend import EnvironmentBackendClient
-from ucloud_sandboxes.environment_builder import FreshEnvironmentBuilder
-from ucloud_sandboxes.environment_config import configured_environment_registry
-from ucloud_sandboxes.environment_keys import provision as provision_key
-from ucloud_sandboxes.environment_rootfs import EnvironmentRootfsStore
-from ucloud_sandboxes.image_rootfs import (
+from sandboxes.environment_artifact import load_image_environment
+from sandboxes.environment_backend import EnvironmentBackendClient
+from sandboxes.environment_builder import FreshEnvironmentBuilder
+from sandboxes.environment_config import configured_environment_registry
+from sandboxes.environment_keys import provision as provision_key
+from sandboxes.environment_rootfs import EnvironmentRootfsStore
+from sandboxes.image_rootfs import (
     DockerOverlay2RootfsStore,
     OverlayRootfsManager,
 )
@@ -258,7 +258,7 @@ def artifact_backend(root, url, keys):
         [
             sys.executable,
             "-m",
-            "ucloud_sandboxes.cli",
+            "sandboxes.cli",
             "serve-environment-io",
             "--root",
             str(root / "io"),

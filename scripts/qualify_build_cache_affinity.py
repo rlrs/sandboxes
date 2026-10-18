@@ -79,9 +79,9 @@ def classify_run(log):
 def run(args):
     import tomllib  # This live Linux helper uses the builder's Python 3.11+.
 
-    from ucloud_sandboxes.build_cache import RegistryBuildCache
-    from ucloud_sandboxes.managed_registry import RegistryRequestError, normalize_manifest_digest
-    from ucloud_sandboxes.vm_init import PINNED_BUILDKIT_IMAGE
+    from sandboxes.build_cache import RegistryBuildCache
+    from sandboxes.managed_registry import RegistryRequestError, normalize_manifest_digest
+    from sandboxes.vm_init import PINNED_BUILDKIT_IMAGE
 
     endpoint = urlsplit(args.registry_url)
     if (endpoint.scheme not in {"http", "https"} or not endpoint.netloc or

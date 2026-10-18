@@ -14,11 +14,11 @@ import unittest
 from tempfile import TemporaryDirectory
 
 from tests.chunk_store_support import REPOSITORY, ChunkStoreFixture, sample_images
-from ucloud_sandboxes.chunk_index import http_request
-from ucloud_sandboxes.chunk_store_node import (ChunkStoreClient, ChunkStoreNode, ChunkStoreServer, ExtentCache,
+from sandboxes.chunk_index import http_request
+from sandboxes.chunk_store_node import (ChunkStoreClient, ChunkStoreNode, ChunkStoreServer, ExtentCache,
                                                S3Source, VirtualBlobs, locator_objects)
-from ucloud_sandboxes.environment_artifact import load_environment
-from ucloud_sandboxes.managed_registry import RegistryRequestError
+from sandboxes.environment_artifact import load_environment
+from sandboxes.managed_registry import RegistryRequestError
 
 TEST_TIER = "contract"
 READ, WRITE = "r" * 32, "w" * 32

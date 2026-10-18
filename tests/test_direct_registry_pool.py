@@ -8,7 +8,7 @@ import threading
 import unittest
 from unittest.mock import patch
 
-from ucloud_sandboxes.direct_registry import (
+from sandboxes.direct_registry import (
     _IDLE_CONNECTIONS,
     DirectRegistryError,
     DirectSandboxRegistry,
