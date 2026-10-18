@@ -29,7 +29,6 @@ postgres = ["psycopg[binary,pool]>=3.2,<4"]
 sandboxes = "sandboxes.cli:main"
 sandboxes-storage = "sandboxes.storage_native_service:main"
 sandboxes-snapshot-gc = "sandboxes.storage_native_s3_gc:main"
-sandboxes-registry-migrate = "sandboxes.registry_storage_migration:main"
 
 [dependency-groups]
 dev = [
