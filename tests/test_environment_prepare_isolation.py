@@ -4,6 +4,7 @@ import math
 import os
 from pathlib import Path
 import stat
+import subprocess
 import tarfile
 from tempfile import TemporaryDirectory
 from threading import Event
@@ -157,15 +158,33 @@ class PreparationSubprocessIsolationTests(unittest.TestCase):
         value = layer([directory("."), member("payload", b"slow fixture")])
         scratch = self.root / "timeout"
         scratch.mkdir(mode=0o700)
-        children = []
+        children, requested_at = [], []
         original_popen = environment_prepare.subprocess.Popen
 
         def launch(*args, **kwargs):
             child = original_popen(*args, **kwargs)
             children.append(child)
+            original_communicate = child.communicate
+
+            def communicate(input=None, timeout=None):
+                # Start the parent's timeout once the child is in the blob read:
+                # interpreter start-up on a loaded runner can take longer than it.
+                # A retried communicate() loses nothing (subprocess docs).
+                deadline = time.monotonic() + 30
+                while not requested.is_set():
+                    if time.monotonic() > deadline:
+                        self.fail("child never reached the blob read")
+                    try:
+                        return original_communicate(input, timeout=0.05)
+                    except subprocess.TimeoutExpired:
+                        input = None  # Already being sent; a retry must not resend it.
+                return original_communicate(input, timeout=timeout)
+
+            child.communicate = communicate
             return child
 
         def responder(method, path, headers, body):
+            requested_at.append(time.monotonic())
             requested.set()
             release.wait(5)
             return 200, {}, b""
@@ -174,14 +193,13 @@ class PreparationSubprocessIsolationTests(unittest.TestCase):
             # A deliberately killed reader may close before the response; that
             # expected fixture-side disconnect is not a benchmark exception.
             server.server.handle_error = lambda *_: None
-            started = time.monotonic()
             try:
                 with patch.object(environment_prepare.subprocess, "Popen", side_effect=launch), \
                      self.assertRaisesRegex(PreparationError, "timed out"):
                     prepare_in_subprocess(RegistryClient(server.base_url, timeout_seconds=5),
                         REPOSITORY, [value[0]], [value[1]], [1], scratch, timeout_seconds=1)
                 self.assertTrue(requested.is_set(), "child must reach the blob read before timeout")
-                self.assertLess(time.monotonic() - started, 3)
+                self.assertLess(time.monotonic() - requested_at[0], 3)
                 self.assertFalse((scratch / "view-0").exists())
                 self.assertEqual(len(children), 1)
                 self.assertIsNotNone(children[0].returncode)
