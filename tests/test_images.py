@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from threading import Barrier, Event, Lock, Thread
+from threading import Barrier, Event, Lock, Thread, current_thread, main_thread
 from unittest.mock import patch
 
 from hypothesis import given, settings, strategies as st
@@ -56,6 +56,38 @@ class ImageTests(unittest.TestCase):
             self.assertEqual(completed.status, "succeeded")
             self.assertNotIn("resolved-cache", initial.command)
             self.assertEqual(completed.command[-1], "resolved-cache")
+
+    def test_the_worker_leaves_the_store_alone_once_waiters_can_return(self):
+        # wait_for_build returns when the worker releases the build's condition.
+        # A store read after that reopened images.sqlite under a caller already
+        # removing it, recreating the file ("Directory not empty").
+        with TemporaryDirectory() as raw_dir:
+            manager = ImageManager(ImageStore(Path(raw_dir) / "images.sqlite"),
+                                   DockerImageRuntime(dry_run=True))
+            store, workers, late = manager.build_store, [], []
+            original_get, original_get_exact = store.get, store.get_exact
+
+            def checked(read):
+                def wrapper(build_id):
+                    if current_thread() is not main_thread():
+                        workers.append(current_thread())
+                        if build_id not in manager._build_conditions:
+                            late.append(build_id)
+                    return read(build_id)
+                return wrapper
+
+            identity, materialize = _uploaded_context(("Dockerfile", b"FROM scratch\n"))
+            with patch.object(store, "get", checked(original_get)), \
+                    patch.object(store, "get_exact", checked(original_get_exact)):
+                started, _ = manager.start_build(
+                    ImageBuildSpec(id="planned", tag="local/planned:latest", context_path="."),
+                    context_identity=identity, materialize_context=materialize)
+                self.assertEqual(manager.wait_for_build(started.build_id, timeout_seconds=5).status,
+                                 "succeeded")
+                for worker in set(workers):
+                    worker.join(5)
+            self.assertTrue(workers)
+            self.assertEqual(late, [])
 
     def test_queued_build_reports_preparation_queue_and_execution_separately(self) -> None:
         with TemporaryDirectory() as raw_dir:
