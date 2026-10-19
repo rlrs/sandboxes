@@ -246,6 +246,26 @@ def _serve(server) -> threading.Thread:
     return thread
 
 
+def _wait_for_handlers(server, name: str, timeout: float = 30.0) -> None:
+    """Wait until no request handler of the closed ``server`` still runs.
+
+    Process exit would end them. In-process handler threads outlive
+    ``server_close`` and would otherwise keep writing into the fleet's
+    directory while it is removed. A handler holds a request slot until it
+    returns, so holding every slot proves none runs.
+    """
+    deadline = time.monotonic() + timeout
+    held = 0
+    try:
+        while held < server.max_request_threads:
+            if not server._request_slots.acquire(timeout=max(0.0, deadline - time.monotonic())):
+                raise AssertionError(f"{name}: a request handler still runs {timeout:g} s after close")
+            held += 1
+    finally:
+        for _ in range(held):
+            server._request_slots.release()
+
+
 class FleetNode:
     """One worker VM: storage daemon, Warden state and a node-agent process."""
 
@@ -286,6 +306,8 @@ class FleetNode:
         self._connections: weakref.WeakSet[socket.socket] = weakref.WeakSet()
         # LocalFleet(rust_admission=True): this node's noded, across agent restarts.
         self.noded = None
+        # Stopped in-process agents whose request handlers may still run.
+        self._stopped_servers: list = []
 
     # -- in-process observation and knobs ------------------------------------
     # A node-agent process has none of these; touching one there is an error,
@@ -544,6 +566,7 @@ class FleetNode:
                 pass
         self._connections.clear()
         server.server_close()
+        self._stopped_servers.append(server)
         # Process exit would release registry ownership for the next agent.
         self.service.provisioner.registry.close()
         self.service = None
@@ -588,9 +611,15 @@ class FleetNode:
                 self.storage_host.release_holds()
             self.stop()
         finally:
+            # Killing guests and noded first ends the waits a handler may be in.
+            self.reap_containers()
             if self.noded is not None:
                 self.noded.close()
                 self.noded = None
+            servers, self._stopped_servers = self._stopped_servers, []
+            for server in servers:
+                _wait_for_handlers(server, f"node-{self.index}")
+            # Whatever a finishing handler started.
             self.reap_containers()
             if self._storage_server is not None:
                 self._stop_storage()
@@ -925,12 +954,18 @@ class LocalFleet:
                 server.server_close()
             except BaseException as exc:
                 errors.append(exc)
-        self.gateways, self.gateway = [], None
         for node in self.nodes:
             try:
                 node.close()
             except BaseException as exc:
                 errors.append(exc)
+        # After the nodes: a gateway handler may be waiting on one.
+        for index, (server, _thread) in enumerate(self.gateways):
+            try:
+                _wait_for_handlers(server, f"gateway-{index}")
+            except BaseException as exc:
+                errors.append(exc)
+        self.gateways, self.gateway = [], None
         if self._postgres_schema:
             try:
                 self._drop_postgres_routing()

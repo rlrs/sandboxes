@@ -27,49 +27,52 @@ class StartupAdmissionTests(AdmissionBackendCase, unittest.TestCase):
     def test_256_requests_queue_and_release_permits_on_failure(self):
         from sandboxes.models import ResourceQuantity
 
-        with TemporaryDirectory() as directory:
-            fixture = direct_fixtures.DirectProvisionerTests()
-            provisioner, *_ = fixture.make(Path(directory).resolve())
-            service = self.admitted(DirectSandboxService(provisioner, max_concurrent_startups=8))
-            release, full = Event(), Event()
-            lock = Lock()
-            active = peak = 0
+        # A cleanup, not a with-block: cleanups run last-in first-out, so noded
+        # (installed by admitted()) stops before its registry directory goes.
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        fixture = direct_fixtures.DirectProvisionerTests()
+        provisioner, *_ = fixture.make(Path(directory.name).resolve())
+        service = self.admitted(DirectSandboxService(provisioner, max_concurrent_startups=8))
+        release, full = Event(), Event()
+        lock = Lock()
+        active = peak = 0
 
-            def work(index):
-                nonlocal active, peak
-                try:
-                    with service.admission.startup((f"request-{index}", 1), ResourceQuantity(), managed=False):
+        def work(index):
+            nonlocal active, peak
+            try:
+                with service.admission.startup((f"request-{index}", 1), ResourceQuantity(), managed=False):
+                    with lock:
+                        active += 1
+                        peak = max(peak, active)
+                        if active == 8:
+                            full.set()
+                    try:
+                        # The agent's reentrant helpers reuse the outer slot.
+                        with nullcontext() if self.noded else service.startup_admission():
+                            if not release.wait(3):
+                                raise TimeoutError("test gate")
+                        if index == 0:
+                            raise ValueError("injected failure")
+                    finally:
                         with lock:
-                            active += 1
-                            peak = max(peak, active)
-                            if active == 8:
-                                full.set()
-                        try:
-                            # The agent's reentrant helpers reuse the outer slot.
-                            with nullcontext() if self.noded else service.startup_admission():
-                                if not release.wait(3):
-                                    raise TimeoutError("test gate")
-                            if index == 0:
-                                raise ValueError("injected failure")
-                        finally:
-                            with lock:
-                                active -= 1
-                    return "done"
-                except ValueError:
-                    return "failed"
+                            active -= 1
+                return "done"
+            except ValueError:
+                return "failed"
 
-            with ThreadPoolExecutor(max_workers=32) as pool:
-                futures = [pool.submit(work, i) for i in range(256)]
-                try:
-                    self.assertTrue(full.wait(3))
-                finally:
-                    release.set()
-                outcomes = [f.result(5) for f in futures]
-            self.assertEqual(peak, 8)
-            self.assertEqual(outcomes.count("done"), 255)
-            self.assertEqual(outcomes.count("failed"), 1)
-            self.assertEqual(active, 0)
-            self.assertEqual(self.slots_available(service, "startup"), 8)
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            futures = [pool.submit(work, i) for i in range(256)]
+            try:
+                self.assertTrue(full.wait(3))
+            finally:
+                release.set()
+            outcomes = [f.result(5) for f in futures]
+        self.assertEqual(peak, 8)
+        self.assertEqual(outcomes.count("done"), 255)
+        self.assertEqual(outcomes.count("failed"), 1)
+        self.assertEqual(active, 0)
+        self.assertEqual(self.slots_available(service, "startup"), 8)
 
 
 class WarmDemandTests(unittest.TestCase):
