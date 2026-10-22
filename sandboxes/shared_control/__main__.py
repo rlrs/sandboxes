@@ -1,4 +1,4 @@
-"""Explicit relay schema migration and status."""
+"""Explicit relay (and, with --routing-file, routing) schema migration and status."""
 from __future__ import annotations
 
 import argparse
@@ -17,7 +17,16 @@ async def run(args):
         await store.open()
         if args.command == "migrate":
             await store.migrate()
-            return {"schema": args.schema, "authority": "relay", "version": store.schema_version, "migrated": True}
+            result = {"schema": args.schema, "authority": "relay", "version": store.schema_version, "migrated": True}
+            if args.routing_file is not None:
+                from .routing_repository import init_routing_authority
+
+                # Synchronous psycopg: run it off the event loop.
+                result.update(await asyncio.to_thread(
+                    init_routing_authority, args.routing_file,
+                    dsn_file=args.dsn_file, schema=args.routing_schema,
+                ))
+            return result
         from .relay import PostgresRelayState
         # Status is read-only: do not start dispatchers, record runtime mode,
         # initialize quota, or otherwise pretend this CLI is a relay process.
@@ -32,7 +41,13 @@ def main(argv=None):
     parser.add_argument("--dsn-file", type=Path, required=True)
     parser.add_argument("--deployment-id", required=True)
     parser.add_argument("--schema", default="ucloud_shared")
+    parser.add_argument("--routing-file", type=Path,
+                        help="migrate only: also create the PostgreSQL routing schema and "
+                             "write this routing descriptor (<data_root>/routes.sqlite)")
+    parser.add_argument("--routing-schema", default="ucloud_routing")
     args = parser.parse_args(argv)
+    if args.routing_file is not None and args.command != "migrate":
+        parser.error("--routing-file applies only to migrate")
     try:
         print(json.dumps(asyncio.run(run(args))))
     except ImportError:

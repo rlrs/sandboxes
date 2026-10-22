@@ -17,6 +17,7 @@ from sandboxes.models import (
     ResourceQuantity,
     utc_now,
 )
+from tests.support import postgres_routing_file
 
 TEST_TIER = "contract"
 
@@ -166,7 +167,7 @@ class SdkGatewayContractTests(unittest.TestCase):
                     "127.0.0.1",
                     0,
                     root / "control.sqlite",
-                    routing_file=root / "routes.sqlite",
+                    routing_file=postgres_routing_file(self, root / "routes.sqlite"),
                     image_file=root / "images.json",
                     metrics_file=root / "metrics.sqlite",
                     gateway_bearer_token="gateway-secret",

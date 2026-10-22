@@ -10,11 +10,13 @@ from tests.test_control_plane import _gateway_server, _sandbox_route, build_hear
 from sandboxes import control_plane
 from sandboxes.models import ResourceQuantity
 
+TEST_TIER = "contract"
+
 
 class WakeOwnerAdmissionTests(unittest.TestCase):
     def test_unpublished_local_wake_does_not_read_unrelated_fleet_state(self):
         with TemporaryDirectory() as temp:
-            server = _gateway_server(Path(temp))
+            server = _gateway_server(self, Path(temp))
             try:
                 handler = object.__new__(server.RequestHandlerClass)
                 route = _sandbox_route(
@@ -54,7 +56,7 @@ class WakeOwnerAdmissionTests(unittest.TestCase):
     def test_placement_reread_rejects_recreated_incarnation_before_worker_dispatch(self):
         for operation in ("_prepare_wake_placement",):
             with self.subTest(operation=operation), TemporaryDirectory() as temp:
-                server = _gateway_server(Path(temp))
+                server = _gateway_server(self, Path(temp))
                 try:
                     handler = object.__new__(server.RequestHandlerClass)
                     previous = _sandbox_route(sandbox_id="recreated", state="parked",
@@ -118,7 +120,7 @@ class DurableRelayGatewayTests(unittest.TestCase):
         import json
         from sandboxes.capabilities import RELAY_WAKE_FENCE_CAPABILITY
         with TemporaryDirectory() as raw:
-            server=_gateway_server(Path(raw))
+            server=_gateway_server(self, Path(raw))
             try:
                 handler=object.__new__(server.RequestHandlerClass)
                 handler._write_json=Mock()

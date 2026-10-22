@@ -5,7 +5,7 @@ next, and attaches its image once per worker. A definitely rejected member is
 re-planned elsewhere; what no worker takes is pending demand with a retryable
 answer. Members stay ordinary sandboxes, and a member deleted since is never
 recreated by a repeated request. The multi-row intents keep the single
-create's fences on SQLite and PostgreSQL, and a deleted group refuses them.
+create's fences, and a deleted group refuses them.
 """
 from dataclasses import replace
 import os
@@ -47,37 +47,35 @@ def placed(fleet, response):
 
 class GroupFleetTests(unittest.TestCase):
     def test_a_group_packs_onto_one_worker_and_its_members_stay_ordinary(self):
-        for postgres in (False, True):
-            with self.subTest(postgres=postgres), LocalFleet(
-                    nodes=2, postgres=postgres) as fleet:
-                created = post_group(fleet, "g", 4)
-                self.assertEqual(created.status, 201, created.body)
-                self.assertEqual(created.json()["counts"], {"running": 4})
-                by_node, calls = placed(fleet, created)
-                self.assertEqual([len(members) for members in by_node.values()], [4])
-                node = next(iter(by_node))
-                # One attach for the group; the other worker saw nothing.
-                self.assertEqual(calls, {item.node_id: (1, 4) if item.node_id == node else (0, 0)
-                                         for item in fleet.nodes})
-                self.assertEqual(fleet.exec("g-0001", ["cat", "/opt/greeting"]).stdout, "hello from the image\n")
-                self.assertEqual(fleet.delete("g-0002").status, 200)
-                listed = fleet.request("GET", "/v1/sandboxes:batch/g", token="sandbox").json()["sandboxes"]
-                self.assertEqual([item["status"] for item in listed], ["running", "running", "deleted", "running"])
-                # A repeat reports the group and never recreates a deleted member.
-                repeated = post_group(fleet, "g", 4)
-                self.assertEqual((repeated.status, repeated.json()["counts"]), (200, {"running": 3, "deleted": 1}))
-                self.assertIsNone(fleet.route("g-0002"))
-                self.assertEqual(post_group(fleet, "g", 5).json()["error_code"], "sandbox_group_conflict")
-                deleted = fleet.request("DELETE", "/v1/sandboxes:batch/g", token="sandbox")
-                self.assertEqual(deleted.status, 200, deleted.body)
-                self.assertEqual([fleet.route(f"g-{index:04d}") for index in range(4)], [None] * 4)
-                self.assertEqual(post_group(fleet, "g", 4).json()["error_code"], "sandbox_group_deleted")
-                self.assertEqual(fleet.request("GET", "/v1/sandboxes:batch/none", token="sandbox").status, 404)
-                spec = {**SPEC, "image": fleet.image}
-                for payload in ({"group_id": "-g", "count": 1, "spec": spec}, {"group_id": "g", "count": 0, "spec": spec},
-                                {"group_id": "g", "count": 1, "spec": {**spec, "id": "x"}}):
-                    self.assertEqual(fleet.request("POST", "/v1/sandboxes:batch", payload=payload,
-                                                   token="sandbox").status, 400)
+        with LocalFleet(nodes=2) as fleet:
+            created = post_group(fleet, "g", 4)
+            self.assertEqual(created.status, 201, created.body)
+            self.assertEqual(created.json()["counts"], {"running": 4})
+            by_node, calls = placed(fleet, created)
+            self.assertEqual([len(members) for members in by_node.values()], [4])
+            node = next(iter(by_node))
+            # One attach for the group; the other worker saw nothing.
+            self.assertEqual(calls, {item.node_id: (1, 4) if item.node_id == node else (0, 0)
+                                     for item in fleet.nodes})
+            self.assertEqual(fleet.exec("g-0001", ["cat", "/opt/greeting"]).stdout, "hello from the image\n")
+            self.assertEqual(fleet.delete("g-0002").status, 200)
+            listed = fleet.request("GET", "/v1/sandboxes:batch/g", token="sandbox").json()["sandboxes"]
+            self.assertEqual([item["status"] for item in listed], ["running", "running", "deleted", "running"])
+            # A repeat reports the group and never recreates a deleted member.
+            repeated = post_group(fleet, "g", 4)
+            self.assertEqual((repeated.status, repeated.json()["counts"]), (200, {"running": 3, "deleted": 1}))
+            self.assertIsNone(fleet.route("g-0002"))
+            self.assertEqual(post_group(fleet, "g", 5).json()["error_code"], "sandbox_group_conflict")
+            deleted = fleet.request("DELETE", "/v1/sandboxes:batch/g", token="sandbox")
+            self.assertEqual(deleted.status, 200, deleted.body)
+            self.assertEqual([fleet.route(f"g-{index:04d}") for index in range(4)], [None] * 4)
+            self.assertEqual(post_group(fleet, "g", 4).json()["error_code"], "sandbox_group_deleted")
+            self.assertEqual(fleet.request("GET", "/v1/sandboxes:batch/none", token="sandbox").status, 404)
+            spec = {**SPEC, "image": fleet.image}
+            for payload in ({"group_id": "-g", "count": 1, "spec": spec}, {"group_id": "g", "count": 0, "spec": spec},
+                            {"group_id": "g", "count": 1, "spec": {**spec, "id": "x"}}):
+                self.assertEqual(fleet.request("POST", "/v1/sandboxes:batch", payload=payload,
+                                               token="sandbox").status, 400)
 
     def test_overflow_spills_to_the_next_worker_with_one_attach_each(self):
         with LocalFleet(nodes=3) as fleet:
@@ -214,15 +212,6 @@ class GroupIntentFences:
             self.reserve("a", "g-0002")
         with self.assertRaises(SandboxGroupDeletedError):
             self.store.retarget_create_intents([(moved, self.allocation("a", "g-0001"), "x")], group_id="g")
-
-
-class SqliteGroupFenceTests(GroupIntentFences, unittest.TestCase):
-    def setUp(self):
-        self.temp = TemporaryDirectory()
-        self.store = RoutingStore(Path(self.temp.name) / "routes.sqlite")
-
-    def tearDown(self):
-        self.temp.cleanup()
 
 
 @unittest.skipUnless(DSN, "requires real PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)")

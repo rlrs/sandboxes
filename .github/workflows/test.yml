@@ -10,6 +10,8 @@ permissions:
   contents: read
 
 jobs:
+  # Kills a relay process and the database, so it has a PostgreSQL of its own.
+  # The test job runs every PostgreSQL test module.
   shared-control-postgres:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -48,22 +50,7 @@ jobs:
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.11.2"
-      - name: Cache the node daemon's crates and build
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: runtime/noded
-      - name: Fetch the node daemon's locked crates
-        # Tests build ucloud-noded with `cargo build --offline`.
-        working-directory: runtime/noded
-        run: cargo fetch --locked
       - run: uv sync --locked --extra postgres
-      - name: Install eatmydata
-        run: sudo apt-get update && sudo apt-get install --yes eatmydata
-      - name: Exercise real concurrent transactions and recovery
-        env:
-          UCLOUD_TEST_POSTGRES_DSN: postgresql://postgres:qualification-only@127.0.0.1:5432/shared_control_test
-        # Every PostgreSQL-gated module is in the contract tier.
-        run: uv run --extra postgres python scripts/run_tests.py --tier contract --no-fsync
       - name: Recover HTTP callers after killing a relay process
         env:
           UCLOUD_TEST_POSTGRES_DSN: postgresql://postgres:qualification-only@127.0.0.1:5432/shared_control_test
@@ -91,10 +78,25 @@ jobs:
     timeout-minutes: 30
     env:
       UV_PYTHON: ${{ matrix.python-version }}
+      # Routing, the gateway and LocalFleet scenarios run on PostgreSQL.
+      UCLOUD_TEST_POSTGRES_DSN: postgresql://postgres:qualification-only@127.0.0.1:5432/shared_control_test
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.14.4"]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: qualification-only
+          POSTGRES_DB: shared_control_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
       - name: Check out the SDK contract peer

@@ -1,7 +1,7 @@
 """Authoritative same-owner wake admission, without HTTP or worker I/O.
 
-Callers serialize reserve_batch with the existing gateway placement reservation,
-shared with creates and migrations. The service projects every accepted wake into
+Callers run reserve_batch inside one placement transaction, as creates and
+migrations do (Placement.atomic). The service projects every accepted wake into
 that one owner view before committing the batch, so concurrent demand cannot
 spend the same advertised memory or device slot twice.
 """
@@ -64,7 +64,7 @@ class WakeAdmission:
     def reserve_batch(
         self, requested_routes: Sequence[SandboxRoute]
     ) -> list[WakeAdmissionDecision]:
-        """Revalidate, project capacity and atomically reserve under placement lock."""
+        """Revalidate, project capacity and atomically reserve in the placement transaction."""
         views: dict[str, WakeOwnerView | None] = {}
         admitted: dict[str, SandboxRoute] = {}
         decisions = []

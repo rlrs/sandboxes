@@ -235,7 +235,7 @@ class PreparedGatewayTests(unittest.TestCase):
                 state_file=root/'builder-state.json', image_file=root/'builder-images.json',
                 job_id='job-builder', node_id='builder-1', image_runtime=runtime,
                 node_control_bearer_token='node-secret', build_context_store_dir=root/'builder-contexts')
-            gateway = _gateway_server(root, routing_file=root/'routes.json',
+            gateway = _gateway_server(self, root, routing_file=root/'routes.json',
                 gateway_bearer_token='gateway-secret', node_control_bearer_token='node-secret',
                 build_context_store_dir=root/'gateway-contexts')
             gateway.RequestHandlerClass.prepared_image_catalog.register_source({

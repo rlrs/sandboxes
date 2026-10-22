@@ -8,6 +8,9 @@ from sandboxes.cold_offload import plan_cold_offload
 from sandboxes.models import NodeHeartbeat, NodeRuntimeMetrics, ResourceQuantity, utc_now
 from sandboxes.routing import ProgramRequestState, SandboxRoute
 from tests.test_control_plane import _portable_snapshot
+from tests.support import reopen_routing_store, routing_store_for
+
+TEST_TIER = "contract"
 
 
 class ColdOffloadTests(unittest.TestCase):
@@ -101,12 +104,12 @@ class ColdOffloadTests(unittest.TestCase):
         # No amount of offload makes an oversized request fit this node.
         self.assertEqual(self.plan(routes, pending_disk_mb=100_001), ())
 
-    def test_conditional_detach_checks_wake_and_exact_snapshot_under_writer_fence(self):
+    def test_conditional_detach_checks_wake_and_exact_snapshot(self):
         from pathlib import Path
         from tempfile import TemporaryDirectory
-        from sandboxes.routing import RoutingStore, wake_pending_demand_id
+        from sandboxes.routing import wake_pending_demand_id
         with TemporaryDirectory() as root:
-            store = RoutingStore(Path(root) / 'routing.sqlite')
+            store = routing_store_for(self, Path(root) / 'routing.sqlite')
             route = store.upsert_sandbox(self.route('cold'))
             self.assertIsNone(store.begin_sandbox_detach(replace(route, node_epoch='stale'), require_cold=True))
             self.assertIsNone(store.begin_sandbox_detach(
@@ -123,7 +126,7 @@ class ColdOffloadTests(unittest.TestCase):
             self.assertEqual(detached.worker_state, 'detaching')
             # An interrupted committed intent is still finishable after restart;
             # no route claim disappears until complete_sandbox_detach.
-            reopened = RoutingStore(store.path)
+            reopened = reopen_routing_store(store.path)
             self.assertEqual(reopened.get_sandbox_readonly(route.sandbox_id).worker_state, 'detaching')
             self.assertEqual(reopened.get_sandbox_readonly(route.sandbox_id).resources.disk_mb, route.resources.disk_mb)
             self.assertEqual(reopened.complete_sandbox_detach(detached).worker_state, 'detached')
@@ -133,10 +136,10 @@ class ColdOffloadTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
         from unittest.mock import Mock
         from sandboxes.control_plane import ControlPlaneHandler
-        from sandboxes.routing import RoutingStore, cold_offload_fence
+        from sandboxes.routing import cold_offload_fence
         from tests.gateway_support import gateway_services
         with TemporaryDirectory() as root:
-            store = RoutingStore(Path(root) / 'routing.sqlite')
+            store = routing_store_for(self, Path(root) / 'routing.sqlite')
             route = store.upsert_sandbox(self.route('cold'))
             handler = object.__new__(ControlPlaneHandler)
             handler.routing_store = store

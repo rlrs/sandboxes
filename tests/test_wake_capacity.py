@@ -13,12 +13,14 @@ from sandboxes import control_plane
 from sandboxes.control_state import ControlStateStore
 from sandboxes.registry import heartbeat_to_dict
 from sandboxes.direct_service import DirectSandboxService
-from sandboxes.gateway import placement
 from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, SandboxInventoryEntry, utc_now
-from sandboxes.routing import RoutingStore, wake_pending_demand_id
+from sandboxes.routing import wake_pending_demand_id
 from sandboxes.wake_placement import WakeSnapshotPublicationRequired
 from sandboxes.node_agent import NodeAgentHandler
 from sandboxes.sandbox import SandboxCapacityUnavailableError
+from tests.support import routing_store_for
+
+TEST_TIER = "contract"
 
 
 class WakeCapacityTests(unittest.TestCase):
@@ -92,11 +94,11 @@ class WakeCapacityTests(unittest.TestCase):
         self.assertEqual(control_plane._node_reserved_storage_device_slots(observed, [route]), 0)
         self.assertFalse(control_plane._node_has_storage_device_capacity(self.heartbeat(active=64), []))
 
-    def test_full_owner_requests_publication_outside_placement_lock(self):
+    def test_full_owner_requests_snapshot_publication(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = RoutingStore(root / "routes.sqlite")
+            handler.routing_store = routing_store_for(self, root / "routes.sqlite")
             store = ControlStateStore(root / "control-state.sqlite")
             handler.services = gateway_services(store=store, routing_store=handler.routing_store)
             source = replace(self.heartbeat(active=64), capabilities=(
@@ -110,24 +112,14 @@ class WakeCapacityTests(unittest.TestCase):
             route = handler.routing_store.upsert_sandbox(self.route())
             handler._write_json = Mock()
             handler._refresh_wake_capacity = Mock(return_value=False)
-            acquired = []
 
             def queue_publication(url, path, **kwargs):
-                def check_lock():
-                    ok = placement._GATEWAY_SCHEDULING_LOCK.acquire(timeout=0.2)
-                    acquired.append(ok)
-                    if ok:
-                        placement._GATEWAY_SCHEDULING_LOCK.release()
-                thread = Thread(target=check_lock)
-                thread.start()
-                thread.join(timeout=1)
                 self.assertEqual(path, "/v1/sandboxes/parked/snapshot/publish")
                 self.assertEqual(kwargs["method"], "POST")
                 return control_plane.ProxiedResponse(202, {}, b"{}")
 
             handler._proxy_request = queue_publication
             self.assertIsNone(fixtures._prepare_wake_route(handler, route))
-            self.assertEqual(acquired, [True])
             self.assertEqual(handler._write_json.call_args.args[0]["error_code"], "snapshot_publication_pending")
             self.assertEqual(handler.routing_store.get_sandbox_readonly("parked").state, "parked")
 
@@ -135,7 +127,7 @@ class WakeCapacityTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = RoutingStore(root / "routes.sqlite")
+            handler.routing_store = routing_store_for(self, root / "routes.sqlite")
             store = ControlStateStore(root / "control-state.sqlite")
             handler.services = gateway_services(store=store, routing_store=handler.routing_store)
             source = replace(self.heartbeat(active=64), capabilities=(
@@ -165,7 +157,7 @@ class WakeCapacityTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = RoutingStore(root / "routes.sqlite")
+            handler.routing_store = routing_store_for(self, root / "routes.sqlite")
             store = ControlStateStore(root / "control-state.sqlite")
             handler.services = gateway_services(store=store, routing_store=handler.routing_store)
             source = replace(self.heartbeat(active=64), admission_open=False, draining=True, capabilities=(
@@ -202,7 +194,7 @@ class WakeCapacityTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = RoutingStore(root / "routes.sqlite")
+            handler.routing_store = routing_store_for(self, root / "routes.sqlite")
             store = ControlStateStore(root / "control-state.sqlite")
             handler.services = gateway_services(store=store, routing_store=handler.routing_store)
             heartbeat = self.heartbeat(active=64)
@@ -211,16 +203,8 @@ class WakeCapacityTests(unittest.TestCase):
             refreshed = self.holding(replace(heartbeat, runtime_metrics=replace(
                 heartbeat.runtime_metrics, storage_ublk_active_devices=0,
             )), route)
-            acquired, waiters = [], []
+            waiters = []
             def refresh(url, path, **kwargs):
-                def check_lock():
-                    ok = placement._GATEWAY_SCHEDULING_LOCK.acquire(timeout=.2)
-                    acquired.append(ok)
-                    if ok:
-                        placement._GATEWAY_SCHEDULING_LOCK.release()
-                thread = Thread(target=check_lock)
-                thread.start()
-                thread.join(1)
                 self.assertEqual(path, "/v1/heartbeat")
                 # A concurrent wake waits for this pull rather than starting one.
                 waiters.append(Thread(target=handler._refresh_wake_capacity, args=(route,)))
@@ -235,7 +219,6 @@ class WakeCapacityTests(unittest.TestCase):
             self.assertEqual(fixtures._prepare_wake_route(handler, route).state, "waking")
             waiters[0].join(5)
             self.assertFalse(waiters[0].is_alive())
-            self.assertEqual(acquired, [True])
             self.assertEqual(handler._proxy_request.call_count, 1)
             self.assertEqual(store.load_heartbeats()["job"].runtime_metrics.storage_ublk_active_devices, 0)
             store.upsert_heartbeat(heartbeat)
@@ -245,7 +228,7 @@ class WakeCapacityTests(unittest.TestCase):
     def test_unblocked_wake_reads_owner_inventory_once_without_capacity_refresh(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            server = fixtures._gateway_server(root)
+            server = fixtures._gateway_server(self, root)
             try:
                 handler = object.__new__(server.RequestHandlerClass)
                 handler.services.fleet.store.upsert_heartbeat(self.heartbeat(active=0))
@@ -265,7 +248,7 @@ class WakeCapacityTests(unittest.TestCase):
     def test_completed_publication_is_used_without_waiting_for_heartbeat(self):
         with TemporaryDirectory() as directory:
             handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = RoutingStore(Path(directory) / "routes.sqlite")
+            handler.routing_store = routing_store_for(self, Path(directory) / "routes.sqlite")
             handler.services = gateway_services(
                 store=ControlStateStore(Path(directory) / "control.sqlite"),
                 routing_store=handler.routing_store,
@@ -295,7 +278,7 @@ class WakeCapacityTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = RoutingStore(root / "routes.sqlite")
+            handler.routing_store = routing_store_for(self, root / "routes.sqlite")
             handler.services = gateway_services(routing_store=handler.routing_store)
             source = handler.routing_store.upsert_sandbox(self.route())
             another = handler.routing_store.upsert_sandbox(fixtures._sandbox_route(
@@ -318,7 +301,7 @@ class WakeCapacityTests(unittest.TestCase):
     def test_detached_wake_never_targets_a_worker_still_registering_its_id(self):
         with TemporaryDirectory() as directory:
             handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = RoutingStore(Path(directory) / "routes.sqlite")
+            handler.routing_store = routing_store_for(self, Path(directory) / "routes.sqlite")
             handler.services = gateway_services(routing_store=handler.routing_store)
             snapshot = fixtures._portable_snapshot("parked")
             spec = snapshot.manifest.spec
@@ -384,7 +367,7 @@ class WakeCapacityTests(unittest.TestCase):
             with self.subTest(pressure=pressure), TemporaryDirectory() as directory:
                 root = Path(directory)
                 handler = object.__new__(control_plane.ControlPlaneHandler)
-                handler.routing_store = RoutingStore(root / 'routes.sqlite')
+                handler.routing_store = routing_store_for(self, root / 'routes.sqlite')
                 store = ControlStateStore(root / 'control-state.sqlite')
                 handler.services = gateway_services(store=store, routing_store=handler.routing_store)
                 healthy = self.heartbeat(active=0)

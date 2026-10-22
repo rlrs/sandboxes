@@ -79,6 +79,7 @@ from sandboxes.storage_native_registry import (
     PublishedStorageLayer,
     StorageSnapshotPublication,
 )
+from tests.support import postgres_routing_file, requires_postgres, routing_store_for
 
 TEST_TIER = "contract"
 
@@ -99,8 +100,12 @@ def build_heartbeat(**kwargs):
     return _agent_build_heartbeat(**kwargs)
 
 
-def build_server(*args, **kwargs):
-    """Build an auth-bypassed server for tests unrelated to channel security."""
+def build_server(test, *args, **kwargs):
+    """Build an auth-bypassed server for tests unrelated to channel security.
+
+    Its routes file (by default beside the heartbeat file) is a PostgreSQL
+    routing descriptor that ``test`` drops at cleanup.
+    """
 
     explicit_public_auth = (
         "gateway_bearer_token" in kwargs
@@ -113,10 +118,9 @@ def build_server(*args, **kwargs):
     kwargs.setdefault("node_control_bearer_token", "test-node-secret")
     kwargs.setdefault("deployment_id", "test-deployment")
     heartbeat_file = Path(args[2])
-    kwargs.setdefault(
-        "routing_file",
-        heartbeat_file.with_name(f"{heartbeat_file.stem}-routes.sqlite"),
-    )
+    kwargs["routing_file"] = postgres_routing_file(test, kwargs.get(
+        "routing_file", heartbeat_file.with_name(f"{heartbeat_file.stem}-routes.sqlite"),
+    ))
     kwargs.setdefault(
         "image_file",
         heartbeat_file.with_name(f"{heartbeat_file.stem}-images.json"),
@@ -227,6 +231,7 @@ def _portable_snapshot(
 
 
 def _seed_gateway_node(
+    test: unittest.TestCase,
     root: Path,
     *,
     node_url: str,
@@ -237,7 +242,7 @@ def _seed_gateway_node(
 
     heartbeat_file = root / "control-state.sqlite"
     route_file = root / "routes.sqlite"
-    route = RoutingStore(route_file).upsert_sandbox(
+    route = routing_store_for(test, route_file).upsert_sandbox(
         _sandbox_route(
             sandbox_id=sandbox_id,
             node_id="node-1",
@@ -277,8 +282,9 @@ def _temporary_root():
         yield Path(raw_dir)
 
 
-def _gateway_server(root: Path, *, heartbeat_file: Path | None = None, **kwargs):
+def _gateway_server(test: unittest.TestCase, root: Path, *, heartbeat_file: Path | None = None, **kwargs):
     return build_server(
+        test,
         "127.0.0.1",
         0,
         heartbeat_file or root / "control-state.sqlite",
@@ -364,12 +370,12 @@ class ControlPlaneTests(unittest.TestCase):
         for failure in ("dns", "timeout", "transport"):
             for failed_phase in ("wake", "exec"):
                 with self.subTest(failure=failure, failed_phase=failed_phase), _temporary_root() as root:
-                    routing = RoutingStore(root / "routes.sqlite")
+                    routing = routing_store_for(self, root / "routes.sqlite")
                     route = routing.upsert_sandbox(_sandbox_route(
                         sandbox_id="sandbox", node_id="node", job_id="job",
                         node_url="http://node.invalid", state="parked",
                     ))
-                    gateway = _gateway_server(root, routing_file=routing.path)
+                    gateway = _gateway_server(self, root, routing_file=routing.path)
                     handler = gateway.RequestHandlerClass
                     proxied = []
                     def proxy(_handler, _url, path, **kwargs):
@@ -406,7 +412,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_create_pipeline_target_is_bound_from_configuration(self) -> None:
         with _temporary_root() as root:
-            server = _gateway_server(
+            server = _gateway_server(self,
                 root,
                 create_target_concurrency_per_node=3,
             )
@@ -419,13 +425,13 @@ class ControlPlaneTests(unittest.TestCase):
                 server.server_close()
 
             with self.assertRaisesRegex(ValueError, "must be positive"):
-                _gateway_server(root, create_target_concurrency_per_node=0)
+                _gateway_server(self, root, create_target_concurrency_per_node=0)
 
     def test_managed_job_status_uses_gateway_state_during_node_transition(self) -> None:
         with _temporary_root() as root:
             route_file = root / "routes.sqlite"
             heartbeat_file = root / "control-state.sqlite"
-            routing = RoutingStore(route_file)
+            routing = routing_store_for(self, route_file)
             route = routing.upsert_sandbox(
                 _sandbox_route(
                     sandbox_id="managed-transition",
@@ -457,7 +463,7 @@ class ControlPlaneTests(unittest.TestCase):
                     updated_at="2026-08-03T00:00:00+00:00",
                 ),
             )
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 root,
                 heartbeat_file=heartbeat_file,
                 routing_file=route_file,
@@ -483,7 +489,7 @@ class ControlPlaneTests(unittest.TestCase):
     def test_request_bound_lifecycle_requires_managed_parkable_spec(self) -> None:
         with _temporary_root() as root:
             route_file = root / "routes.sqlite"
-            routing = RoutingStore(route_file)
+            routing = routing_store_for(self, route_file)
             cases: list[tuple[str, SandboxRoute]] = []
             for action in ("park", "wake"):
                 for parkable in (False, True):
@@ -508,7 +514,7 @@ class ControlPlaneTests(unittest.TestCase):
                     )
                     cases.append((action, route))
 
-            gateway = _gateway_server(root, routing_file=route_file)
+            gateway = _gateway_server(self, root, routing_file=route_file)
             proxied = Event()
 
             def fail_proxy(*_args, **_kwargs):
@@ -538,12 +544,12 @@ class ControlPlaneTests(unittest.TestCase):
                         )
 
             self.assertFalse(proxied.is_set())
-            self.assertEqual(RoutingStore(route_file).program_requests_readonly(), [])
+            self.assertEqual(routing_store_for(self, route_file).program_requests_readonly(), [])
 
     def test_create_confirmation_survives_delayed_absent_inventory(self) -> None:
         spec = SandboxSpec.from_dict(SandboxSpec(id="confirmed-create", image="busybox", cpus=1, memory_mb=512).to_dict())
         with _temporary_root() as root:
-            routing = RoutingStore(root / "routes.sqlite")
+            routing = routing_store_for(self, root / "routes.sqlite")
             route = routing.upsert_sandbox(_sandbox_route(
                 sandbox_id=spec.id, node_id="node-1", job_id="job-1",
                 node_url="http://node-1:8090", resources=spec.requested_resources(),
@@ -578,7 +584,7 @@ class ControlPlaneTests(unittest.TestCase):
             route_file = root / "routes.sqlite"
             heartbeat_file = root / "control-state.sqlite"
             metrics_file = root / "metrics.sqlite"
-            routing = RoutingStore(route_file)
+            routing = routing_store_for(self, route_file)
             route = routing.upsert_sandbox(
                 _sandbox_route(
                     sandbox_id="sandbox-1",
@@ -620,7 +626,7 @@ class ControlPlaneTests(unittest.TestCase):
                     inventory_complete=True,
                 )
             )
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 root,
                 heartbeat_file=heartbeat_file,
                 routing_file=route_file,
@@ -636,7 +642,7 @@ class ControlPlaneTests(unittest.TestCase):
                 proxied_body = json.loads(kwargs["body"])
                 proxied_bodies.append(proxied_body)
                 if "generation" in proxied_body and lifecycle_activity == 11:
-                    racing_store = RoutingStore(route_file)
+                    racing_store = routing_store_for(self, route_file)
                     racing_store.reconcile_sandboxes_for_node(
                         route.node_url,
                         [
@@ -703,7 +709,7 @@ class ControlPlaneTests(unittest.TestCase):
                     method="POST",
                     payload=identity,
                 )
-                records = RoutingStore(route_file).program_requests_readonly()
+                records = routing_store_for(self, route_file).program_requests_readonly()
                 self.assertTrue(gateway.RequestHandlerClass.metrics_store.flush())
                 wake_events = control_plane.MetricsStore(metrics_file).load_events(
                     max_events=10,
@@ -747,7 +753,7 @@ class ControlPlaneTests(unittest.TestCase):
             route_file = root / "routes.sqlite"
             heartbeat_file = root / "control-state.sqlite"
             metrics_file = root / "metrics.sqlite"
-            routing = RoutingStore(route_file)
+            routing = routing_store_for(self, route_file)
             route = routing.upsert_sandbox(
                 _sandbox_route(
                     sandbox_id="sandbox-1",
@@ -781,7 +787,7 @@ class ControlPlaneTests(unittest.TestCase):
                     inventory_complete=True,
                 )
             )
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 root,
                 heartbeat_file=heartbeat_file,
                 routing_file=route_file,
@@ -810,15 +816,15 @@ class ControlPlaneTests(unittest.TestCase):
                     payload=identity,
                     allow_error=True,
                 )
-                after_first = RoutingStore(route_file).program_requests_readonly()[0]
+                after_first = routing_store_for(self, route_file).program_requests_readonly()[0]
                 second = self._json_request(
                     f"{base}/wake",
                     method="POST",
                     payload=identity,
                     allow_error=True,
                 )
-                after_second = RoutingStore(route_file).program_requests_readonly()[0]
-                final_route = RoutingStore(route_file).get_sandbox_readonly(
+                after_second = routing_store_for(self, route_file).program_requests_readonly()[0]
+                final_route = routing_store_for(self, route_file).get_sandbox_readonly(
                     route.sandbox_id
                 )
                 self.assertTrue(gateway.RequestHandlerClass.metrics_store.flush())
@@ -844,7 +850,7 @@ class ControlPlaneTests(unittest.TestCase):
             route_file = root / "routes.sqlite"
             heartbeat_file = root / "control-state.sqlite"
             snapshot = _portable_snapshot("sandbox-implicit-wake")
-            route = RoutingStore(route_file).upsert_sandbox(
+            route = routing_store_for(self, route_file).upsert_sandbox(
                 _sandbox_route(
                     sandbox_id=snapshot.manifest.sandbox_id,
                     node_id="node-1",
@@ -879,7 +885,7 @@ class ControlPlaneTests(unittest.TestCase):
                     inventory_complete=True,
                 )
             )
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 root,
                 heartbeat_file=heartbeat_file,
                 routing_file=route_file,
@@ -899,7 +905,7 @@ class ControlPlaneTests(unittest.TestCase):
                         state="parked",
                         resources=route.resources,
                     )
-                    racing_store = RoutingStore(route_file)
+                    racing_store = routing_store_for(self, route_file)
                     racing_store.reconcile_sandboxes_for_node(
                         route.node_url,
                         [stale_parked],
@@ -937,7 +943,7 @@ class ControlPlaneTests(unittest.TestCase):
                         "tty": False,
                     },
                 )
-                stored = RoutingStore(route_file).get_sandbox_readonly(route.sandbox_id)
+                stored = routing_store_for(self, route_file).get_sandbox_readonly(route.sandbox_id)
 
         self.assertEqual(response["session"]["id"], "exec-implicit-wake")
         self.assertEqual(wake_race_states, ["parked"])
@@ -959,6 +965,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(stored.node_epoch, "boot-1")
         self.assertEqual(stored.activity_epoch, 11)
 
+    @requires_postgres
     def test_legacy_worker_lifecycle_without_activity_proof_fails_closed(
         self,
     ) -> None:
@@ -983,7 +990,7 @@ class ControlPlaneTests(unittest.TestCase):
                     if parked
                     else {}
                 )
-                route = RoutingStore(route_file).upsert_sandbox(
+                route = routing_store_for(self, route_file).upsert_sandbox(
                     _sandbox_route(
                         sandbox_id=snapshot.manifest.sandbox_id,
                         node_id="legacy-node",
@@ -1017,7 +1024,7 @@ class ControlPlaneTests(unittest.TestCase):
                         inventory_complete=True,
                     )
                 )
-                gateway = _gateway_server(
+                gateway = _gateway_server(self,
                     root,
                     heartbeat_file=heartbeat_file,
                     routing_file=route_file,
@@ -1053,7 +1060,7 @@ class ControlPlaneTests(unittest.TestCase):
                         payload=payload,
                         allow_error=True,
                     )
-                stored = RoutingStore(route_file).get_sandbox_readonly(route.sandbox_id)
+                stored = routing_store_for(self, route_file).get_sandbox_readonly(route.sandbox_id)
 
             self.assertEqual(response["status"], HTTPStatus.BAD_GATEWAY)
             self.assertIn("node_epoch is required", response["body"]["error"])
@@ -1079,7 +1086,7 @@ class ControlPlaneTests(unittest.TestCase):
         for durable_snapshot in (True, False):
             with self.subTest(durable_snapshot=durable_snapshot):
                 with _temporary_root() as root:
-                    routing = RoutingStore(root / "routes.sqlite")
+                    routing = routing_store_for(self, root / "routes.sqlite")
                     snapshot = _portable_snapshot("sandbox-heartbeat")
                     route = routing.upsert_sandbox(
                         _sandbox_route(
@@ -1179,7 +1186,7 @@ class ControlPlaneTests(unittest.TestCase):
                         heartbeat_file = root / "control-state.sqlite"
                         usage_file = root / "registry-usage.sqlite"
                         snapshot = _portable_snapshot(f"ambiguous-{action}")
-                        routing = RoutingStore(route_file)
+                        routing = routing_store_for(self, route_file)
                         route_kwargs = {
                             "sandbox_id": snapshot.manifest.sandbox_id,
                             "node_id": "node-1",
@@ -1237,7 +1244,7 @@ class ControlPlaneTests(unittest.TestCase):
                                 ),
                                 digest=snapshot.publication.manifest_digest,
                             )
-                        gateway = _gateway_server(
+                        gateway = _gateway_server(self,
                             root,
                             heartbeat_file=heartbeat_file,
                             routing_file=route_file,
@@ -1295,7 +1302,7 @@ class ControlPlaneTests(unittest.TestCase):
                                 payload=payload,
                                 allow_error=True,
                             )
-                        current = RoutingStore(route_file).get_sandbox_readonly(
+                        current = routing_store_for(self, route_file).get_sandbox_readonly(
                             route.sandbox_id
                         )
                         leases = RegistryUsageStore(usage_file).snapshot().leases
@@ -1312,6 +1319,7 @@ class ControlPlaneTests(unittest.TestCase):
                     )
                     self.assertEqual(bool(leases), transition_owns_snapshot)
 
+    @requires_postgres
     def test_implicit_wake_snapshot_reference_follows_commit_readback(self) -> None:
         for outcome in ("error_before_commit", "error_after_commit", "conflict"):
             with self.subTest(outcome=outcome), _temporary_root() as root:
@@ -1319,7 +1327,7 @@ class ControlPlaneTests(unittest.TestCase):
                 heartbeat_file = root / "control-state.sqlite"
                 usage_file = root / "registry-usage.sqlite"
                 snapshot = _portable_snapshot(f"implicit-{outcome}")
-                route = RoutingStore(route_file).upsert_sandbox(
+                route = routing_store_for(self, route_file).upsert_sandbox(
                     _sandbox_route(
                         sandbox_id=snapshot.manifest.sandbox_id,
                         node_id="node-1",
@@ -1365,7 +1373,7 @@ class ControlPlaneTests(unittest.TestCase):
                     ),
                     digest=snapshot.publication.manifest_digest,
                 )
-                gateway = _gateway_server(
+                gateway = _gateway_server(self,
                     root,
                     heartbeat_file=heartbeat_file,
                     routing_file=route_file,
@@ -1410,7 +1418,7 @@ class ControlPlaneTests(unittest.TestCase):
                         },
                         allow_error=True,
                     )
-                current = RoutingStore(route_file).get_sandbox_readonly(
+                current = routing_store_for(self, route_file).get_sandbox_readonly(
                     route.sandbox_id
                 )
                 leases = RegistryUsageStore(usage_file).snapshot().leases
@@ -1428,7 +1436,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_worker_detach_retries_ambiguous_eviction_and_commits_once(self) -> None:
         with _temporary_root() as root:
-            routing = RoutingStore(root / "routes.sqlite")
+            routing = routing_store_for(self, root / "routes.sqlite")
             snapshot = _portable_snapshot("sandbox-1")
             route = routing.upsert_sandbox(
                 _sandbox_route(
@@ -1499,7 +1507,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_worker_detach_publishes_park_before_eviction(self) -> None:
         with _temporary_root() as root:
-            routing = RoutingStore(root / "routes.sqlite")
+            routing = routing_store_for(self, root / "routes.sqlite")
             snapshot = _portable_snapshot("sandbox-1")
             route = routing.upsert_sandbox(
                 _sandbox_route(
@@ -1601,7 +1609,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_detached_park_wakes_without_contacting_former_worker(self) -> None:
         with _temporary_root() as root:
-            routing = RoutingStore(root / "routes.sqlite")
+            routing = routing_store_for(self, root / "routes.sqlite")
             snapshot = _portable_snapshot("sandbox-1")
             route = routing.upsert_sandbox(
                 _sandbox_route(
@@ -1724,7 +1732,7 @@ class ControlPlaneTests(unittest.TestCase):
         for durable_destination in (True, False):
             with self.subTest(durable_destination=durable_destination):
                 with _temporary_root() as root:
-                    routing = RoutingStore(root / "routes.sqlite")
+                    routing = routing_store_for(self, root / "routes.sqlite")
                     snapshot = _portable_snapshot("sandbox-1")
                     source = routing.upsert_sandbox(
                         _sandbox_route(
@@ -1865,7 +1873,7 @@ class ControlPlaneTests(unittest.TestCase):
         self,
     ) -> None:
         with _temporary_root() as root:
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 root,
                 registry_url="http://registry.example",
             )
@@ -1945,7 +1953,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_heartbeat_storage_contention_is_retryable_and_next_receipt_succeeds(self):
         with _temporary_root() as root:
-            server = _gateway_server(root, deployment_id="prod-a")
+            server = _gateway_server(self, root, deployment_id="prod-a")
             heartbeat = build_heartbeat(
                 job_id="job-1", node_id="node-1", deployment_id="prod-a",
             )
@@ -1968,7 +1976,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_only_an_accepted_heartbeat_schedules_image_warmups(self):
         with _temporary_root() as root:
-            server = _gateway_server(root)
+            server = _gateway_server(self, root)
             boot = build_heartbeat(job_id="job-1", node_id="node-1", node_epoch="boot-1")
             with (
                 patch.object(server.RequestHandlerClass, "_schedule_image_warmups") as warmups,
@@ -1988,7 +1996,7 @@ class ControlPlaneTests(unittest.TestCase):
     ) -> None:
         with _temporary_root() as root:
             heartbeat_file = root / "control-state.sqlite"
-            server = _gateway_server(
+            server = _gateway_server(self,
                 root,
                 heartbeat_file=heartbeat_file,
                 deployment_id="prod-a",
@@ -2083,7 +2091,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def _assert_unpublished_wake_error(self, *, storage_errors: int) -> None:
         with _temporary_root() as root:
-            routing = RoutingStore(root / "routes.sqlite")
+            routing = routing_store_for(self, root / "routes.sqlite")
             resources = ResourceQuantity(vcpu=2, memory_mb=4096, disk_mb=8192)
             parked = routing.upsert_sandbox(
                 _sandbox_route(
@@ -2204,7 +2212,7 @@ class ControlPlaneTests(unittest.TestCase):
                         pushed=True,
                     )
                 )
-                gateway = _gateway_server(
+                gateway = _gateway_server(self,
                     raw_path,
                     routing_file=raw_path / "routes.sqlite",
                     image_file=image_file,
@@ -2264,7 +2272,7 @@ class ControlPlaneTests(unittest.TestCase):
             route_file = raw_path / "routes.sqlite"
             node = ThreadingHTTPServer(("127.0.0.1", 0), ListingNode)
             with _running_server(node) as node_url:
-                RoutingStore(route_file).upsert_sandbox(
+                routing_store_for(self, route_file).upsert_sandbox(
                     _sandbox_route(
                         sandbox_id="cached-one",
                         node_id="node-1",
@@ -2282,7 +2290,7 @@ class ControlPlaneTests(unittest.TestCase):
                         spec_hash=spec_hash,
                     )
                 )
-                gateway = _gateway_server(
+                gateway = _gateway_server(self,
                     raw_path,
                     routing_file=route_file,
                 )
@@ -2308,7 +2316,7 @@ class ControlPlaneTests(unittest.TestCase):
                     refreshed = self._json_request(f"{base}/v1/sandboxes?refresh=true")
                     ListingNode.invalid_storage = True
                     malformed = self._json_request(f"{base}/v1/sandboxes?refresh=true")
-                    stored = RoutingStore(route_file).get_sandbox("cached-one")
+                    stored = routing_store_for(self, route_file).get_sandbox("cached-one")
 
         self.assertTrue(cached["cached"])
         self.assertEqual(cached["sandboxes"][0]["id"], "cached-one")
@@ -2330,7 +2338,7 @@ class ControlPlaneTests(unittest.TestCase):
                     heartbeat_file = root / "control-state.sqlite"
                     usage_file = root / "registry-usage.sqlite"
                     snapshot = _portable_snapshot("refresh-ambiguous")
-                    route = RoutingStore(route_file).upsert_sandbox(
+                    route = routing_store_for(self, route_file).upsert_sandbox(
                         _sandbox_route(
                             sandbox_id=snapshot.manifest.sandbox_id,
                             node_id="node-1",
@@ -2361,7 +2369,7 @@ class ControlPlaneTests(unittest.TestCase):
                             ),
                         )
                     )
-                    gateway = _gateway_server(
+                    gateway = _gateway_server(self,
                         root,
                         heartbeat_file=heartbeat_file,
                         routing_file=route_file,
@@ -2409,7 +2417,7 @@ class ControlPlaneTests(unittest.TestCase):
                             f"{base}/v1/sandboxes?refresh=true",
                             allow_error=True,
                         )
-                    current = RoutingStore(route_file).get_sandbox_readonly(
+                    current = routing_store_for(self, route_file).get_sandbox_readonly(
                         route.sandbox_id
                     )
                     leases = RegistryUsageStore(usage_file).snapshot().leases
@@ -2445,7 +2453,7 @@ class ControlPlaneTests(unittest.TestCase):
                 ValueError,
                 "registry usage database is invalid or unavailable",
             ):
-                _gateway_server(
+                _gateway_server(self,
                     raw_path,
                     registry_usage_file=usage_path,
                 )
@@ -2456,7 +2464,7 @@ class ControlPlaneTests(unittest.TestCase):
                 "127.0.0.1",
                 0,
                 root / "control-state.sqlite",
-                routing_file=root / "routes.sqlite",
+                routing_file=postgres_routing_file(self, root / "routes.sqlite"),
                 image_file=root / "images.json",
                 metrics_file=root / "metrics.sqlite",
                 gateway_bearer_token="gateway-secret",
@@ -2561,7 +2569,7 @@ class ControlPlaneTests(unittest.TestCase):
                         "127.0.0.1",
                         0,
                         root / "control-state.sqlite",
-                        routing_file=root / "routes.sqlite",
+                        routing_file=postgres_routing_file(self, root / "routes.sqlite"),
                         image_file=root / "images.json",
                         metrics_file=root / "metrics.sqlite",
                         deployment_id="test-deployment",
@@ -2574,7 +2582,7 @@ class ControlPlaneTests(unittest.TestCase):
                 "127.0.0.1",
                 0,
                 root / "control-state.sqlite",
-                routing_file=root / "routes.sqlite",
+                routing_file=postgres_routing_file(self, root / "routes.sqlite"),
                 image_file=root / "images.json",
                 metrics_file=root / "metrics.sqlite",
                 gateway_bearer_token="gateway-secret",
@@ -2607,7 +2615,7 @@ class ControlPlaneTests(unittest.TestCase):
     def test_heartbeat_rejects_node_url_owned_by_another_route(self) -> None:
         with _temporary_root() as root:
             route_file = root / "routes.sqlite"
-            RoutingStore(route_file).upsert_sandbox(
+            routing_store_for(self, route_file).upsert_sandbox(
                 _sandbox_route(
                     sandbox_id="sandbox-1",
                     node_id="node-2",
@@ -2622,7 +2630,7 @@ class ControlPlaneTests(unittest.TestCase):
                 "127.0.0.1",
                 0,
                 root / "control-state.sqlite",
-                routing_file=route_file,
+                routing_file=postgres_routing_file(self, route_file),
                 image_file=root / "images.json",
                 metrics_file=root / "metrics.sqlite",
                 gateway_bearer_token="gateway-secret",
@@ -2651,7 +2659,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_dashboard_assets_are_public_but_metrics_remain_protected(self) -> None:
         with _temporary_root() as root:
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 root,
                 routing_file=root / "routes.sqlite",
                 gateway_bearer_token="secret-token",
@@ -2716,7 +2724,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_gateway_create_burst_returns_only_retryable_json(self) -> None:
         with _temporary_root() as raw_path:
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 raw_path,
                 routing_file=raw_path / "routes.sqlite",
                 max_concurrent_sandbox_creates=8,
@@ -2738,6 +2746,8 @@ class ControlPlaneTests(unittest.TestCase):
                         allow_error=True,
                     )
 
+                # No worker has capacity, and at most 8 creates are admitted
+                # at once: every answer is a retryable 503 with a JSON error.
                 with ThreadPoolExecutor(max_workers=96) as executor:
                     results = list(executor.map(create, range(192)))
 
@@ -2746,6 +2756,61 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertTrue(
             all(isinstance(result["body"].get("error"), str) for result in results)
         )
+
+    def test_create_raced_onto_a_departed_worker_is_retryable(self) -> None:
+        payload = {"id": "raced", "image": "busybox", "cpus": 1, "memory_mb": 512}
+        spec = SandboxSpec.from_dict(payload)
+        with _temporary_root() as raw_path:
+            route_file = raw_path / "routes.sqlite"
+            gateway = _gateway_server(self, raw_path, routing_file=route_file)
+            routing = routing_store_for(self, route_file)
+            creates = gateway.RequestHandlerClass.services.creates
+            view = creates.view
+
+            def view_while_another_gateway_creates():
+                # The same create, placed by another gateway after this one
+                # found no route, on a worker whose heartbeat is gone.
+                routing.allocate_sandbox_create_with_pending(
+                    SandboxRouteAllocation(
+                        sandbox_id=spec.id, node_id="node-gone", job_id="job-gone",
+                        node_url="http://node-gone:8090",
+                        resources=spec.requested_resources(), spec=spec.to_dict(),
+                    ),
+                    spec_hash=sandbox_spec_fingerprint(spec),
+                )
+                return view()
+
+            creates.view = view_while_another_gateway_creates
+            with _running_server(gateway) as base:
+                self.assertEqual(
+                    post_heartbeat(
+                        f"{base}/v1/nodes/heartbeat",
+                        build_heartbeat(
+                            job_id="job-1", node_id="node-1",
+                            node_url="http://node-1:8090",
+                            capabilities=("sandbox", "disk-quota"),
+                            total_resources=ResourceQuantity(
+                                vcpu=4, memory_mb=4096, disk_mb=8192,
+                            ),
+                        ),
+                    ).status,
+                    200,
+                )
+                response = self._json_request(
+                    f"{base}/v1/sandboxes", method="POST", payload=payload,
+                    allow_error=True,
+                )
+            stored = routing.get_sandbox_readonly(spec.id)
+
+        self.assertEqual(response["status"], 503)
+        self.assertEqual(response["body"]["error_code"], "sandbox_worker_unreachable")
+        self.assertEqual(response["body"]["job_id"], "job-gone")
+        self.assertTrue(response["body"]["retryable"])
+        self.assertEqual(response["headers"]["X-UCloud-Sandbox-Retryable"], "true")
+        self.assertIn("Retry-After", response["headers"])
+        # The other gateway's route stands; this create did not move it.
+        assert stored is not None
+        self.assertEqual(stored.job_id, "job-gone")
 
     def test_registry_reference_survives_ambiguous_create_restart_and_reconciliation(
         self,
@@ -2816,7 +2881,7 @@ class ControlPlaneTests(unittest.TestCase):
                     inventory=(),
                     inventory_complete=True,
                 )
-                first_gateway = _gateway_server(
+                first_gateway = _gateway_server(self,
                     raw_path,
                     routing_file=route_file,
                     registry_url="https://registry.example.org",
@@ -2848,7 +2913,7 @@ class ControlPlaneTests(unittest.TestCase):
                         )
                     before_restart = RegistryUsageStore(usage_file).snapshot()
 
-                second_gateway = _gateway_server(
+                second_gateway = _gateway_server(self,
                     raw_path,
                     routing_file=route_file,
                     registry_url="https://registry.example.org",
@@ -2864,7 +2929,7 @@ class ControlPlaneTests(unittest.TestCase):
                     )
                     refreshed = self._json_request(f"{base}/v1/sandboxes?refresh=true")
                     after_restart = RegistryUsageStore(usage_file).snapshot()
-                    route = RoutingStore(route_file).get_sandbox("ambiguous-one")
+                    route = routing_store_for(self, route_file).get_sandbox("ambiguous-one")
 
         self.assertEqual(created["status"], 503)
         self.assertEqual(AmbiguousCreateNode.create_count, 1, created)
@@ -2915,7 +2980,7 @@ class ControlPlaneTests(unittest.TestCase):
             node = ThreadingHTTPServer(("127.0.0.1", 0), CountingNode)
             with _running_server(node) as node_url:
                 image = "registry.example.org/repo:v1"
-                gateway = _gateway_server(
+                gateway = _gateway_server(self,
                     raw_path,
                     routing_file=route_file,
                     registry_url="https://registry.example.org",
@@ -2966,7 +3031,7 @@ class ControlPlaneTests(unittest.TestCase):
                             "memory_mb": 512,
                         }
                     )
-                    RoutingStore(route_file).allocate_sandbox_create_with_pending(
+                    routing_store_for(self, route_file).allocate_sandbox_create_with_pending(
                         SandboxRouteAllocation(
                             sandbox_id=retry_spec.id,
                             node_id="node-1",
@@ -2994,6 +3059,9 @@ class ControlPlaneTests(unittest.TestCase):
                         payload={"image": image, "count": 1},
                         allow_error=True,
                     )
+                    blocked_route = routing_store_for(self, route_file).get_sandbox(
+                        "blocked-one"
+                    )
 
         self.assertEqual(create["status"], 503)
         self.assertEqual(retry["status"], 503)
@@ -3008,7 +3076,7 @@ class ControlPlaneTests(unittest.TestCase):
         # The injected store, not the tagless-digest refusal, failed each lease.
         self.assertEqual(BrokenRegistryUsageStore.touched, 3)
         self.assertEqual(CountingNode.post_count, 0)
-        self.assertIsNone(RoutingStore(route_file).get_sandbox("blocked-one"))
+        self.assertIsNone(blocked_route)
 
     def test_external_registry_images_do_not_use_managed_registry_leases(self) -> None:
         class RejectingRegistryUsageStore:
@@ -3018,7 +3086,7 @@ class ControlPlaneTests(unittest.TestCase):
                 )
 
         with _temporary_root() as raw_path:
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 raw_path,
                 registry_url="http://gateway.internal:5000",
                 registry_worker_url="http://gateway-worker.internal:5000",
@@ -3051,7 +3119,7 @@ class ControlPlaneTests(unittest.TestCase):
     ) -> None:
         digest = "sha256:" + "7" * 64
         with _temporary_root() as raw_path:
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 raw_path,
                 routing_file=raw_path / "routes.sqlite",
                 registry_url="http://registry.invalid:5000",
@@ -3075,9 +3143,7 @@ class ControlPlaneTests(unittest.TestCase):
                         },
                         allow_error=True,
                     )
-                stored_prepared = RoutingStore(
-                    raw_path / "routes.sqlite"
-                ).prepared_capacity()
+                stored_prepared = routing_store_for(self, raw_path / "routes.sqlite").prepared_capacity()
 
         self.assertEqual(prepared["status"], HTTPStatus.SERVICE_UNAVAILABLE)
         self.assertEqual(
@@ -3095,7 +3161,7 @@ class ControlPlaneTests(unittest.TestCase):
     def test_failed_sandbox_pull_persists_incarnation_demand_until_cancel(self) -> None:
         with _temporary_root() as raw_path:
             route_file = raw_path / "routes.sqlite"
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 raw_path,
                 routing_file=route_file,
             )
@@ -3139,14 +3205,14 @@ class ControlPlaneTests(unittest.TestCase):
                     },
                     allow_error=True,
                 )
-                pending = RoutingStore(route_file).get_pending("pull-failed")
-                route = RoutingStore(route_file).get_sandbox("pull-failed")
+                pending = routing_store_for(self, route_file).get_pending("pull-failed")
+                route = routing_store_for(self, route_file).get_sandbox("pull-failed")
                 demand = self._json_request(f"{base}/v1/demand")
                 canceled = self._json_request(
                     f"{base}/v1/sandboxes/pull-failed",
                     method="DELETE",
                 )
-                pending_after_cancel = RoutingStore(route_file).get_pending(
+                pending_after_cancel = routing_store_for(self, route_file).get_pending(
                     "pull-failed"
                 )
 
@@ -3208,7 +3274,7 @@ class ControlPlaneTests(unittest.TestCase):
             route_file = raw_path / "routes.sqlite"
             node = ThreadingHTTPServer(("127.0.0.1", 0), MigratingDeleteNode)
             with _running_server(node) as node_url:
-                routing_store = RoutingStore(route_file)
+                routing_store = routing_store_for(self, route_file)
                 route = routing_store.upsert_sandbox(
                     _sandbox_route(
                         sandbox_id="delete-migrating",
@@ -3237,7 +3303,7 @@ class ControlPlaneTests(unittest.TestCase):
                     source_fenced=True,
                 )
                 assert migration is not None
-                gateway = _gateway_server(raw_path, routing_file=route_file)
+                gateway = _gateway_server(self, raw_path, routing_file=route_file)
                 with _running_server(gateway) as base:
                     post_heartbeat(
                         f"{base}/v1/nodes/heartbeat",
@@ -3253,8 +3319,8 @@ class ControlPlaneTests(unittest.TestCase):
                         f"{base}/v1/sandboxes/{route.sandbox_id}",
                         method="DELETE",
                     )
-                final_route = RoutingStore(route_file).get_sandbox(route.sandbox_id)
-                final_migration = RoutingStore(route_file).get_sandbox_migration(
+                final_route = routing_store_for(self, route_file).get_sandbox(route.sandbox_id)
+                final_migration = routing_store_for(self, route_file).get_sandbox_migration(
                     migration.migration_id
                 )
 
@@ -3285,7 +3351,7 @@ class ControlPlaneTests(unittest.TestCase):
     ) -> None:
         with _temporary_root() as raw_path:
             route_file = raw_path / "routes.sqlite"
-            routing_store = RoutingStore(route_file)
+            routing_store = routing_store_for(self, route_file)
             snapshot = _portable_snapshot("delete-detached")
             route = routing_store.upsert_sandbox(
                 _sandbox_route(
@@ -3311,14 +3377,14 @@ class ControlPlaneTests(unittest.TestCase):
                 destination_job_id="destination-job",
                 destination_node_url="http://destination.invalid",
             )
-            gateway = _gateway_server(raw_path, routing_file=route_file)
+            gateway = _gateway_server(self, raw_path, routing_file=route_file)
             with _running_server(gateway) as base:
                 response = self._json_request(
                     f"{base}/v1/sandboxes/{route.sandbox_id}",
                     method="DELETE",
                 )
-            final_route = RoutingStore(route_file).get_sandbox(route.sandbox_id)
-            final_migration = RoutingStore(route_file).get_sandbox_migration(
+            final_route = routing_store_for(self, route_file).get_sandbox(route.sandbox_id)
+            final_migration = routing_store_for(self, route_file).get_sandbox_migration(
                 migration.migration_id
             )
 
@@ -3413,12 +3479,12 @@ class ControlPlaneTests(unittest.TestCase):
                 return b"x" * 9
 
         with _temporary_root() as root:
-            heartbeat_file, route_file = _seed_gateway_node(
+            heartbeat_file, route_file = _seed_gateway_node(self,
                 root,
                 node_url="http://node.invalid:8090",
                 sandbox_id="bounded-one",
             )
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 root,
                 heartbeat_file=heartbeat_file,
                 routing_file=route_file,
@@ -3465,7 +3531,7 @@ class ControlPlaneTests(unittest.TestCase):
                 node_control_bearer_token="node-secret",
                 build_context_store_dir=builder_contexts,
             )
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 raw_path,
                 routing_file=raw_path / "routes.json",
                 gateway_bearer_token="gateway-secret",
@@ -3694,7 +3760,7 @@ class ControlPlaneTests(unittest.TestCase):
 
     def test_active_prepared_warmup_gates_matching_create_admission(self) -> None:
         with _temporary_root() as raw_path:
-            store = RoutingStore(raw_path / "routes.sqlite")
+            store = routing_store_for(self, raw_path / "routes.sqlite")
             store.upsert_image_warmup(
                 "prepare-1",
                 "busybox:latest",
@@ -3749,7 +3815,7 @@ class ControlPlaneTests(unittest.TestCase):
 
         with _temporary_root() as raw_path:
             node = ThreadingHTTPServer(("127.0.0.1", 0), CountingNode)
-            gateway = _gateway_server(
+            gateway = _gateway_server(self,
                 raw_path,
                 routing_file=raw_path / "routes.sqlite",
             )

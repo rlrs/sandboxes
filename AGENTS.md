@@ -34,8 +34,14 @@ uv run python scripts/run_tests.py --tier unit     # fast subset
 ```
 
 Test modules declare `TEST_TIER` (`unit` by default, `contract`, `linux`, `live`).
-PostgreSQL tests need `UCLOUD_TEST_POSTGRES_DSN`; `linux` tests need root and
-runsc; `live` tests need a deployment.
+PostgreSQL tests, which include every test of routing, the gateway and LocalFleet,
+need `UCLOUD_TEST_POSTGRES_DSN` (`check.sh` refuses to run without it); `linux`
+tests need root and runsc; `live` tests need a deployment. A local PostgreSQL:
+
+```bash
+docker run -d --rm --name sandboxes-test-pg -e POSTGRES_PASSWORD=test -p 127.0.0.1:55432:5432 postgres:17
+export UCLOUD_TEST_POSTGRES_DSN=postgresql://postgres:test@127.0.0.1:55432/postgres
+```
 
 ## Tests
 

@@ -15,6 +15,8 @@ import unittest
 from tests.harness import LocalFleet
 from sandboxes import routing
 
+TEST_TIER = "contract"
+
 
 def _exec_paths(node) -> list[tuple[str, str]]:
     return [request for request in node.requests if request[1].startswith("/v1/exec/")]

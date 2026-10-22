@@ -1673,15 +1673,6 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "disagree"):
             await peer.open()
 
-    async def test_unactivated_relay_import_is_refused(self):
-        async with self.state.store.transaction("simulate_unfinished_import") as conn:
-            await conn.execute(
-                "INSERT INTO relay_imports(deployment_id,source_digest) VALUES ('unfinished','d')"
-            )
-        state = PostgresRelayState(PostgresDatabase(DSN, "unfinished", schema=self.schema))
-        with self.assertRaisesRegex(ValueError, "not activated"):
-            await state.open()
-
     async def test_reattach_reads_one_snapshot_while_peer_commits_result(self):
         peer = await self.new_state()
         original = await self.enqueue(idempotency_key="interleaved")

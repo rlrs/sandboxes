@@ -153,7 +153,7 @@ silent, the delete stays recorded (later traffic gets 409
 Each fact has exactly one authority; caches, notifications and heartbeats
 speed things up but never own state.
 
-- **Routing store** (PostgreSQL; SQLite for standalone deployments): routes
+- **Routing store** (PostgreSQL): routes
   with generation high-water marks, owner node and boot epoch, operation IDs
   and snapshot manifests, plus the placement queue, migrations, model-wait
   program state, pending demand and loss records.

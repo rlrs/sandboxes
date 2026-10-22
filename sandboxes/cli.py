@@ -1149,7 +1149,10 @@ def cmd_serve_control_plane(args: argparse.Namespace) -> int:
     from .gateway.base_regeneration import from_deployment as base_regeneration_from_deployment
     config = load_config(args)
     if getattr(args,'check_placement_enabled',False):
-        return 0 if open_routing_store(config.routing_file()).distributed else 1
+        # ucloud-sandbox-placement.service's ExecCondition: routing is always
+        # PostgreSQL, so the worker runs once the routing authority opens.
+        open_routing_store(config.routing_file())
+        return 0
     placement_role=getattr(args,'placement_worker',False)
     if placement_role and (config.gateway_port>=65535 or config.gateway_port+1 in {config.registry_port,config.relay_port}):
         raise ValueError('private placement port conflicts with configured services')
@@ -1188,7 +1191,6 @@ def cmd_serve_control_plane(args: argparse.Namespace) -> int:
         deployment_id=config.deployment_id,
         heartbeat_ttl_seconds=config.gateway_heartbeat_ttl_seconds,
         isolate_fleet_reads=True,
-        isolate_routing_writes=True,
         queue_placement=not placement_role,
         placement_worker=placement_role,
         image_file=config.image_file(),

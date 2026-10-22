@@ -11,10 +11,22 @@
   removes the old package. Environment variables, headers, host paths, unit names,
   runtime binaries and labels are unchanged.
 - **The SQLite relay importer is gone.** `python -m sandboxes.shared_control
-  import-idle-relay` and the relay's startup check of `model-relay.sqlite3` are
-  deleted; the relay has run only on PostgreSQL since 0.5.114. A deployment still on
-  an older relay imports with 0.9.75 first. A relay still refuses to start on an
-  import that was never activated.
+  import-idle-relay`, the relay's startup check of `model-relay.sqlite3` and its
+  check of the import marker are deleted; the relay has run only on PostgreSQL since
+  0.5.114. A deployment still on an older relay, or with an unfinished import,
+  imports with 0.9.75 first. The schema keeps the unused `relay_imports` table so a
+  rollback still opens it.
+- **Routing runs only on PostgreSQL.** The SQLite routing backend is gone, with
+  `python -m sandboxes.shared_control.routing_cutover`, the gateway's routing write
+  process and the placement file lock. `<data_root>/routes.sqlite` must hold the
+  PostgreSQL routing descriptor, as production's does: the gateway, autoscaler and
+  GC now fail at startup on a missing file or a SQLite database instead of creating
+  one. A fresh deployment creates the descriptor with `python -m
+  sandboxes.shared_control migrate ... --routing-file <data_root>/routes.sqlite
+  --routing-schema <schema>`. A deployment still on SQLite routing cuts over with
+  `routing_cutover` from 0.9.75 first. Nothing else changes for a deployment already
+  on PostgreSQL routing, and rolling back reads the same descriptor and schema.
+  `orjson` is no longer a dependency: only the SQLite fleet scan used it.
 - **`ucloud-sandboxes-registry-migrate` is deleted.** The filesystem-to-S3 registry
   migration was never used; the registry stays on the filesystem.
 - **Removed unused code.** The in-guest exec agent (`ucloud-sandbox-init agent`,

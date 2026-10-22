@@ -5,7 +5,7 @@ creates. Power-of-k moves a definitely rejected create to the
 next candidate as a fresh incarnation, keeps an ambiguous one where it is,
 and queues demand once every candidate rejects. A worker bounds its
 admission wait by the gateway's header. The route intent keeps today's
-generation, operation and spec-hash fences on SQLite and PostgreSQL. With
+generation, operation and spec-hash fences. With
 the durable queue, both gateways claim queued creates and run them.
 """
 from concurrent.futures import ThreadPoolExecutor
@@ -37,6 +37,7 @@ from sandboxes.models import ResourceQuantity
 from sandboxes.routing import RoutingStore, SandboxRouteAllocation, SandboxRouteConflictError
 from sandboxes.sandbox import SandboxSpec, SandboxStartupBusyError
 from sandboxes.telemetry import Telemetry
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN")
@@ -47,24 +48,23 @@ HASH = "a" * 64
 
 class TwoGatewayTests(unittest.TestCase):
     def test_creates_place_from_either_gateway(self):
-        for postgres in (False, True):
-            with self.subTest(postgres=postgres), LocalFleet(nodes=2, gateways=2, postgres=postgres) as fleet:
-                names = [f"sbx-{index}" for index in range(6)]
-                for index, name in enumerate(names):
-                    response = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image},
-                                             token="sandbox", gateway=index % 2)
-                    self.assertEqual(response.status, 201, response.body)
-                for name in names:
-                    route = fleet.route(name)
-                    self.assertEqual((route.generation, route.state), (1, "running"))
-                    self.assertIsNotNone(fleet.node_for(name).registration(name))
-                retried = fleet.request("POST", "/v1/sandboxes", payload={"id": names[0], **SPEC, "image": fleet.image},
-                                        token="sandbox", gateway=1)
-                self.assertEqual((retried.status, retried.json()["recovered"]), (200, True))
-                self.assertEqual(fleet.exec(names[1], ["cat", "/opt/greeting"]).stdout,
-                                 "hello from the image\n")
-                self.assertEqual(fleet.delete(names[2]).status, 200)
-                self.assertIsNone(fleet.route(names[2]))
+        with LocalFleet(nodes=2, gateways=2) as fleet:
+            names = [f"sbx-{index}" for index in range(6)]
+            for index, name in enumerate(names):
+                response = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image},
+                                         token="sandbox", gateway=index % 2)
+                self.assertEqual(response.status, 201, response.body)
+            for name in names:
+                route = fleet.route(name)
+                self.assertEqual((route.generation, route.state), (1, "running"))
+                self.assertIsNotNone(fleet.node_for(name).registration(name))
+            retried = fleet.request("POST", "/v1/sandboxes", payload={"id": names[0], **SPEC, "image": fleet.image},
+                                    token="sandbox", gateway=1)
+            self.assertEqual((retried.status, retried.json()["recovered"]), (200, True))
+            self.assertEqual(fleet.exec(names[1], ["cat", "/opt/greeting"]).stdout,
+                             "hello from the image\n")
+            self.assertEqual(fleet.delete(names[2]).status, 200)
+            self.assertIsNone(fleet.route(names[2]))
 
     def test_a_stale_view_sends_a_deferred_create_to_the_next_candidate(self):
         with LocalFleet(nodes=2) as fleet:
@@ -163,7 +163,7 @@ class QueuedCreateTests(unittest.TestCase):
     and groups and runs them itself. Here two gateways are those processes."""
 
     def fleet(self, nodes=2, **options):
-        return LocalFleet(nodes=nodes, gateways=2, postgres=True,
+        return LocalFleet(nodes=nodes, gateways=2,
                           gateway_options={"queue_placement": True, **options})
 
     def test_two_api_processes_claim_creates_and_place_each_once(self):
@@ -226,7 +226,7 @@ class CreateLoopTests(unittest.TestCase):
 
     def setUp(self):
         self.temp = TemporaryDirectory()
-        self.store = RoutingStore(Path(self.temp.name) / "routes.sqlite")
+        self.store = routing_store_for(self, Path(self.temp.name) / "routes.sqlite")
         self.nodes = [heartbeat("a", cpu=10.0), heartbeat("b", cpu=50.0)]
         self.placement = CreatePlacement(
             self.store, SimpleNamespace(load_heartbeats=lambda shared=False: {
@@ -384,15 +384,6 @@ class IntentFences:
         self.assertIsNone(self.store.confirm_create(replace(deleting, state="running", activity_epoch=4)))
         self.store.delete_sandbox_if_current("s", generation=deleting.generation)
         self.assertEqual(self.reserve("a", "create-6").generation, 3)
-
-
-class SqliteIntentFenceTests(IntentFences, unittest.TestCase):
-    def setUp(self):
-        self.temp = TemporaryDirectory()
-        self.store = RoutingStore(Path(self.temp.name) / "routes.sqlite")
-
-    def tearDown(self):
-        self.temp.cleanup()
 
 
 @unittest.skipUnless(DSN, "requires real PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)")

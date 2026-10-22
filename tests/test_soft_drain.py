@@ -29,7 +29,6 @@ from sandboxes.models import (
     utc_now,
 )
 from sandboxes.policy import evaluate_scale, plan_soft_drain
-from sandboxes.routing import RoutingStore
 from tests.test_cli import (
     autoscaler_args, owned_heartbeat, owned_node_job, reconcile, save_heartbeats,
     temporary_root, ucloud_config, write_jobs,
@@ -37,6 +36,7 @@ from tests.test_cli import (
 from tests.gateway_support import gateway_services
 from tests.test_control_plane import _portable_snapshot, _sandbox_route
 from tests.test_policy import demand, node
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -564,7 +564,7 @@ class SoftDrainGatewayTests(unittest.TestCase):
         return heartbeat
 
     def handler(self, root, *destinations):
-        routing = RoutingStore(root / "routes.sqlite")
+        routing = routing_store_for(self, root / "routes.sqlite")
         route = routing.upsert_sandbox(
             portable_route(
                 "parked", node_id="node-300", job_id="300",

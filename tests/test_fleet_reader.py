@@ -13,7 +13,8 @@ from sandboxes.control_plane import _sandbox_list_bytes
 from sandboxes.fleet_reader import FleetResponseRenderer, FleetSnapshotReader
 from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
 from sandboxes.registry import heartbeat_to_dict
-from sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.routing import SandboxRoute
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -24,7 +25,7 @@ class FleetReaderTests(unittest.TestCase):
             root = Path(raw)
             control = ControlStateStore(root / 'control.sqlite')
             writer = ControlStateStore(control.path)
-            routes = RoutingStore(root / 'routes.sqlite')
+            routes = routing_store_for(self, root / 'routes.sqlite')
             entry = SandboxInventoryEntry(
                 sandbox_id='agent', generation=1, operation_id='create',
                 spec_hash='a' * 64, state='parked',
@@ -80,7 +81,7 @@ class FleetReaderTests(unittest.TestCase):
         with TemporaryDirectory() as raw:
             root = Path(raw)
             control = ControlStateStore(root / 'control.sqlite')
-            routes = RoutingStore(root / 'routes.sqlite')
+            routes = routing_store_for(self, root / 'routes.sqlite')
             heartbeat = replace(build_heartbeat(job_id='job'), node_id='node',
                                 node_url='http://node:8090', active_sandboxes=1,
                                 updated_at=utc_now())
@@ -118,7 +119,7 @@ class FleetReaderTests(unittest.TestCase):
             with self.subTest(replaced=replaced), TemporaryDirectory() as raw:
                 root = Path(raw)
                 control = ControlStateStore(root / 'control.sqlite')
-                routes = RoutingStore(root / 'routes.sqlite')
+                routes = routing_store_for(self, root / 'routes.sqlite')
                 reader = FleetSnapshotReader(control.path, routes.path, 120)
                 try:
                     reader.read()

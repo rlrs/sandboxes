@@ -8,7 +8,16 @@ trap 'rm -rf "$check_root"' EXIT
 root_project_venv="$check_root/root-project-venv"
 sdk_project_venv="$check_root/sdk-project-venv"
 
-# PostgreSQL modules import psycopg; without a DSN their tests skip.
+# Routing, the gateway and LocalFleet scenarios run on PostgreSQL; without a
+# DSN those tests skip, so the check refuses to pass without one by default.
+if [ -z "${UCLOUD_TEST_POSTGRES_DSN:-}" ]; then
+  if [ "${UCLOUD_CHECK_ALLOW_MISSING_POSTGRES:-0}" = 1 ]; then
+    echo "UCLOUD_TEST_POSTGRES_DSN is unset; explicitly skipping PostgreSQL tests" >&2
+  else
+    echo "UCLOUD_TEST_POSTGRES_DSN is required (AGENTS.md; set UCLOUD_CHECK_ALLOW_MISSING_POSTGRES=1 to opt out)" >&2
+    exit 1
+  fi
+fi
 UV_PROJECT_ENVIRONMENT="$root_project_venv" uv sync --locked --extra postgres
 UV_PROJECT_ENVIRONMENT="$root_project_venv" \
   uv run --extra postgres ruff check sandboxes tests scripts

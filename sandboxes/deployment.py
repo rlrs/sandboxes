@@ -20,8 +20,8 @@ INIT_VERSION_LABEL = "ucloud-sandboxes/init-version"
 
 @lru_cache(maxsize=1)
 def package_version() -> str:
-    # A running service belongs to one immutable release. Do not read wheel
-    # metadata for each candidate while holding the placement lock.
+    # A running service belongs to one immutable release. Placement checks
+    # every candidate's agent version; read wheel metadata once, not per candidate.
     try:
         return metadata.version(PACKAGE_NAME)
     except metadata.PackageNotFoundError:

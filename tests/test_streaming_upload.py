@@ -113,10 +113,10 @@ class StreamingUploadTests(unittest.TestCase):
             )
             with _running_server(node) as node_url:
                 for sid in ('bulk', 'small'):
-                    heartbeat_file, route_file = _seed_gateway_node(
+                    heartbeat_file, route_file = _seed_gateway_node(self,
                         root, node_url=node_url, sandbox_id=sid,
                     )
-                gateway = _gateway_server(root, heartbeat_file=heartbeat_file, routing_file=route_file)
+                gateway = _gateway_server(self, root, heartbeat_file=heartbeat_file, routing_file=route_file)
                 with _running_server(gateway):
                     yield gateway, service, runner
 

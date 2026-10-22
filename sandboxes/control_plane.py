@@ -390,19 +390,11 @@ class _LocalWakeBatcher:
                 leader = self.pending[0][0]
             batch = []
             try:
-                # Gather after acquiring placement, so callers that arrived
-                # while another reservation held it share this inventory read
-                # and durable commit. Creates and migrations use the same lock.
-                if leader.routing_store.distributed:
-                    with self.lock:
-                        batch, self.pending = self.pending, []
-                    results = leader.services.placement.atomic(lambda: leader._reserve_local_wake_batch(batch),worker_id=batch[0][1].job_id)
-                else:
-                    with leader.services.placement.reservation() as span:
-                        with self.lock:
-                            batch, self.pending = self.pending, []
-                        span.set_attribute("gateway.wake.batch_size", len(batch))
-                        results = leader._reserve_local_wake_batch(batch)
+                # Callers that arrived while the previous batch's placement
+                # transaction ran share this inventory read and durable commit.
+                with self.lock:
+                    batch, self.pending = self.pending, []
+                results = leader.services.placement.atomic(lambda: leader._reserve_local_wake_batch(batch),worker_id=batch[0][1].job_id)
                 for (_, _, future), result in zip(batch, results, strict=True):
                     future.set_result(result)
             except BaseException as exc:
@@ -471,7 +463,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
     wake_consolidation_policy: ScalePolicy = ScalePolicy()
     wake_consolidation_next_at: float = 0.0
     server_version = "ucloud-sandboxes-control-plane/0.1"
-    routing_write_process = None
     dispatch_environment_roots = False
     # Toolkit layers (docs/images.md); None without a signing key.
     toolkit_composer = None
@@ -484,12 +475,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         parsed = urlparse(self.path)
         if self.path == "/healthz":
             health = service_health("control-plane")
-            writer_error = (self.routing_write_process.health_error()
-                            if self.routing_write_process is not None else "")
-            if writer_error:
-                health.update(ok=False, routing_writer={"ok": False, "error": writer_error})
-                self._write_json(health, status=HTTPStatus.SERVICE_UNAVAILABLE)
-                return
             registry_usage_error = self.services.registry_refs.usage_health_error()
             if registry_usage_error:
                 health["ok"] = False
@@ -3693,7 +3678,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
 
     def _route_sandbox_request(self, sandbox_id: str, path: str) -> None:
         action = match_sandbox_http_route(self.command, path)
-        if action and action.action=='delete' and self.routing_store.distributed:
+        if action and action.action=='delete':
             self.routing_store.cancel_create_commands(sandbox_id)
         if action and action.action=='wake' and getattr(self,'placement_queue',None) is not None:
             try:
@@ -4747,7 +4732,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
     def _wake_placement(self) -> WakePlacement:
         placement = self.services.placement
         return WakePlacement(self.routing_store, self._wake_admission(), WakePlacementPorts(
-            reservation=placement.reservation,
             owner=lambda job_id: self._heartbeat_for_route(job_id=job_id),
             occupants=placement.routes_for_node,
             destination=lambda route, **options: self._select_migration_destination(
@@ -4759,13 +4743,11 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             publish=self._request_wake_publication,
             decode_publication=self._decode_wake_publication,
             observe_consolidation=self._observe_wake_consolidation,
-            atomic=placement.atomic if self.routing_store.distributed else None,
+            atomic=placement.atomic,
         ))
 
     def _reserve_local_wake(self, route):
-        if self.routing_store.distributed:
-            return _local_wake_batcher(self.routing_store.path,owner=route.job_id).reserve(self,route)
-        return _local_wake_batcher(self.routing_store.path).reserve(self, route)
+        return _local_wake_batcher(self.routing_store.path,owner=route.job_id).reserve(self,route)
 
     def _write_wake_unavailable(self, outcome: WakeUnavailable) -> None:
         if outcome.missing_sandbox_id:
@@ -5785,7 +5767,6 @@ def build_server(
     metrics_file: Path,
     heartbeat_ttl_seconds: int = 120,
     isolate_fleet_reads: bool = False,
-    isolate_routing_writes: bool = False,
     async_proxy_responses: bool = True,
     queue_placement: bool = False,
     placement_worker: bool = False,
@@ -5845,12 +5826,7 @@ def build_server(
     # Otherwise /healthz can succeed while every fleet request fails decoding.
     store.load_heartbeats()
     routing_store = open_routing_store(routing_file)
-    if routing_store.distributed:
-        routing_store.telemetry = resolved_telemetry
-    from .routing_writer import RoutingWriteProcess
-    routing_writer = RoutingWriteProcess(routing_store) if isolate_routing_writes and not routing_store.distributed else None
-    if routing_writer is not None:
-        routing_store = routing_writer
+    routing_store.telemetry = resolved_telemetry
     metrics_store = BufferedMetricsStore(metrics_file)
     from .build_history import BuildHistoryStore
     build_history = BuildHistoryStore(metrics_file.with_name("build-history.sqlite"))
@@ -5889,10 +5865,8 @@ def build_server(
     BoundHandler.allow_http_keep_alive = False
     BoundHandler.routing_store = routing_store
     BoundHandler.placement_worker = placement_worker
-    if placement_worker and not routing_store.distributed:
-        raise ValueError('placement worker requires PostgreSQL routing')
     placement_queue=None
-    if queue_placement and routing_store.distributed:
+    if queue_placement:
         if not async_proxy_responses or placement_worker:
             raise ValueError('queued placement requires asynchronous public responses')
         from .shared_control.placement_queue import (
@@ -5908,7 +5882,6 @@ def build_server(
                 if resolved_telemetry.enabled else None))
     BoundHandler.placement_queue=placement_queue
     BoundHandler.placement_claims=None
-    BoundHandler.routing_write_process = routing_writer
     BoundHandler.gateway_bearer_token = gateway_bearer_token
     BoundHandler.sandbox_api_token = sandbox_api_token
     BoundHandler.heartbeat_bearer_token = heartbeat_bearer_token
@@ -6055,8 +6028,6 @@ def build_server(
                     BoundHandler.services.heartbeats.reaper.close()
                 if fleet_reader is not None:
                     fleet_reader.close()
-                if routing_writer is not None:
-                    routing_writer.close()
                 if placement_queue is not None:
                     from .node_http_async import node_http_pool
                     node_http_pool.submit(placement_queue.close()).result(timeout=10)
@@ -6082,8 +6053,6 @@ def build_server(
             placement_queue.start(BoundHandler.placement_claims.run(asyncio.Event()))
         return server
     except BaseException:
-        if routing_writer is not None:
-            routing_writer.close()
         metrics_store.close()
         raise
 
@@ -6187,7 +6156,7 @@ def _sandbox_list_bytes(store, routing_store, heartbeat_ttl_seconds, *, renderer
         heartbeat.node_id: heartbeat for heartbeat in heartbeats.values()
     }
     rows = (routing_store.sandbox_status_rows_readonly(sandbox_ids) if status_only else
-            routing_store._sandbox_route_rows_readonly(background=True))
+            routing_store.sandbox_route_rows_readonly())
     return (renderer or FleetResponseRenderer(status_only=status_only)).render(
         rows,
         heartbeats_by_node_id, heartbeat_ttl_seconds,

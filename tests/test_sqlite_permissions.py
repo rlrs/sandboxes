@@ -7,20 +7,17 @@ import unittest
 from unittest.mock import patch
 
 from sandboxes.control_state import ControlStateStore
-from sandboxes.routing import RoutingStore
 
 TEST_TIER = "contract"
 
 
 class SqlitePermissionTests(unittest.TestCase):
     def test_pooled_reads_check_database_and_new_connections_audit_sidecars(self):
-        for store_type in (RoutingStore, ControlStateStore):
+        for store_type in (ControlStateStore,):
             with self.subTest(store=store_type.__name__), TemporaryDirectory() as directory:
                 path = Path(directory) / "state.sqlite"
                 store = store_type(path)
                 def read():
-                    if isinstance(store, RoutingStore):
-                        return store.get_sandbox_readonly("absent")
                     return store.get_heartbeat("absent")
                 # Keep SQLite's real WAL and shared-memory files alive between
                 # requests, as they are during overlapping production traffic.
@@ -38,8 +35,7 @@ class SqlitePermissionTests(unittest.TestCase):
                     # Main-file mode and identity are rechecked on reads (the
                     # control state at most once a second).
                     path.chmod(0o644)
-                    if not isinstance(store, RoutingStore):
-                        store._connection_checked_at = float("-inf")
+                    store._connection_checked_at = float("-inf")
                     read()
                     self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
 

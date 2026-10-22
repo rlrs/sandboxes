@@ -31,7 +31,10 @@ Relay, routing and placement moved off single-writer gateway SQLite (one wake wa
 32.1 s for a placement lock; burst p95 fell from ~3.1 s to 1.0 s at 512). A result and
 its wake intent commit in one transaction, and the database owns retry timing. Workers
 keep SQLite journals. Redis, a broker and embedded KV stores were rejected as a second
-recovery boundary no measurement required.
+recovery boundary no measurement required. The SQLite routing backend, kept for
+standalone deployments, was removed once production ran routing on PostgreSQL: no
+deployment used it, and it cost a second persistence layer, process locks and a write
+process.
 
 Full record: `git show a04c1ad:docs/shared-control-plane-design.md`,
 `git show a04c1ad:docs/reviews/gateway-database-scaling-2026-09-21.md`,
