@@ -190,12 +190,8 @@ def _node_can_fit_available(
     heartbeat: NodeHeartbeat,
     requested: ResourceQuantity,
     available: ResourceQuantity,
-    *,
-    check_cpu: bool = True,
 ) -> bool:
-    return node_accepts_dynamic_request(
-        heartbeat, requested, available, check_cpu=check_cpu,
-    )
+    return node_accepts_dynamic_request(heartbeat, requested, available)
 
 
 @contextmanager
