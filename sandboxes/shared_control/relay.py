@@ -15,6 +15,7 @@ import hmac
 import json
 import logging
 import time
+from typing import NamedTuple
 from uuid import uuid4
 from weakref import WeakValueDictionary
 
@@ -37,6 +38,23 @@ DEFAULT_STORAGE_BUDGET = 64 * 1024**3
 # A local wait's wake runs only if the guest has not acknowledged its answer
 # by then: longer than a thaw with its bounded prefetch (pause_tier, 2 s).
 LOCAL_WAKE_GRACE = 5.0
+
+
+class LifecycleRenewal(NamedTuple):
+    interval: float  # seconds between an owner's renewal passes
+    extension: float  # seconds each pass moves claim_until past its commit
+
+
+def lifecycle_renewal(lease_seconds):
+    """How an owner keeps the lifecycle claims it is dispatching live.
+
+    A claim is first renewed by the pass after it registers, about one
+    interval after it was taken; each pass grants a full lease again. Renewing
+    every third of a lease keeps a live claim through one failed pass with a
+    third of the lease to spare, so peers take over only claims whose owner
+    has really stopped renewing.
+    """
+    return LifecycleRenewal(interval=lease_seconds / 3, extension=lease_seconds)
 
 
 async def _wait_cancellable(awaitable, timeout):
@@ -1565,7 +1583,8 @@ class PostgresRelayState:
                 WHERE (l.deployment_id,l.request_id,l.action)=(e.deployment_id,e.request_id,e.action)
                 RETURNING l.request_id,l.action""",
                 ([key[0] for key, _ in owned], [key[1] for key, _ in owned],
-                 [token for _, token in owned], self.deployment, self.claim_seconds),
+                 [token for _, token in owned], self.deployment,
+                 lifecycle_renewal(self.claim_seconds).extension),
             )).fetchall()
         renewed = {(row["request_id"], row["action"]) for row in rows}
         for key, token in owned:
@@ -1574,7 +1593,7 @@ class PostgresRelayState:
 
     async def _renew_lifecycle_loop(self):
         while not self._closing:
-            await asyncio.sleep(self.claim_seconds / 3)
+            await asyncio.sleep(lifecycle_renewal(self.claim_seconds).interval)
             try:
                 await self._renew_lifecycle_claims()
             except asyncio.CancelledError:
