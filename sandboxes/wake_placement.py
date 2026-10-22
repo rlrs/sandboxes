@@ -1,15 +1,15 @@
 """Wake placement use case, independent of HTTP request/response handling.
 
 The routing store remains lifecycle authority. Capacity and migration decisions
-run under the existing shared placement reservation; worker RPCs and migration
-execution run after releasing it. Deferred work retains the existing demand or
+run inside one placement transaction (``atomic``); worker RPCs and migration
+execution run after it commits. Deferred work retains the existing demand or
 migration reservation rather than adding a second queue.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, ContextManager, Sequence
+from typing import Any, Callable, Sequence
 from uuid import uuid4
 
 from .models import NodeHeartbeat, ResourceQuantity
@@ -60,7 +60,6 @@ class WakeCapacityRefreshRequired(Exception):
 class WakePlacementPorts:
     """Existing capacity, worker and migration operations; none write HTTP."""
 
-    reservation: Callable[[], ContextManager]
     owner: Callable[[str], NodeHeartbeat | None]
     occupants: Callable[[NodeHeartbeat], Sequence[PlacementOccupant]]
     destination: Callable[..., NodeHeartbeat | None]
@@ -72,7 +71,7 @@ class WakePlacementPorts:
     publish: Callable[[SandboxRoute], dict[str, Any] | None]
     decode_publication: Callable[[SandboxRoute, dict[str, Any]], SandboxRoute | None]
     observe_consolidation: Callable[[SandboxRoute, SandboxMigration | None], None]
-    atomic: Callable[[Callable[[], Any]], Any] | None = None
+    atomic: Callable[[Callable[[], Any]], Any]
 
 
 class WakePlacement:
@@ -82,10 +81,7 @@ class WakePlacement:
         self.routes, self.admission, self.ports = routes, admission, ports
 
     def _atomic(self, operation):
-        if self.ports.atomic is not None:
-            return self.ports.atomic(operation)
-        with self.ports.reservation():
-            return operation()
+        return self.ports.atomic(operation)
 
     @staticmethod
     def changed() -> WakePlacementStopped:
@@ -123,7 +119,7 @@ class WakePlacement:
                     return self._placed(current, self.reserve(blocked.route))
             except WakeSnapshotPublicationRequired as pending:
                 # Publication is useful only after proving another node can
-                # admit this checkpoint; never hold placement locks over RPCs.
+                # admit this checkpoint; never hold a placement transaction over RPCs.
                 try:
                     payload = self.ports.publish(pending.route)
                     if payload is not None:

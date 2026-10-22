@@ -14,6 +14,7 @@ from sandboxes.control_plane import build_server
 from sandboxes.gateway_response_proxy import encode_response
 from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
 from sandboxes.routing import ExecRoute, SandboxRoute
+from tests.support import postgres_routing_file
 
 TEST_TIER = "contract"
 
@@ -100,7 +101,7 @@ class AsyncGatewayEventTests(unittest.TestCase):
             heartbeat_bearer_token="heartbeat",
             node_control_bearer_token="node-private",
             deployment_id="test",
-            routing_file=self.root / "routing.sqlite",
+            routing_file=postgres_routing_file(self, self.root / "routing.sqlite"),
             image_file=self.root / "images.json",
             metrics_file=self.root / "metrics.sqlite",
             max_http_request_threads=2,

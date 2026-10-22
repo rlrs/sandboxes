@@ -16,6 +16,8 @@ from tests.harness import LocalFleet, process_alive
 from tests.harness.environments import EnvironmentPublisher
 from tests.harness.fleet import _request
 
+TEST_TIER = "contract"
+
 
 class LocalFleetScenarioTests(unittest.TestCase):
     def _create_exec_files_delete(self, fleet: LocalFleet) -> None:
@@ -66,10 +68,6 @@ class LocalFleetScenarioTests(unittest.TestCase):
 
     def test_create_exec_files_delete(self):
         with LocalFleet() as fleet:
-            self._create_exec_files_delete(fleet)
-
-    def test_create_exec_files_delete_with_postgres_routing(self):
-        with LocalFleet(postgres=True) as fleet:
             self._create_exec_files_delete(fleet)
 
     def test_archive_upload_writes_a_harness_in_one_request(self):

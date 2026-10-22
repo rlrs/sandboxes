@@ -22,6 +22,8 @@ import unittest
 from tests.harness import LocalFleet
 from sandboxes import routing
 
+TEST_TIER = "contract"
+
 SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 8192, "network": "none"}
 PER_NODE = 65536 // SPEC["disk_mb"]
 

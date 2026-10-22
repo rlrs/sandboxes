@@ -10,8 +10,9 @@ from unittest.mock import patch
 
 from tests.test_control_plane import _sandbox_route
 from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
-from sandboxes.routing import RoutingStore, wake_pending_demand_id
+from sandboxes.routing import wake_pending_demand_id
 from sandboxes.wake_admission import WakeAdmission
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -20,7 +21,7 @@ class WakeAdmissionTests(unittest.TestCase):
     def setUp(self):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.store = RoutingStore(Path(temporary.name) / "routes.sqlite")
+        self.store = routing_store_for(self, Path(temporary.name) / "routes.sqlite")
         self.owner = NodeHeartbeat(
             node_id="node",
             job_id="job",
@@ -190,11 +191,17 @@ class WakeAdmissionTests(unittest.TestCase):
             self.store.upsert_pending_with_demand(
                 wake_pending_demand_id(route.sandbox_id), route.resources
             )
-        with self.store._connect() as connection:
+        with self.store._transaction() as connection:
+            connection.execute("""CREATE FUNCTION fail_batch() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.sandbox_id = 'sandbox-1' AND NEW.state = 'waking' THEN
+                        RAISE EXCEPTION 'injected batch failure';
+                    END IF;
+                    RETURN NEW;
+                END $$""")
             connection.execute("""CREATE TRIGGER fail_batch BEFORE UPDATE ON sandboxes
-                WHEN NEW.sandbox_id='sandbox-1' AND NEW.state='waking'
-                BEGIN SELECT RAISE(ABORT, 'injected batch failure'); END""")
-        with self.assertRaises(sqlite3.IntegrityError):
+                FOR EACH ROW EXECUTE FUNCTION fail_batch()""")
+        with self.assertRaises(sqlite3.DatabaseError):
             self.admission.reserve_batch(self.routes)
         self.assertEqual(
             [

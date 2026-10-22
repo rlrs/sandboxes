@@ -36,7 +36,6 @@ from sandboxes.models import (
     utc_now,
 )
 from sandboxes.routing import (
-    RoutingStore,
     SandboxRoute,
 )
 from sandboxes.providers import DestructiveInstanceLoss
@@ -46,6 +45,7 @@ from sandboxes.providers.hetzner import (
     HetznerCreateProfile,
     HetznerProvider,
 )
+from tests.support import postgres_routing_file, requires_postgres, routing_store_for
 
 TEST_TIER = "contract"
 
@@ -529,7 +529,7 @@ class CliTests(unittest.TestCase):
         with temporary_root() as root:
             jobs_file = write_jobs(root, hetzner_server("off"))
             route_file = root / "routes.sqlite"
-            RoutingStore(route_file).upsert_sandbox(
+            routing_store_for(self, route_file).upsert_sandbox(
                 sandbox_route(
                     sandbox_id="preserved",
                     node_id="sandbox-node-off",
@@ -576,7 +576,7 @@ class CliTests(unittest.TestCase):
                         ]
                     )
             payload = json.loads(output.getvalue())
-            route = RoutingStore(route_file).get_sandbox("preserved")
+            route = routing_store_for(self, route_file).get_sandbox("preserved")
             invalid_after = provider_state.get_operation(invalid_stop.operation_id)
 
         self.assertEqual(exit_code, 0)
@@ -590,6 +590,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["quarantined_job_ids"], ["42"])
         self.assertEqual(payload["decision"]["unreachableNodes"], 1)
 
+    @requires_postgres
     @allow_fixture_mutations
     def test_hetzner_unreachable_empty_stop_needs_a_failed_direct_probe(self) -> None:
         # Silence is never loss: a reachable empty worker whose push path
@@ -609,6 +610,7 @@ class CliTests(unittest.TestCase):
                 create_server=None, delete_server=lambda sid: deleted.append(sid) or {},
             )
             with self.subTest(stopped=stopped), temporary_root() as root:
+                postgres_routing_file(self, root / "routes.sqlite")
                 jobs_file = write_jobs(root, hetzner_server("running"))
                 save_heartbeats(root / "control-state.sqlite", {"42": stale})
                 output = io.StringIO()
@@ -810,7 +812,7 @@ class CliTests(unittest.TestCase):
                 jobs_file = root / "jobs.json"
                 jobs_file.write_text('{"items": []}', encoding="utf-8")
                 route_file = root / "routes.sqlite"
-                RoutingStore(route_file).upsert_pending(
+                routing_store_for(self, route_file).upsert_pending(
                     "pending-one",
                     ResourceQuantity(vcpu=1, memory_mb=1024, disk_mb=2048),
                 )
@@ -838,7 +840,7 @@ class CliTests(unittest.TestCase):
                         )
                 finally:
                     held.release()
-                remaining = RoutingStore(route_file).pending_demand()
+                remaining = routing_store_for(self, route_file).pending_demand()
         finally:
             cli.UCloudClient = original_client
 
@@ -879,7 +881,7 @@ class CliTests(unittest.TestCase):
                 jobs_file = root / "jobs.json"
                 jobs_file.write_text('{"items": []}', encoding="utf-8")
                 route_file = root / "routes.sqlite"
-                RoutingStore(route_file).upsert_pending(
+                routing_store_for(self, route_file).upsert_pending(
                     "pending-one",
                     ResourceQuantity(vcpu=1, memory_mb=1024, disk_mb=2048),
                 )
@@ -897,7 +899,7 @@ class CliTests(unittest.TestCase):
                 ]
                 with redirect_stdout(io.StringIO()):
                     first_result = cli.main(command)
-                RoutingStore(route_file).upsert_pending(
+                routing_store_for(self, route_file).upsert_pending(
                     "pending-two",
                     ResourceQuantity(vcpu=1, memory_mb=1024, disk_mb=2048),
                 )
@@ -934,7 +936,7 @@ class CliTests(unittest.TestCase):
                 with redirect_stdout(fourth_output):
                     fourth_result = cli.main(command)
                 fourth = json.loads(fourth_output.getvalue())
-                remaining = RoutingStore(route_file).pending_sandboxes()
+                remaining = routing_store_for(self, route_file).pending_sandboxes()
         finally:
             cli.UCloudClient = original_client
 
@@ -1392,7 +1394,7 @@ class CliTests(unittest.TestCase):
                     job_id="owned",
                     resources=ResourceQuantity(vcpu=1, memory_mb=512),
                 )
-                RoutingStore(config.routing_file()).upsert_sandbox(route)
+                routing_store_for(self, config.routing_file()).upsert_sandbox(route)
                 state = AutoscalerStateStore(root / "autoscaler-state.sqlite")
                 with (
                     patch.object(cli, "UCloudClient") as client,

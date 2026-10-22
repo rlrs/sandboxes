@@ -64,6 +64,8 @@ CREATE TABLE relay_workers (
  worker_id text NOT NULL, last_seen_at double precision NOT NULL, metadata jsonb NOT NULL,
  PRIMARY KEY(deployment_id, rollout_id, worker_id)
 );
+-- Unused: the SQLite import marker. Kept because 0.9.75 and earlier read it at
+-- startup, so a rollback still opens a freshly created schema.
 CREATE TABLE relay_imports (
  deployment_id text PRIMARY KEY, source_digest text NOT NULL, active boolean NOT NULL DEFAULT false,
  imported_at timestamptz NOT NULL DEFAULT clock_timestamp()

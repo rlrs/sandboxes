@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import replace
-import fcntl
-from pathlib import Path
-import time
 from typing import Any, Callable
 
-from ..admission import FairRLock
 from ..capabilities import (
     DISK_QUOTA_CAPABILITY, ENVIRONMENT_CONTRACT_CAPABILITY, ENVIRONMENT_RAFS_CAPABILITY,
     ENVIRONMENT_ROOT_CAPABILITY, HIBERNATE_LOCAL_CAPABILITY, MANAGED_PRIMARY_CAPABILITY,
@@ -27,15 +22,11 @@ from ..wake_placement import (
     WakeCapacityRefreshRequired, WakePlacementStopped, WakeSnapshotPublicationRequired,
 )
 
-# Process-wide, taken before the host-wide placement flock: every server in
-# this process queues fairly behind one reservation at a time.
-_GATEWAY_SCHEDULING_LOCK = FairRLock()
-
 
 class Placement:
-    """Committed route accounting and the reservation wakes and migrations
-    take: the scheduling lock and flock (SQLite) or the placement transaction
-    (PostgreSQL). One instance per server, shared by every request thread.
+    """Committed route accounting and the placement transaction that wakes
+    and migrations reserve under. One instance per server, shared by every
+    request thread.
     """
 
     def __init__(self, routing_store: RoutingStore, *, telemetry: Telemetry) -> None:
@@ -90,29 +81,11 @@ class Placement:
         return routes
 
     def atomic(self, operation, *, worker_id=None):
-        if not self.routing_store.distributed:
-            with self.reservation():
-                return operation()
+        """Run a placement inside one routing transaction (see run_placement)."""
         with self.telemetry.span("gateway.placement.transaction"):
             return self.routing_store.run_placement(operation, worker_id=worker_id, outcomes=(
                 WakePlacementStopped, WakeCapacityRefreshRequired, WakeSnapshotPublicationRequired,
             ))
-
-    @contextmanager
-    def reservation(self):
-        with self.telemetry.span("gateway.wake.reserve_placement") as span:
-            started = time.monotonic()
-            with _GATEWAY_SCHEDULING_LOCK:
-                process_acquired = time.monotonic()
-                with _gateway_placement_lock(self.routing_store.path):
-                    acquired = time.monotonic()
-                    span.set_attribute("gateway.placement.lock_wait_seconds", acquired - started)
-                    span.set_attribute("gateway.placement.process_lock_wait_seconds", process_acquired - started)
-                    span.set_attribute("gateway.placement.file_lock_wait_seconds", acquired - process_acquired)
-                    try:
-                        yield span
-                    finally:
-                        span.set_attribute("gateway.placement.lock_hold_seconds", time.monotonic() - acquired)
 
 
 def migration_reservations(
@@ -192,20 +165,6 @@ def _node_can_fit_available(
     available: ResourceQuantity,
 ) -> bool:
     return node_accepts_dynamic_request(heartbeat, requested, available)
-
-
-@contextmanager
-def _gateway_placement_lock(route_path: Path):
-    """Serialize route accounting and intent persistence across gateways."""
-
-    lock_path = route_path.with_name(route_path.name + ".placement.lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _has_resource_values(resources: ResourceQuantity) -> bool:

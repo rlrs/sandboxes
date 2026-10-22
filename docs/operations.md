@@ -79,13 +79,13 @@ variable, and the UCloud session is a separate file. Apply changes with
    sudo -u postgres createuser --login ucloud
    sudo -u postgres createdb -O ucloud ucloud
    echo 'host=/var/run/postgresql dbname=ucloud user=ucloud' > <dsn-file>   # mode 0600, owner ucloud
-   python -m sandboxes.shared_control migrate --dsn-file <dsn-file> --deployment-id <id>
+   python -m sandboxes.shared_control migrate --dsn-file <dsn-file> --deployment-id <id> \
+     --routing-file <data_root>/routes.sqlite --routing-schema <schema>
    ```
 
-   Name `<dsn-file>` in `relay_postgres.dsn_file`. To keep routing in PostgreSQL
-   too (production does), run
-   `python -m sandboxes.shared_control.routing_cutover --routing-file <data_root>/routes.sqlite --dsn-file <dsn-file> --schema <schema>`
-   once, with the gateway, relay and autoscaler stopped.
+   Name `<dsn-file>` in `relay_postgres.dsn_file`. `--routing-file` creates the
+   routing schema and writes `routes.sqlite`, a descriptor naming the schema and
+   DSN file; the gateway refuses to start without it. Rerunning is safe.
 4. **Converge the gateway.** Inspect the script, then rerun with `--execute`:
 
    ```bash

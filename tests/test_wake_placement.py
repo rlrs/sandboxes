@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,7 +6,7 @@ import unittest
 from tests.test_control_plane import _portable_snapshot, _sandbox_route, build_heartbeat
 from sandboxes.control_state import ControlStateStore
 from sandboxes.models import ResourceQuantity
-from sandboxes.routing import RoutingStore, wake_pending_demand_id
+from sandboxes.routing import wake_pending_demand_id
 from sandboxes.wake_admission import WakeAdmission
 from sandboxes.wake_placement import (
     WakePlaced,
@@ -16,6 +15,7 @@ from sandboxes.wake_placement import (
     WakePlacementStopped,
     WakeUnavailable,
 )
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -27,7 +27,7 @@ class WakePlacementTests(unittest.TestCase):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
-        self.routes = RoutingStore(root / "routes.sqlite")
+        self.routes = routing_store_for(self, root / "routes.sqlite")
         self.control = ControlStateStore(root / "control.sqlite")
         self.owner = build_heartbeat(
             node_id="source",
@@ -66,7 +66,6 @@ class WakePlacementTests(unittest.TestCase):
             consolidation_enabled=False,
         )
         self.ports = WakePlacementPorts(
-            reservation=self.reservation,
             owner=self.control.get_heartbeat,
             occupants=lambda _: self.routes.sandbox_routes_readonly(),
             destination=lambda *_args, **_kwargs: (
@@ -79,13 +78,13 @@ class WakePlacementTests(unittest.TestCase):
             publish=self.unexpected,
             decode_publication=lambda _route, payload: payload["candidate"],
             observe_consolidation=lambda *_: None,
+            atomic=self.atomic,
         )
 
-    @contextmanager
-    def reservation(self):
+    def atomic(self, operation):
         self.lock_depth += 1
         try:
-            yield
+            return operation()
         finally:
             self.lock_depth -= 1
 

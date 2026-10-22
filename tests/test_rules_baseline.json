@@ -259,15 +259,6 @@
   "sleep": 2,
   "test_import": 2
  },
- "test_fair_reservation_lock.py": {
-  "clock": 2,
-  "private": 3,
-  "sleep": 1
- },
- "test_fleet_json_decoder.py": {
-  "private": 2,
-  "test_import": 1
- },
  "test_fleet_read_coalescing.py": {
   "new": 1,
   "private": 1,
@@ -387,11 +378,9 @@
   "test_import": 1
  },
  "test_lifecycle_durability_batch.py": {
-  "clock": 4,
-  "private": 10,
-  "private_patch": 1,
-  "sleep": 2,
-  "test_import": 1
+  "clock": 2,
+  "private": 2,
+  "sleep": 1
  },
  "test_local_fleet_commit.py": {
   "clock": 2,
@@ -561,18 +550,11 @@
   "sleep": 3,
   "test_import": 1
  },
- "test_postgres_gateway.py": {
-  "private": 2,
-  "test_import": 3
- },
  "test_postgres_relay.py": {
   "clock": 4,
   "private": 77,
   "private_patch": 11,
   "sleep": 21
- },
- "test_postgres_routing.py": {
-  "test_import": 1
  },
  "test_postgres_routing_snapshot.py": {
   "private": 1,
@@ -678,28 +660,17 @@
  },
  "test_routing.py": {
   "private": 3,
-  "private_patch": 4,
+  "private_patch": 3,
   "test_import": 3
- },
- "test_routing_cutover.py": {
-  "private": 1,
-  "test_import": 1
  },
  "test_routing_pool.py": {
   "new": 2,
-  "private": 33,
+  "private": 16,
   "private_patch": 1,
-  "sleep": 1,
   "test_import": 1
  },
  "test_routing_single_statement_reads.py": {
   "private": 2,
-  "test_import": 1
- },
- "test_routing_writer.py": {
-  "clock": 4,
-  "private": 10,
-  "sleep": 2,
   "test_import": 1
  },
  "test_run_tests.py": {
@@ -880,15 +851,13 @@
   "test_import": 1
  },
  "test_wake_batch.py": {
-  "clock": 2,
   "new": 1,
-  "private": 7,
-  "sleep": 1,
+  "private": 6,
   "test_import": 2
  },
  "test_wake_capacity.py": {
   "new": 10,
-  "private": 62,
+  "private": 58,
   "private_patch": 3,
   "test_import": 2
  },

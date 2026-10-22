@@ -23,6 +23,7 @@ from sandboxes.models import (
     NodeHeartbeat, ResourceQuantity, SandboxInventoryEntry, utc_now,
 )
 from sandboxes.routing import SandboxRoute
+from tests.support import postgres_routing_file
 
 TEST_TIER = "contract"
 
@@ -107,7 +108,7 @@ class GatewayJobReadTests(unittest.TestCase):
             "127.0.0.1", 0, self.root / "control.sqlite",
             gateway_bearer_token="operator", sandbox_api_token="public",
             heartbeat_bearer_token="heartbeat", node_control_bearer_token="node-private",
-            deployment_id="test", routing_file=self.root / "routing.sqlite",
+            deployment_id="test", routing_file=postgres_routing_file(self, self.root / "routing.sqlite"),
             image_file=self.root / "images.json", metrics_file=self.root / "metrics.sqlite",
             max_http_request_threads=2, async_proxy_responses=self.async_proxy_responses,
         )

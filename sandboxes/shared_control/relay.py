@@ -144,18 +144,6 @@ class PostgresRelayState:
                     raise ValueError(
                         "unsupported relay schema; run explicit migration first"
                     )
-                cutover = await (
-                    await conn.execute(
-                        "SELECT active FROM relay_imports WHERE deployment_id=%s",
-                        (self.deployment,),
-                    )
-                ).fetchone()
-                # The SQLite importer is gone (0.9.76); a half-finished import
-                # from an older release must still never start serving.
-                if cutover is not None and not cutover["active"]:
-                    raise ValueError(
-                        "relay import is not activated; finish it with 0.9.75 or earlier"
-                    )
                 await conn.execute(
                     "INSERT INTO relay_quota(deployment_id) VALUES (%s) ON CONFLICT DO NOTHING",
                     (self.deployment,),

@@ -18,10 +18,10 @@ from sandboxes.models import (
     ScalePolicy,
     utc_now,
 )
-from sandboxes.routing import RoutingStore
 from sandboxes.deployment import package_version
 from tests.gateway_support import gateway_services
 from tests.test_control_plane import _portable_snapshot, _sandbox_route, _prepare_wake_route
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -237,7 +237,7 @@ class ConsolidationTests(unittest.TestCase):
                 + snapshot.manifest.runtime.node_compatibility_sha256,
             ),
         )
-        routing = RoutingStore(root / "routes.sqlite")
+        routing = routing_store_for(self, root / "routes.sqlite")
         route = routing.upsert_sandbox(
             _sandbox_route(
                 sandbox_id="parked",

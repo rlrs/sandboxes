@@ -10,9 +10,12 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import threading
 import time
-from typing import Callable, TypeVar
+from typing import Any, Callable, TypeVar
 import unittest
+from uuid import uuid4
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # The scripts under test insert this checkout themselves. Inserting it here as
@@ -20,6 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 _SDK_CHECKOUT = REPO_ROOT / "ucloud-sandboxes-sdk" / "src"
 if _SDK_CHECKOUT.is_dir() and str(_SDK_CHECKOUT) not in sys.path:
     sys.path.insert(0, str(_SDK_CHECKOUT))
+
+POSTGRES_DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN", "")
+POSTGRES_SKIP_REASON = "requires PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)"
+# For a test that opens routing inside subTest, which would swallow the fixture's skip.
+requires_postgres = unittest.skipUnless(POSTGRES_DSN, POSTGRES_SKIP_REASON)
 
 # A node's state roots are created under systemd's default UMask=0022.
 NODE_DIRECTORY_MODE = 0o755
@@ -142,3 +150,107 @@ def build_init_binary(directory: Path) -> Path:
     if build.returncode != 0:
         raise AssertionError(build.stderr.decode(errors="replace"))
     return binary
+
+
+# -- PostgreSQL routing ---------------------------------------------------------
+#
+# Routing runs only on PostgreSQL. Each routes file gets its own schema, created
+# by the production init (init_routing_authority) and dropped at cleanup.
+
+_ROUTING_INIT_LOCK = threading.Lock()
+_DSN_DIRECTORY: tempfile.TemporaryDirectory | None = None
+# Routes files initialised here whose schema is not yet dropped.
+_ROUTING_FILES: set[Path] = set()
+
+
+def _dsn_file() -> Path:
+    """One 0600 DSN file per test process, outside every test's own directory."""
+    global _DSN_DIRECTORY
+    if _DSN_DIRECTORY is None:
+        _DSN_DIRECTORY = tempfile.TemporaryDirectory(prefix="routing-dsn-")
+        path = Path(_DSN_DIRECTORY.name) / "routing.dsn"
+        path.write_text(POSTGRES_DSN, encoding="utf-8")
+        path.chmod(0o600)
+    return Path(_DSN_DIRECTORY.name) / "routing.dsn"
+
+
+def create_routing_file(path: Path) -> str:
+    """Initialise ``path`` as a routing descriptor for a fresh schema; return it."""
+    if not POSTGRES_DSN:
+        raise unittest.SkipTest(POSTGRES_SKIP_REASON)
+    from sandboxes.shared_control.routing_repository import init_routing_authority
+
+    schema = "ucloud_routing_test_" + uuid4().hex
+    init_routing_authority(path, dsn_file=_dsn_file(), schema=schema)
+    return schema
+
+
+def drop_postgres_schema(schema: str) -> None:
+    import psycopg
+    from psycopg import sql
+
+    with psycopg.connect(POSTGRES_DSN, autocommit=True) as connection:
+        # A leaked transaction must fail the cleanup, not hang it.
+        connection.execute("SET lock_timeout = '10s'")
+        connection.execute(
+            sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema))
+        )
+
+
+def drop_routing_schema(path: Path, schema: str) -> None:
+    """Close this process's store for ``path`` and drop its schema."""
+    from sandboxes.routing import close_routing_store
+
+    close_routing_store(path)
+    drop_postgres_schema(schema)
+    with _ROUTING_INIT_LOCK:
+        _ROUTING_FILES.discard(Path(path).resolve())
+
+
+def postgres_routing_file(test: Any, path: Path) -> Path:
+    """The routes file ``path`` as a descriptor for its own PostgreSQL schema.
+
+    Skips without UCLOUD_TEST_POSTGRES_DSN. The first call for a file
+    initialises it; later calls return it unchanged. ``test`` is a TestCase
+    (or a TestCase class, from setUpClass), which drops the schema at cleanup.
+    A file removed before that cleanup (its directory deleted) is an error:
+    initialising it again would leave this process's open store on the old
+    schema.
+    """
+    path = Path(path).resolve()
+    with _ROUTING_INIT_LOCK:
+        if path.exists():
+            return path
+        if path in _ROUTING_FILES:
+            raise AssertionError(
+                f"routes file {path} was removed while its schema is in use; "
+                "read it before its directory is deleted"
+            )
+        schema = create_routing_file(path)
+        _ROUTING_FILES.add(path)
+    cleanup = test.addClassCleanup if isinstance(test, type) else test.addCleanup
+    cleanup(drop_routing_schema, path, schema)
+    return path
+
+
+def routing_store_for(test: Any, path: Path):
+    """The routing store for routes file ``path``, initialised on first use.
+
+    Within a process this is the same store every later call (and a gateway
+    built on ``path``) gets; use reopen_routing_store to read as after a restart.
+    """
+    from sandboxes.routing import open_routing_store
+
+    return open_routing_store(postgres_routing_file(test, path))
+
+
+def reopen_routing_store(path: Path):
+    """Close this process's store for ``path`` and open a new one, as a restart does.
+
+    Whatever still holds the old store (a gateway, a committer) must not be
+    used afterwards.
+    """
+    from sandboxes.routing import close_routing_store, open_routing_store
+
+    close_routing_store(path)
+    return open_routing_store(path)

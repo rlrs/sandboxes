@@ -5,7 +5,6 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import timedelta
 import json
-import os
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
@@ -14,8 +13,8 @@ import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import urlopen
-from uuid import uuid4
 
+from tests.support import routing_store_for
 from tests.test_control_plane import _gateway_server, _running_server
 from tests.test_registry import build_heartbeat
 from sandboxes.control_plane import ControlPlaneHandler, _sandbox_list_bytes
@@ -23,7 +22,7 @@ from sandboxes.control_state import ControlStateStore
 from sandboxes.fleet_reader import FleetResponseRenderer, FleetSnapshotReader, status_ids
 from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
 from sandboxes.registry import heartbeat_to_dict
-from sandboxes.routing import RoutingStore, SandboxRoute
+from sandboxes.routing import SandboxRoute
 
 TEST_TIER = "contract"
 
@@ -129,7 +128,8 @@ class StatusProjectionContracts:
 
 
 class FleetStatusTests(StatusProjectionContracts, unittest.TestCase):
-    make_routes = staticmethod(RoutingStore)
+    def make_routes(self, path):
+        return routing_store_for(self, path)
 
     def test_isolated_reader_separates_projection_filter_and_full_caches(self):
         self.routes.upsert_sandbox(route("other"))
@@ -158,7 +158,7 @@ class FleetStatusTests(StatusProjectionContracts, unittest.TestCase):
             self.assertIsNone(reader._process)
 
     def test_http_default_status_filter_and_validation(self):
-        server = _gateway_server(Path(self.tmp.name) / "http", isolate_fleet_reads=True)
+        server = _gateway_server(self, Path(self.tmp.name) / "http", isolate_fleet_reads=True)
         server.RequestHandlerClass.routing_store.upsert_sandbox(self.route)
         with _running_server(server) as url:
             def fetch(query):
@@ -231,21 +231,3 @@ class FleetStatusTests(StatusProjectionContracts, unittest.TestCase):
         self.assertEqual(Handler.fleet_status_futures, {})
         self.assertEqual(read(("a",)), b'["a"]')
 
-
-@unittest.skipUnless(os.environ.get("UCLOUD_TEST_POSTGRES_DSN"), "requires isolated PostgreSQL")
-class PostgresFleetStatusTests(StatusProjectionContracts, unittest.TestCase):
-    def make_routes(self, path):
-        import psycopg
-        from psycopg import sql
-        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
-        dsn = os.environ["UCLOUD_TEST_POSTGRES_DSN"]
-        schema = "ucloud_routing_status_test_" + uuid4().hex
-        store = PostgresRoutingStore(path, dsn=dsn, schema=schema)
-        store.migrate()
-
-        def cleanup():
-            store.close()
-            with psycopg.connect(dsn, autocommit=True) as connection:
-                connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
-        self.addCleanup(cleanup)
-        return store

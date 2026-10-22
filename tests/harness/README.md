@@ -8,11 +8,12 @@ gateway accepted a heartbeat from the new agent, and `fleet.heartbeat()` makes
 every sender send one more and requires the gateway to accept it. Each node
 runs the real `DirectSandboxService`, provisioner, registry,
 `DirectRunscWarden`, hibernation journal, `OverlayRootfsManager`,
-`EnvironmentRootfsStore` and storage-native service over its unix socket. Routing is SQLite, or
-PostgreSQL through the production descriptor with `LocalFleet(postgres=True)`
-and `UCLOUD_TEST_POSTGRES_DSN`. It needs no root, runsc, Docker, ublk or
-network. Fleet roots live on `/dev/shm` when it allows exec, because commit
-fsyncs dominate on a shared disk; a scenario then runs in well under 2 s.
+`EnvironmentRootfsStore` and storage-native service over its unix socket.
+Routing is PostgreSQL through the production descriptor, on a schema of its own,
+so a fleet needs `UCLOUD_TEST_POSTGRES_DSN` and skips its test without one. It
+needs no root, runsc, ublk or other network. Fleet roots live on `/dev/shm` when
+it allows exec, because commit fsyncs dominate on a shared disk; a scenario then
+runs in well under 2 s.
 
 Node agents run in the test process by default. `LocalFleet(node_processes=True)`
 runs each in its own process, forked from a preloaded zygote

@@ -35,7 +35,6 @@ from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
 from sandboxes.node_runtime import DirectNodeRuntime
 from sandboxes.node_agent import NodeAgentHandler
 from sandboxes.models import SandboxInventoryEntry
-from sandboxes.routing import RoutingStore
 from sandboxes.sandbox import (
     CommandResult,
     SandboxAdmissionClosedError,
@@ -54,6 +53,7 @@ from sandboxes.storage_native_s3_gc import (
     execute_s3_snapshot_gc,
 )
 from sandboxes.telemetry import Telemetry
+from tests.support import reopen_routing_store, routing_store_for
 
 TEST_TIER = "contract"
 
@@ -430,7 +430,7 @@ class StorageBoundaryTests(unittest.TestCase):
             migration = replace(
                 gateway_fixtures._portable_snapshot("s"), publication=publication
             )
-            store = RoutingStore(root / "routes.sqlite")
+            store = routing_store_for(self, root / "routes.sqlite")
             route = store.upsert_sandbox(
                 gateway_fixtures._sandbox_route(
                     sandbox_id="s",
@@ -457,7 +457,7 @@ class StorageBoundaryTests(unittest.TestCase):
             running = committer.wake(route, {"node_epoch": "boot", "activity_epoch": 11}).route
             self.assertEqual(running.state, "running")
             self.assertEqual(running.storage_snapshot, {})
-            store = RoutingStore(store.path)
+            store = reopen_routing_store(store.path)
             dependencies = [
                 StorageNativeMigration.from_dict(raw).publication
                 for raw in store.storage_snapshot_dependencies_readonly()
@@ -525,7 +525,7 @@ class StorageBoundaryTests(unittest.TestCase):
             self.assertEqual(
                 entry.storage_dependency["manifest_digest"], publication.manifest_digest
             )
-            store = RoutingStore(root / "routes.sqlite")
+            store = routing_store_for(self, root / "routes.sqlite")
             store.upsert_sandbox(
                 gateway_fixtures._sandbox_route(
                     sandbox_id="sandbox",
@@ -562,7 +562,7 @@ class StorageBoundaryTests(unittest.TestCase):
 
     def test_local_dependency_report_allows_gc_without_a_publication(self):
         with TemporaryDirectory() as directory:
-            store = RoutingStore(Path(directory) / "routes.sqlite")
+            store = routing_store_for(self, Path(directory) / "routes.sqlite")
             route = store.upsert_sandbox(
                 gateway_fixtures._sandbox_route(
                     sandbox_id="local",

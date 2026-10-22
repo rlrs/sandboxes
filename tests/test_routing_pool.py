@@ -1,13 +1,10 @@
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import os
 import sqlite3
-import threading
 import unittest
 from unittest.mock import patch
 from tests.test_control_plane import _sandbox_route
-from sandboxes.routing import ExecRoute, RoutingStore
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -15,7 +12,7 @@ TEST_TIER = "contract"
 class RoutingPoolTests(unittest.TestCase):
     def test_bulk_fleet_snapshot_preserves_values_order_and_fails_closed(self):
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             self.assertEqual(store.sandbox_routes_readonly(), [])
             routes = [store.upsert_sandbox(_sandbox_route(
                 sandbox_id=sid, state='running', node_id='node', job_id='job',
@@ -32,44 +29,19 @@ class RoutingPoolTests(unittest.TestCase):
             with self.assertRaises(sqlite3.DatabaseError):
                 store.sandbox_routes_readonly()
 
-    def test_new_and_reopened_sqlite_sidecars_remain_owner_only_with_open_umask(self):
-        with TemporaryDirectory() as tmp:
-            previous_umask = os.umask(0)
-            try:
-                path = Path(tmp) / 'routing.sqlite'
-                store = RoutingStore(path)
-                for _ in range(2):
-                    with store._transaction() as conn:
-                        conn.execute('CREATE TABLE IF NOT EXISTS permission_probe (value TEXT)')
-                        for suffix in ('', '-wal', '-shm'):
-                            self.assertEqual(Path(str(path) + suffix).stat().st_mode & 0o777, 0o600)
-                    flusher = store._write_batches._thread
-                    if flusher is not None:
-                        flusher.join(timeout=3)
-                        self.assertFalse(flusher.is_alive())
-                    store._connection_finalizer()
-                    self.assertFalse(Path(str(path) + '-wal').exists())
-                    # Closing every connection deletes the sidecars; creating
-                    # them again must retain the database's owner-only mode.
-                    store = RoutingStore(path)
-                path.chmod(0o644)
-                store.get_sandbox('absent')
-                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-            finally:
-                os.umask(previous_umask)
-
     def test_lifecycle_update_preserves_spec_generation_and_storage_dependency(self):
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
                 sandbox_id='live', state='running', node_id='node', job_id='job',
                 node_url='http://node', node_epoch='boot',
             ))
             with store._transaction() as conn:
                 conn.execute('CREATE TABLE redundant_writes (kind TEXT)')
-                conn.execute("CREATE TRIGGER spec_rewrite AFTER UPDATE OF spec_json ON sandboxes BEGIN INSERT INTO redundant_writes VALUES ('spec'); END")
-                conn.execute("CREATE TRIGGER generation_rewrite AFTER UPDATE ON sandbox_generation_hwm BEGIN INSERT INTO redundant_writes VALUES ('generation'); END")
-                conn.execute('INSERT INTO sandbox_storage_dependencies VALUES (?, ?, ?)', ('live', route.generation, '{"marker":"keep"}'))
+                conn.execute("CREATE FUNCTION record_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO redundant_writes VALUES (TG_ARGV[0]); RETURN NULL; END $$")
+                conn.execute("CREATE TRIGGER spec_rewrite AFTER UPDATE OF spec_json ON sandboxes FOR EACH ROW EXECUTE FUNCTION record_write('spec')")
+                conn.execute("CREATE TRIGGER generation_rewrite AFTER UPDATE ON sandbox_generation_hwm FOR EACH ROW EXECUTE FUNCTION record_write('generation')")
+                conn.execute('INSERT INTO sandbox_storage_dependencies VALUES (?, ?, ?) ON CONFLICT (sandbox_id) DO UPDATE SET storage_snapshot_json = excluded.storage_snapshot_json', ('live', route.generation, '{"marker":"keep"}'))
             updated = store.set_sandbox_state_if_current(
                 route, expected_states={'running'}, state='running', node_epoch='boot',
                 activity_epoch=route.activity_epoch + 1,
@@ -82,7 +54,7 @@ class RoutingPoolTests(unittest.TestCase):
 
     def test_combined_warm_readiness_and_dispatch_preserve_first_timestamps(self):
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
                 sandbox_id='live', state='running', node_id='node', job_id='job', node_url='http://node',
             ))
@@ -106,7 +78,7 @@ class RoutingPoolTests(unittest.TestCase):
         from dataclasses import replace
         from sandboxes.models import SandboxInventoryEntry, utc_now
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             routes = [store.upsert_sandbox(_sandbox_route(
                 sandbox_id=f'live-{i}', state='running', node_id='node',
                 job_id='job', node_url='http://node', node_epoch='boot',
@@ -141,87 +113,9 @@ class RoutingPoolTests(unittest.TestCase):
             self.assertEqual(store.get_sandbox('live-0').state, 'parked')
             self.assertEqual(store.get_sandbox('live-0').activity_epoch, 12)
 
-    def test_repeated_image_warmup_observation_skips_writer_and_new_nodes_merge(self):
-        from sandboxes.models import ResourceQuantity
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            store.upsert_image_warmup(
-                'warmup', 'image', ResourceQuantity(vcpu=1, memory_mb=512),
-                count=256, ttl_seconds=600,
-            )
-            first = store.mark_image_warmup_node('warmup', 'node-1', expected_image='image')
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                with store._transaction():
-                    self.assertEqual(pool.submit(
-                        store.mark_image_warmup_node, 'warmup', 'node-1', expected_image='image',
-                    ).result(timeout=2), first)
-                    self.assertIsNone(pool.submit(
-                        store.mark_image_warmup_node, 'warmup', 'node-1', expected_image='stale-image',
-                    ).result(timeout=2))
-                with store._lock:
-                    updates = [pool.submit(store.mark_image_warmup_node, 'warmup', node)
-                               for node in ('node-2', 'node-3')]
-                    for update in updates:
-                        update.result(timeout=2)
-            self.assertEqual(set(store.image_warmups()[0].warmed_node_ids), {'node-1', 'node-2', 'node-3'})
-
-    def test_exec_commit_does_not_wait_for_fleet_projection_and_external_delete_wins(self):
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            route = ExecRoute('session', 'sandbox', 'node', 'job', 'http://node')
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                with store._lock:
-                    pool.submit(store.upsert_exec, route).result(timeout=2)
-                    self.assertEqual(store.get_exec('session').sandbox_id, 'sandbox')
-            other = RoutingStore(store.path)
-            other.delete_exec('session')
-            self.assertIsNone(store.get_exec('session'))
-            self.assertIsNone(store.delete_exec('session'))
-
-    def test_concurrent_readers_do_not_share_connections_or_weaken_durability(self):
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            barrier = threading.Barrier(24)
-            active, peak, identities = set(), [0], set()
-            guard = threading.Lock()
-            def read(_):
-                import time
-                barrier.wait(timeout=10)
-                with store._connect() as conn:
-                    self.assertEqual(conn.execute('PRAGMA synchronous').fetchone()[0], 2)
-                    with guard:
-                        self.assertNotIn(id(conn), active)
-                        active.add(id(conn))
-                        identities.add(id(conn))
-                        peak[0] = max(peak[0], len(active))
-                    time.sleep(.02)
-                    with guard:
-                        active.remove(id(conn))
-            with ThreadPoolExecutor(max_workers=24) as pool:
-                list(pool.map(read, range(24)))
-            self.assertLessEqual(peak[0], 16)
-            self.assertLessEqual(len(identities), 16)
-            self.assertFalse(active)
-
-    def test_returned_connections_have_no_uncommitted_state_or_read_snapshot(self):
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            route = store.upsert_sandbox(_sandbox_route(sandbox_id='local', state='parked', node_id='node', job_id='job', node_url='http://node'))
-            with store._connect() as conn:
-                conn.execute('BEGIN')
-                conn.execute("UPDATE sandboxes SET state='running' WHERE sandbox_id='local'")
-            self.assertEqual(store.get_sandbox('local').state, 'parked')
-            with store._connect() as conn:
-                conn.execute('BEGIN')
-                self.assertEqual(conn.execute("SELECT state FROM sandboxes").fetchone()[0], 'parked')
-            # A separately opened store's committed mutation is visible on the
-            # next reused connection; no WAL snapshot escapes its context.
-            RoutingStore(store.path).reserve_sandbox_wake(route, pending_id='none')
-            self.assertEqual(store.get_sandbox('local').state, 'waking')
-
     def test_failed_transaction_does_not_poison_next_borrower(self):
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             store.upsert_sandbox(_sandbox_route(sandbox_id='local', state='parked', node_id='node', job_id='job', node_url='http://node'))
             with self.assertRaisesRegex(RuntimeError, 'injected'):
                 with store._transaction() as conn:
@@ -229,106 +123,11 @@ class RoutingPoolTests(unittest.TestCase):
                     raise RuntimeError('injected')
             self.assertEqual(store.get_sandbox('local').state, 'parked')
 
-    def test_database_replacement_is_rejected(self):
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            other = Path(tmp) / 'other.sqlite'
-            other.touch(mode=0o600)
-            os.replace(other, store.path)
-            with self.assertRaisesRegex(sqlite3.DatabaseError, 'replaced'):
-                store.get_sandbox('absent')
-
-    def test_inventory_and_create_do_not_wait_for_fleet_projection(self):
-        from sandboxes.models import SandboxInventoryEntry, utc_now
-        from sandboxes.routing import SandboxRouteAllocation
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            route = store.upsert_sandbox(_sandbox_route(
-                sandbox_id='live', state='running', node_id='node',
-                job_id='job', node_url='http://node', node_epoch='boot',
-            ))
-            observation = SandboxInventoryEntry(
-                route.sandbox_id, route.generation, route.create_operation_id,
-                route.spec_hash, 'parked', route.resources,
-            )
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                with store._lock:
-                    reconcile = pool.submit(
-                        store.reconcile_sandboxes_for_node, route.node_url,
-                        [observation], node_id=route.node_id, job_id=route.job_id,
-                        reported_sandbox_ids=['live'], observed_at=utc_now().isoformat(),
-                        node_epoch='boot', activity_epoch=1,
-                    )
-                    create = pool.submit(
-                        store.allocate_sandbox_create_with_pending,
-                        SandboxRouteAllocation(
-                            sandbox_id='new', node_id='node', job_id='job',
-                            node_url='http://node', resources=route.resources,
-                            spec={'id': 'new'}, node_epoch='boot',
-                        ), spec_hash='b' * 64,
-                    )
-                    self.assertEqual(reconcile.result(timeout=2), ([], []))
-                    created, _ = create.result(timeout=2)
-            self.assertEqual(store.get_sandbox('live').state, 'parked')
-            self.assertEqual(store.get_sandbox('new'), created)
-
-    def test_fleet_scan_queue_does_not_block_lifecycle_or_cache_old_routes(self):
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            route = store.upsert_sandbox(_sandbox_route(
-                sandbox_id='live', state='parked', node_id='node',
-                job_id='job', node_url='http://node',
-            ))
-            with ThreadPoolExecutor(max_workers=2) as pool:
-                with store._fleet_read_lock:
-                    listing = pool.submit(store.sandbox_routes_readonly, background=True)
-                    pool.submit(store.reserve_sandbox_wake, route, pending_id='none').result(timeout=2)
-                    self.assertEqual(store.get_sandbox('live').state, 'waking')
-                    self.assertEqual(pool.submit(store.sandbox_routes_readonly).result(timeout=2)[0].state, 'waking')
-                self.assertEqual(listing.result(timeout=2)[0].state, 'waking')
-            RoutingStore(store.path).delete_sandbox('live')
-            self.assertEqual(store.sandbox_routes_readonly(), [])
-
-    def test_repeated_program_projection_reads_committed_generation_without_writer(self):
-        from sandboxes.routing import SandboxRouteConflictError
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            route = store.upsert_sandbox(_sandbox_route(
-                sandbox_id='live', state='running', node_id='node',
-                job_id='job', node_url='http://node',
-            ))
-            expected, changed = store.upsert_program_request_transition_with_change(
-                route, request_id='request', rollout_id='rollout', state='model_wait',
-                last_error='retry',
-            )
-            self.assertTrue(changed)
-            before = store._write_batches.operations
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                with store._transaction():
-                    observed, changed = pool.submit(
-                        store.upsert_program_request_transition_with_change,
-                        route, request_id='request', rollout_id='rollout', state='model_wait',
-                    ).result(timeout=2)
-                    self.assertFalse(changed)
-                    self.assertEqual(observed, expected)
-            self.assertEqual(store._write_batches.operations, before + 1)
-            cleared, changed = store.upsert_program_request_transition_with_change(
-                route, request_id='request', rollout_id='rollout', state='model_wait',
-                clear_error=True,
-            )
-            self.assertTrue(changed)
-            self.assertEqual(cleared.last_error, '')
-            store.delete_sandbox(route.sandbox_id)
-            with self.assertRaises(SandboxRouteConflictError):
-                store.upsert_program_request_transition_with_change(
-                    route, request_id='request', rollout_id='rollout', state='model_wait',
-                )
-
     def test_warm_durable_wake_records_observation_with_outcome_only(self):
         from unittest.mock import Mock
         from sandboxes.control_plane import ControlPlaneHandler
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
                 sandbox_id='live', state='running', node_id='node', job_id='job', node_url='http://node',
             ))
@@ -354,7 +153,7 @@ class RoutingPoolTests(unittest.TestCase):
         from unittest.mock import Mock
         from sandboxes.control_plane import ControlPlaneHandler
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
                 sandbox_id='live', state='running', node_id='node', job_id='job', node_url='http://node',
             ))
@@ -372,35 +171,16 @@ class RoutingPoolTests(unittest.TestCase):
             self.assertEqual(program.response_ready_at, started)
             self.assertEqual(program.last_error, 'temporary node failure')
 
-    def test_wake_confirmation_and_program_outcome_share_one_durable_commit(self):
-        with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
-            route = store.upsert_sandbox(_sandbox_route(
-                sandbox_id='live', state='running', node_id='node', job_id='job',
-                node_url='http://node', node_epoch='boot', activity_epoch=10,
-            ))
-            before = store._write_batches.commits
-            confirmed, (program, changed) = store.confirm_sandbox_wake(
-                route, node_epoch='boot', activity_epoch=11,
-                program_transition=dict(request_id='request', rollout_id='rollout', state='acting'),
-            )
-            self.assertEqual(store._write_batches.commits, before + 1)
-            self.assertEqual(confirmed.activity_epoch, 11)
-            self.assertTrue(changed)
-            self.assertEqual(program.state, 'acting')
-            peer = RoutingStore(store.path)
-            self.assertEqual(peer.get_sandbox('live'), confirmed)
-            self.assertEqual(peer.program_request_readonly('request'), program)
-
     def test_failed_program_commit_cannot_acknowledge_partial_wake_confirmation(self):
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
                 sandbox_id='live', state='running', node_id='node', job_id='job',
                 node_url='http://node', node_epoch='boot', activity_epoch=10,
             ))
             with store._transaction() as conn:
-                conn.execute("CREATE TRIGGER fail_program BEFORE INSERT ON program_requests BEGIN SELECT RAISE(ABORT, 'injected projection failure'); END")
+                conn.execute("CREATE FUNCTION fail_program() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected projection failure'; END $$")
+                conn.execute("CREATE TRIGGER fail_program BEFORE INSERT ON program_requests FOR EACH ROW EXECUTE FUNCTION fail_program()")
             args = dict(node_epoch='boot', activity_epoch=11,
                         program_transition=dict(request_id='request', rollout_id='rollout', state='acting'))
             with self.assertRaises(sqlite3.DatabaseError):
@@ -408,7 +188,7 @@ class RoutingPoolTests(unittest.TestCase):
             self.assertEqual(store.get_sandbox('live'), route)
             self.assertIsNone(store.program_request_readonly('request'))
             with store._transaction() as conn:
-                conn.execute('DROP TRIGGER fail_program')
+                conn.execute('DROP TRIGGER fail_program ON program_requests')
             confirmed, (program, changed) = store.confirm_sandbox_wake(route, **args)
             self.assertEqual(confirmed.activity_epoch, 11)
             self.assertTrue(changed)
@@ -416,7 +196,7 @@ class RoutingPoolTests(unittest.TestCase):
 
     def test_stale_wake_proof_cannot_publish_program_success(self):
         with TemporaryDirectory() as tmp:
-            store = RoutingStore(Path(tmp) / 'routing.sqlite')
+            store = routing_store_for(self, Path(tmp) / 'routing.sqlite')
             route = store.upsert_sandbox(_sandbox_route(
                 sandbox_id='live', state='running', node_id='node', job_id='job',
                 node_url='http://node', node_epoch='boot', activity_epoch=10,

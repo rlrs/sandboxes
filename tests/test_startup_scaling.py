@@ -22,7 +22,8 @@ from sandboxes.models import (
     utc_now,
 )
 from sandboxes.policy import _nodes_for_unplaced_requests, evaluate_scale
-from sandboxes.routing import RoutingStore, sandbox_demand_from_routing_state
+from sandboxes.routing import sandbox_demand_from_routing_state
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -54,7 +55,7 @@ class StartupScalingTests(unittest.TestCase):
     def test_large_reservation_is_durable_and_policy_bounds_scale_out(self):
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            gateway = gateway_fixtures._gateway_server(
+            gateway = gateway_fixtures._gateway_server(self,
                 root, routing_file=root / "routes.sqlite"
             )
             fixture = gateway_fixtures.ControlPlaneTests()
@@ -69,7 +70,7 @@ class StartupScalingTests(unittest.TestCase):
                         },
                     )
                     self.assertEqual(result["prepare"]["count"], count)
-                    store = RoutingStore(root / "routes.sqlite")
+                    store = routing_store_for(self, root / "routes.sqlite")
                     self.assertEqual(store.prepared_capacity()[0].count, count)
                     # Planner effort must follow fleet capacity, not the
                     # caller's potentially enormous future workload count.
@@ -248,7 +249,7 @@ class StartupScalingTests(unittest.TestCase):
     def test_preparations_and_noncapacity_errors_do_not_age_capacity_queue(self):
         now = utc_now()
         with TemporaryDirectory() as directory:
-            store = RoutingStore(Path(directory) / "routes.sqlite")
+            store = routing_store_for(self, Path(directory) / "routes.sqlite")
             with patch(
                 "sandboxes.routing.utc_now",
                 return_value=now - timedelta(seconds=90),

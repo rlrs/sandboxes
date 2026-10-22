@@ -1,16 +1,15 @@
-"""PostgreSQL persistence for the canonical routing domain operations.
+"""PostgreSQL persistence for the routing domain operations in routing.py.
 
-All routing domains move together: lifecycle, migrations, generations, execs,
-program observations, demand and snapshot liveness. Reusing the domain methods
-avoids a second implementation of their safety rules. The persistence boundary
-supplies serializable transactions and PostgreSQL bulk queries, never a process
-lock or a SQLite writer queue.
+All routing domains live here: lifecycle, migrations, generations, execs,
+program observations, demand and snapshot liveness. The domain methods are
+RoutingStore's; this boundary supplies serializable transactions, connection
+pooling, schema migration and bulk queries, never a process lock.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import replace
 from functools import wraps
@@ -30,9 +29,9 @@ from psycopg.errors import DeadlockDetected, SerializationFailure
 from psycopg_pool import ConnectionPool
 
 from .database import process_pool_share
-from ..routing import SANDBOX_GROUP_DDL, RoutingStore, PlacementCommandRejected
+from ..routing import ROUTING_DESCRIPTOR_FORMAT, RoutingStore, PlacementCommandRejected
 from ..models import utc_now
-from uuid import UUID
+from uuid import UUID, uuid4
 from ..telemetry import Telemetry
 
 
@@ -72,14 +71,10 @@ def _row_factory(cursor):
 class _Connection:
     """DB-API parameter-style boundary; SQL dialects are explicit methods below."""
 
-    def __init__(self, connection, *, coherent_reader=False):
+    def __init__(self, connection):
         self.connection = connection
-        self.coherent_reader = coherent_reader
 
     def execute(self, query, parameters=()):
-        if self.coherent_reader and query.strip().upper() == "BEGIN":
-            # The PostgreSQL reader already owns its repeatable-read snapshot.
-            return None
         # Domain queries use qmark parameters and contain no question-mark
         # literals/operators. Values always remain separate bound parameters.
         return self.connection.execute(query.replace("?", "%s"), parameters)
@@ -128,6 +123,17 @@ def _transactional(method, isolation=None):
 
 _AUTHORITY_RECHECK_SECONDS = 1.0
 
+SANDBOX_GROUP_DDL = (
+    """CREATE TABLE IF NOT EXISTS sandbox_groups (
+        group_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, spec_json TEXT NOT NULL,
+        member_count INTEGER NOT NULL CHECK (member_count > 0),
+        state TEXT NOT NULL CHECK (state IN ('active', 'deleted')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
+    """CREATE TABLE IF NOT EXISTS sandbox_group_members (
+        sandbox_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, generation INTEGER NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS sandbox_group_members_group ON sandbox_group_members(group_id)",
+)
+
 # Statements added after version 1 that old code ignores, so old and new code
 # share the schema version; ``migrate`` applies them idempotently.
 ROUTING_ADDITIVE_DDL = (
@@ -145,14 +151,6 @@ ROUTING_ADDITIVE_DDL = (
 
 
 class PostgresRoutingStore(RoutingStore):
-    distributed = True
-    _program_index_hint = ""
-    _json_values_query = "SELECT jsonb_array_elements_text(?::jsonb)"
-    _expired_signal_predicate = """
-        CASE WHEN pg_input_is_valid(COALESCE(NULLIF(updated_at,''),created_at),'timestamptz')
-        THEN COALESCE(NULLIF(updated_at,''),created_at)::timestamptz END <= ?::timestamptz
-    """
-
     def __init__(
         self,
         path: Path,
@@ -184,8 +182,6 @@ class PostgresRoutingStore(RoutingStore):
         self._worker_turns_guard = Lock()
         self._capacity_touched = ContextVar("capacity_touched", default=None)
         self._command = ContextVar("placement_command", default=None)
-        self._lock = nullcontext()
-        self._fleet_read_lock = nullcontext()
         self.pool = ConnectionPool(
             dsn,
             min_size=1,
@@ -545,12 +541,10 @@ class PostgresRoutingStore(RoutingStore):
             )
             return super().confirm_create(route)
 
-    # A group's intents hold the group row FOR SHARE, so a group delete
-    # (which updates it) either precedes them and refuses them, or waits and
-    # then sees their routes. Members lock in id order: no deadlock between
-    # two transactions of one group.
-    _group_lock_clause = " FOR SHARE"
-
+    # A group's intents hold the group row FOR SHARE (_require_active_group),
+    # so a group delete (which updates it) either precedes them and refuses
+    # them, or waits and then sees their routes. Members lock in id order: no
+    # deadlock between two transactions of one group.
     def reserve_create_intents(self, allocations, **kwargs):
         with self._transaction() as conn:
             for sandbox_id in sorted(item.sandbox_id for item in allocations):
@@ -646,10 +640,9 @@ class PostgresRoutingStore(RoutingStore):
             with self.pool.connection() as conn, _begun(
                 conn, "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
             ):
-                # SQLite readers see one snapshot across explicit BEGIN and
-                # their subsequent queries. Preserve that contract for GC's
-                # completeness check and all other multi-query domain reads.
-                yield _Connection(conn, coherent_reader=True)
+                # One snapshot across every query: GC's completeness check and
+                # all other multi-query domain reads rely on it.
+                yield _Connection(conn)
         except psycopg.Error as exc:
             raise sqlite3.DatabaseError("PostgreSQL routing read failed") from exc
 
@@ -757,7 +750,8 @@ class PostgresRoutingStore(RoutingStore):
                     (committed or ended) - body_done if body_done else 0,
                 )
 
-    def _sandbox_route_rows_readonly(self, *, background=False, node_identity=None):
+    def sandbox_route_rows_readonly(self, *, node_identity=None):
+        """Fresh rows for readers that memoize validation of identical rows."""
         where = (
             "WHERE node_id=? OR job_id=? OR node_url IN (?,?)" if node_identity else ""
         )
@@ -777,6 +771,54 @@ class PostgresRoutingStore(RoutingStore):
             WHERE excluded.storage_snapshot_json!='{}' """,
             (json.dumps(dependencies),),
         )
+
+
+def init_routing_authority(path: Path, *, dsn_file: Path, schema: str) -> dict:
+    """Create the PostgreSQL routing schema and the descriptor every reader opens.
+
+    Idempotent for the same schema and DSN file. Refuses to replace anything
+    else at ``path``: a SQLite routing database, another descriptor or an
+    unreadable file. The gateway does not start until this has run.
+    """
+    path = Path(path).resolve()
+    dsn_file = Path(dsn_file).resolve()
+    descriptor = {
+        "format": ROUTING_DESCRIPTOR_FORMAT,
+        "schema": schema,
+        "dsn_file": str(dsn_file),
+    }
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text())
+        except (UnicodeDecodeError, ValueError):
+            existing = None
+        if existing != descriptor:
+            raise ValueError(
+                "routing file already holds other state; refusing to replace it"
+            )
+    store = PostgresRoutingStore(path, dsn=dsn_file.read_text().strip(), schema=schema)
+    try:
+        store.migrate()
+    finally:
+        store.close()
+    if path.exists():
+        return {"routing_schema": schema, "created": False}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staged = path.with_name(path.name + ".init-" + uuid4().hex)
+    try:
+        staged.write_text(json.dumps(descriptor, sort_keys=True) + "\n")
+        os.chmod(staged, 0o600)
+        with staged.open("rb") as stream:
+            os.fsync(stream.fileno())
+        os.replace(staged, path)
+    finally:
+        staged.unlink(missing_ok=True)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return {"routing_schema": schema, "created": True}
 
 
 # These methods own complete database-only operations. Nested calls participate

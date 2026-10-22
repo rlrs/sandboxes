@@ -30,6 +30,9 @@ from sandboxes.registry_retention import (
     snapshot_live_identities,
     still_unreferenced_environment,
 )
+from tests.support import postgres_routing_file
+
+TEST_TIER = "contract"
 
 
 NOW = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
@@ -501,6 +504,7 @@ class RunRegistryPruneTests(unittest.TestCase):
             config_raw["registry_store"]["mount_point"] = str(root)
             config_raw["registry_store"]["data_root"] = str(root / "registry")
             config = DeploymentConfig.from_dict(config_raw)
+            postgres_routing_file(self, config.routing_file())
             tags = {"old-dead": digest("1"), "old-leased": digest("2"), "fresh": digest("3")}
             for tag, age_hours in (("old-dead", 5), ("old-leased", 5), ("fresh", 0.1)):
                 link = (config.registry_data_dir() / "docker/registry/v2/repositories"
@@ -554,6 +558,7 @@ class RunRegistryPruneTests(unittest.TestCase):
             config_raw["registry_store"]["data_root"] = str(root / "registry")
             config_raw["snapshot_store"]["kind"] = "registry"
             config = DeploymentConfig.from_dict(config_raw)
+            postgres_routing_file(self, config.routing_file())
             images = {"old": (digest("1"), 9), "older": (digest("2"), 20), "new": (digest("3"), 0.2)}
             Client.tags_by_repository = {
                 f"ucloud-managed/{name}": {"latest": image_digest}

@@ -144,7 +144,7 @@ class PlacementQueueHTTPTests(TestCase):
     @contextmanager
     def pipeline(self, *, create_claim_budget=1):
         with _running_server(self.node) as node_url:
-            public = _gateway_server(
+            public = _gateway_server(self,
                 self.root, routing_file=self.routing_file, queue_placement=True,
                 create_claim_budget=create_claim_budget,
             )
@@ -159,7 +159,7 @@ class PlacementQueueHTTPTests(TestCase):
                     self.claim_finished.set()
 
             claims.execute = observed_claim
-            private = _gateway_server(
+            private = _gateway_server(self,
                 self.root, routing_file=self.routing_file, placement_worker=True,
             )
             with (

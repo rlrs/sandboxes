@@ -12,10 +12,10 @@ from sandboxes.image_import import (
     import_build_context,
     import_image_id,
 )
-from sandboxes.routing import RoutingStore
 
 from tests import test_control_plane as gateway_fixtures
 from tests.gateway_support import gateway_services
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -108,7 +108,7 @@ class ExternalImageImportTests(unittest.TestCase):
 class GatewayImportTests(unittest.TestCase):
     def test_external_image_create_queues_an_import_build_and_retries(self):
         with gateway_fixtures._temporary_root() as root:
-            gateway = gateway_fixtures._gateway_server(
+            gateway = gateway_fixtures._gateway_server(self,
                 root,
                 routing_file=root / "routes.sqlite",
                 registry_url="http://registry.internal:5000",
@@ -126,7 +126,7 @@ class GatewayImportTests(unittest.TestCase):
                 self.assertEqual(response["headers"]["Retry-After"], "5")
                 # The loopback submission reaches the ordinary build path; with
                 # no builder the build is queued for the autoscaler.
-                store = RoutingStore(root / "routes.sqlite")
+                store = routing_store_for(self, root / "routes.sqlite")
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline and not store.pending_image_build_count():
                     time.sleep(0.05)

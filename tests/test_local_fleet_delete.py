@@ -16,6 +16,8 @@ import unittest
 
 from tests.harness import LocalFleet, process_alive
 
+TEST_TIER = "contract"
+
 SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 
 

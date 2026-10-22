@@ -12,7 +12,6 @@ from sandboxes import control_plane as cp
 from sandboxes.gateway import node_rpc
 from tests import test_control_plane as helpers
 from tests.gateway_support import gateway_services
-from sandboxes.routing import RoutingStore
 from sandboxes.models import ResourceQuantity
 from tests.test_control_plane import (
     _gateway_server,
@@ -21,6 +20,7 @@ from tests.test_control_plane import (
     build_heartbeat,
     post_heartbeat,
 )
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -182,7 +182,7 @@ class CreateImageWaitTests(unittest.TestCase):
         ):
             node = ThreadingHTTPServer(("127.0.0.1", 0), Node)
             with _running_server(node) as node_url:
-                gateway = _gateway_server(
+                gateway = _gateway_server(self,
                     root,
                     routing_file=root / "routes.sqlite",
                     max_concurrent_sandbox_creates=1,
@@ -223,7 +223,7 @@ class CreateImageWaitTests(unittest.TestCase):
                                 response["body"]["error_code"], "image_warmup_pending"
                             )
                             self.assertEqual(response["headers"]["Retry-After"], "2")
-                            route = RoutingStore(root / "routes.sqlite").get_sandbox(
+                            route = routing_store_for(self, root / "routes.sqlite").get_sandbox(
                                 "cold"
                             )
                             if _ == 0:

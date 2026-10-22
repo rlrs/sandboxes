@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import Enum
@@ -10,17 +9,10 @@ import os
 from pathlib import Path
 import re
 import sqlite3
-import stat
-from threading import Lock, RLock
-from typing import Any, Iterable, Iterator
+from threading import Lock
+from typing import Any, Iterable
 from uuid import uuid4
-import weakref
 
-import orjson
-
-from .sqlite_pool import SqliteConnectionPool
-
-from .durable_batch import DurableSqliteBatch
 from .models import (
     ResourceQuantity,
     SandboxDemand,
@@ -34,43 +26,46 @@ from .sandbox import OPERATION_ID_RE
 from .storage_native_registry import StorageSnapshotPublication
 
 
-_ROUTE_LOCKS_GUARD = RLock()
-_ROUTE_LOCKS: defaultdict[Path, RLock] = defaultdict(RLock)
-_ROUTE_WRITE_BATCHES: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+_POSTGRES_ROUTING_STORES_GUARD = Lock()
 _POSTGRES_ROUTING_STORES: dict[tuple[int, Path], Any] = {}
 PENDING_DEMAND_TTL_SECONDS = 300
-# SQLite stores the durable demand count as a signed 64-bit integer. This is a
+# The durable demand count is a signed 64-bit integer. This is a
 # representation bound, not an admission limit; fleet policy governs capacity.
 MAX_PREPARED_CAPACITY_COUNT = (1 << 63) - 1
 PROGRAM_TERMINAL_RETENTION_SECONDS = 7 * 24 * 60 * 60
-ROUTING_SCHEMA_VERSION = 3
+ROUTING_DESCRIPTOR_FORMAT = "ucloud-postgres-routing-v1"
+_UNINITIALISED = (
+    "routing authority is not initialised; run python -m sandboxes.shared_control "
+    "migrate --routing-file ..."
+)
 
 
 def open_routing_store(path: Path):
-    """Resolve the one deployment authority, failing closed after cutover.
+    """Resolve the deployment's PostgreSQL routing authority, failing closed.
 
-    Offline migration replaces the SQLite file with a small descriptor. Older
-    binaries reject that non-SQLite file and cannot accidentally resume writes
-    to a stale ownership database. Every gateway/autoscaler/GC reader uses this
-    same boundary; PostgreSQL failure never falls back to the retired file.
+    ``path`` holds a small JSON descriptor naming the schema and DSN file,
+    written by ``python -m sandboxes.shared_control migrate --routing-file``.
+    Every gateway, autoscaler and GC reader resolves routing here, and each
+    process reuses one store per descriptor.
     """
     path = Path(path)
-    if not path.exists():
-        return RoutingStore(path)
-    with path.open('rb') as stream:
-        prefix = stream.read(16)
+    try:
+        with path.open('rb') as stream:
+            prefix = stream.read(16)
+    except FileNotFoundError:
+        raise sqlite3.DatabaseError(_UNINITIALISED) from None
     if prefix == b'SQLite format 3\x00' or not prefix:
-        return RoutingStore(path)
+        raise sqlite3.DatabaseError(_UNINITIALISED)
     try:
         descriptor = json.loads(path.read_text())
-        if descriptor.get('format') != 'ucloud-postgres-routing-v1':
+        if descriptor.get('format') != ROUTING_DESCRIPTOR_FORMAT:
             raise ValueError('unrecognized routing authority')
         from .shared_control.routing_repository import PostgresRoutingStore
         dsn_path = Path(descriptor['dsn_file'])
         if not dsn_path.is_absolute():
             raise ValueError('routing DSN file must be absolute')
         key = (os.getpid(),path.resolve())
-        with _ROUTE_LOCKS_GUARD:
+        with _POSTGRES_ROUTING_STORES_GUARD:
             cached = _POSTGRES_ROUTING_STORES.get(key)
             if cached is not None:
                 cached.validate_authority()
@@ -86,6 +81,16 @@ def open_routing_store(path: Path):
             return store
     except Exception as exc:
         raise sqlite3.DatabaseError('routing authority is unavailable or invalid') from exc
+
+
+def close_routing_store(path: Path) -> None:
+    """Close this process's store for ``path``, if open; the next open reconnects."""
+    with _POSTGRES_ROUTING_STORES_GUARD:
+        store = _POSTGRES_ROUTING_STORES.pop((os.getpid(), Path(path).resolve()), None)
+    if store is not None:
+        store.close()
+
+
 SANDBOX_WORKER_STATES = ("attached", "detaching", "detached")
 PROGRAM_REQUEST_STATES = (
     "model_wait",
@@ -694,20 +699,6 @@ class SandboxGroup:
         return [f"{self.group_id}-{index:04d}" for index in range(self.count)]
 
 
-# The same statements create both stores' tables (SQLite and PostgreSQL),
-# so a routing cutover sees one table set with one column order.
-SANDBOX_GROUP_DDL = (
-    """CREATE TABLE IF NOT EXISTS sandbox_groups (
-        group_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, spec_json TEXT NOT NULL,
-        member_count INTEGER NOT NULL CHECK (member_count > 0),
-        state TEXT NOT NULL CHECK (state IN ('active', 'deleted')),
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS sandbox_group_members (
-        sandbox_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, generation INTEGER NOT NULL)""",
-    "CREATE INDEX IF NOT EXISTS sandbox_group_members_group ON sandbox_group_members(group_id)",
-)
-
-
 _EXEC_ROUTE_BY_ID_SQL = """
             SELECT session_id, sandbox_id, node_id, job_id, node_url,
                    created_at, updated_at
@@ -726,37 +717,20 @@ _SANDBOX_ROUTE_BY_ID_SQL = """
 
 
 class RoutingStore:
-    # Dialect-specific bulk reads stay at the persistence boundary; lifecycle
-    # and ownership rules are shared by the standalone and PostgreSQL stores.
-    _program_index_hint = 'INDEXED BY program_requests_sandbox'
-    distributed = False
-    # Replaced (never mutated) by placement_routes_readonly.
-    _placement_route_memo: dict[str, tuple[tuple[Any, ...], "SandboxRoute"]] = {}
-    _json_values_query = 'SELECT value FROM json_each(?)'
-    _expired_signal_predicate = """
-        COALESCE(NULLIF(updated_at, ''), created_at) != ''
-        AND julianday(COALESCE(NULLIF(updated_at, ''), created_at)) IS NOT NULL
-        AND julianday(COALESCE(NULLIF(updated_at, ''), created_at)) <= julianday(?)
+    """Routing's domain rules: lifecycle, ownership, generations and demand.
+
+    Persistence (connections, transactions, schema) is
+    shared_control/routing_repository.py's PostgresRoutingStore, the only
+    implementation; open_routing_store returns one.
     """
 
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self._reader_pool = SqliteConnectionPool()
-        self._connections_guard = Lock()
-        # Fleet scans release/reacquire the GIL for every SQLite row. Concurrent
-        # scans otherwise starve the short writer and heartbeat transactions.
-        # Queue public scans separately. Scheduling scans must bypass this
-        # queue so public pollers cannot hold up placement while it owns a lock.
-        self._fleet_read_lock = Lock()
-        self._connection_identity: tuple[int, int] | None = None
-        self._connection_pid = os.getpid()
-        self._connection_finalizer = weakref.finalize(
-            self, self._reader_pool.close,
-        )
-        self._lock = _route_lock(path)
-        with self._lock:
-            self._ensure_db()
-        self._write_batches = _route_write_batch(path)
+    # Replaced (never mutated) by placement_routes_readonly.
+    _placement_route_memo: dict[str, tuple[tuple[Any, ...], "SandboxRoute"]] = {}
+    _json_values_query = "SELECT jsonb_array_elements_text(?::jsonb)"
+    _expired_signal_predicate = """
+        CASE WHEN pg_input_is_valid(COALESCE(NULLIF(updated_at,''),created_at),'timestamptz')
+        THEN COALESCE(NULLIF(updated_at,''),created_at)::timestamptz END <= ?::timestamptz
+    """
 
     def load(self, *, include_exec_sessions: bool = True) -> RoutingState:
         """Prune expired signals and read one coherent routing snapshot.
@@ -765,12 +739,11 @@ class RoutingStore:
         sessions. Omitting that projection avoids work proportional to retained
         exec history without changing its lifetime or the snapshot transaction.
         """
-        with self._lock:
-            with self._transaction() as conn:
-                self._prune_expired_unlocked(conn, utc_now())
-                return self._load_unlocked(
-                    conn, include_exec_sessions=include_exec_sessions
-                )
+        with self._transaction() as conn:
+            self._prune_expired_unlocked(conn, utc_now())
+            return self._load_unlocked(
+                conn, include_exec_sessions=include_exec_sessions
+            )
 
     def load_metrics(self) -> tuple[RoutingState, int]:
         """Load dashboard state without materializing every exec session."""
@@ -785,19 +758,13 @@ class RoutingStore:
             )
 
     def get_sandbox(self, sandbox_id: str) -> SandboxRoute | None:
-        # Single-row routing reads can use the last committed WAL snapshot
-        # while heartbeat reconciliation holds the process's writer lock.
-        # Mutations still revalidate their generation in a write transaction.
+        # A single-row read is one autocommit statement's snapshot. Mutations
+        # still revalidate their generation in a write transaction.
         return self.get_sandbox_readonly(sandbox_id)
 
     def get_sandbox_readonly(self, sandbox_id: str) -> SandboxRoute | None:
         row = self._fetchone_readonly(_SANDBOX_ROUTE_BY_ID_SQL, (sandbox_id,))
         return _sandbox_route_from_row(row) if row is not None else None
-
-    def _fetchone_readonly(self, query, parameters=()):
-        """Fetch one statement; callers needing coherent multiple reads use _connect."""
-        with self._connect() as conn:
-            return conn.execute(query, parameters).fetchone()
 
     def get_sandbox_loss(self, sandbox_id: str) -> dict[str, Any] | None:
         """Return terminal loss only for the latest, still-absent incarnation."""
@@ -854,7 +821,7 @@ class RoutingStore:
                     args = tuple(value for key in batch for value in key) + (cutoff,)
                     prefix = f'WITH candidates(sandbox_id,generation) AS (VALUES {values}) '
                     for reason, predicate in (
-                        ('sandbox_deleted', f"SELECT 1 FROM program_requests p {self._program_index_hint} "
+                        ('sandbox_deleted', "SELECT 1 FROM program_requests p "
                          "WHERE p.sandbox_id=c.sandbox_id AND p.sandbox_generation=c.generation "
                          "AND p.state='terminal' AND p.last_error='sandbox deletion requested' "
                          "AND p.updated_at > ?"),
@@ -953,7 +920,7 @@ class RoutingStore:
         record.validate()
         # Status polls refresh updated_at even when the managed process has not
         # changed. Read both generation and cached record in one SQL snapshot;
-        # unchanged polls need neither a WAL commit nor the fleet projection lock.
+        # unchanged polls need no write transaction.
         with self._connect() as conn:
             row = conn.execute(
                 """
@@ -971,9 +938,8 @@ class RoutingStore:
             cached = ManagedProcessRecord.from_dict(json.loads(row["record_json"]))
             if replace(cached, updated_at=record.updated_at) == record:
                 return cached
-        # Changed records retain generation and sequence checks in the shared
-        # writer transaction. Holding the projection lock while awaiting commit
-        # would serialize polls and block heartbeats, creates, and wake placement.
+        # Changed records retain generation and sequence checks in the write
+        # transaction.
         with self._transaction() as conn:
             current_route = self._get_sandbox_unlocked(conn, route.sandbox_id)
             if (
@@ -1046,7 +1012,6 @@ class RoutingStore:
     ) -> list[dict[str, Any]]:
         """GC roots, including live remote layers after restore authority expires."""
         with self._connect() as conn:
-            conn.execute("BEGIN")
             if (
                 require_complete
                 and conn.execute(
@@ -1079,10 +1044,10 @@ class RoutingStore:
             ).fetchall()
         return [_object(json.loads(row[0])) for row in rows]
 
-    def sandbox_routes_readonly(self, *, background: bool = False) -> list[SandboxRoute]:
+    def sandbox_routes_readonly(self) -> list[SandboxRoute]:
         return [
             _sandbox_route_from_row(row)
-            for row in self._sandbox_route_rows_readonly(background=background)
+            for row in self.sandbox_route_rows_readonly()
         ]
 
     def sandbox_status_rows_readonly(self, sandbox_ids=()) -> list[Any]:
@@ -1124,7 +1089,7 @@ class RoutingStore:
         previous = self._placement_route_memo
         current: dict[str, tuple[tuple[Any, ...], SandboxRoute]] = {}
         routes = []
-        for row in self._sandbox_route_rows_readonly():
+        for row in self.sandbox_route_rows_readonly():
             key = tuple(row.values())
             sandbox_id = row["sandbox_id"]
             cached = previous.get(sandbox_id)
@@ -1137,54 +1102,6 @@ class RoutingStore:
         # Readers may race; each publishes a complete snapshot-derived memo.
         self._placement_route_memo = current
         return routes
-
-    def _sandbox_route_rows_readonly(
-        self, *, background: bool = False,
-        node_identity: tuple[str, str, str, str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Fresh rows for readers that memoize validation of identical rows."""
-        guard = self._fleet_read_lock if background else nullcontext()
-        where = ("WHERE node_id = ? OR job_id = ? OR node_url IN (?, ?)"
-                 if node_identity is not None else "")
-        with guard, self._connect() as conn:
-            # sqlite3 releases/reacquires the GIL for every stepped result row.
-            # During concurrent HTTP work that makes a fleet scan wait behind
-            # unrelated Python work once per sandbox. Materialize one SQL JSON
-            # result, then decode after returning the reader to its pool.
-            payload = conn.execute(
-                f"""SELECT json_group_array(json_object(
-                        'sandbox_id', sandbox_id,
-                        'node_id', node_id,
-                        'job_id', job_id,
-                        'node_url', node_url,
-                        'resources_json', resources_json,
-                        'spec_json', spec_json,
-                        'state', state,
-                        'generation', generation,
-                        'create_operation_id', create_operation_id,
-                        'spec_hash', spec_hash,
-                        'delete_operation_id', delete_operation_id,
-                        'node_epoch', node_epoch,
-                        'activity_epoch', activity_epoch,
-                        'worker_state', worker_state,
-                        'storage_schema', storage_schema,
-                        'snapshot_manifest_digest', snapshot_manifest_digest,
-                        'snapshot_repository', snapshot_repository,
-                        'snapshot_tag', snapshot_tag,
-                        'storage_snapshot_json', storage_snapshot_json,
-                        'created_at', created_at,
-                        'updated_at', updated_at
-                    )) FROM (SELECT * FROM sandboxes {where} ORDER BY sandbox_id)""",
-                node_identity or (),
-            ).fetchone()[0]
-        # This outer envelope contains SQLite integers and strings; nested
-        # user JSON remains an opaque string and retains its canonical decoder.
-        # Preserve stdlib handling of legacy surrogate/non-finite values rather
-        # than changing the read contract when the native decoder rejects them.
-        try:
-            return orjson.loads(payload)
-        except orjson.JSONDecodeError:
-            return json.loads(payload)
 
     def assigned_node_identities(
         self, *, node_id: str, job_id: str, node_url: str,
@@ -1218,7 +1135,7 @@ class RoutingStore:
         previous = self._placement_route_memo
         fresh: dict[str, tuple[tuple[Any, ...], SandboxRoute]] = {}
         routes = []
-        for row in self._sandbox_route_rows_readonly(node_identity=(
+        for row in self.sandbox_route_rows_readonly(node_identity=(
             node_id.strip(), job_id.strip(), cleaned_url,
             f"{cleaned_url}/" if cleaned_url else "",
         )):
@@ -1344,7 +1261,7 @@ class RoutingStore:
             return _program_request_from_row(snapshot) if snapshot["request_id"] is not None else None
 
         # Retries are observational. Changed projections recheck both request
-        # identity and generation in one joined read under the writer fence.
+        # identity and generation in one joined read inside the transaction.
         with (self._connect() if _connection is None else nullcontext(_connection)) as conn:
             previous = read_current(conn)
         if previous is not None and project(previous)[3]:
@@ -1480,8 +1397,8 @@ class RoutingStore:
             if activity_epoch < 0:
                 raise ValueError("lifecycle activity_epoch must be non-negative")
             lifecycle_activity_epoch = activity_epoch
-        # SQLite and the shared writer serialize this database-only
-        # mutation. Inventory projection must not block lifecycle progress.
+        # The transaction serializes this database-only mutation. Inventory
+        # projection must not block lifecycle progress.
         with (self._transaction() if _connection is None else nullcontext(_connection)) as conn:
             current = self._get_sandbox_unlocked(conn, route.sandbox_id)
             if (
@@ -1572,21 +1489,20 @@ class RoutingStore:
     def reserve_sandbox_wake(self, route: SandboxRoute, *, pending_id: str) -> SandboxRoute | None:
         """Atomically reserve an exact owner and remove its wake demand.
 
-        SQLite's write transaction supplies the cross-process fence. This
-        state-only mutation changes no exec-cache identity, so it need not
-        queue behind the process lock held by unrelated inventory projection.
-        It also leaves spec and checkpoint payload columns untouched.
+        The transaction supplies the cross-process fence. This state-only
+        mutation leaves spec and checkpoint payload columns untouched.
         """
         return self.reserve_sandbox_wakes([(route, pending_id)])[route.sandbox_id]
 
     def reserve_sandbox_wakes(
         self, requests: list[tuple[SandboxRoute, str]],
     ) -> dict[str, SandboxRoute | None]:
-        """Commit a placement batch once, rechecking every owner under the writer fence.
+        """Commit a placement batch once, rechecking every owner in one transaction.
 
-        The caller holds the cross-process placement lock while accounting for
-        this batch. A stale item is rejected independently; no response may be
-        released until the entire transaction has committed.
+        The caller accounts for this batch inside the same placement
+        transaction (Placement.atomic, PostgresRoutingStore.run_placement). A
+        stale item is rejected independently; no response may be released
+        until the entire transaction has committed.
         """
         result: dict[str, SandboxRoute | None] = {}
         if not requests:
@@ -1619,46 +1535,45 @@ class RoutingStore:
     ) -> SandboxRoute | None:
         """Fence a portable park before removing its worker-local incarnation."""
 
-        with self._lock:
-            with self._transaction() as conn:
-                current = self._get_sandbox_unlocked(conn, route.sandbox_id)
-                if current is None or not _same_sandbox_route_incarnation(
-                    current, route
-                ):
+        with self._transaction() as conn:
+            current = self._get_sandbox_unlocked(conn, route.sandbox_id)
+            if current is None or not _same_sandbox_route_incarnation(
+                current, route
+            ):
+                return None
+            if require_cold:
+                if cold_offload_fence(current) != cold_offload_fence(route):
                     return None
-                if require_cold:
-                    if cold_offload_fence(current) != cold_offload_fence(route):
-                        return None
-                    if current.worker_state == "attached" and conn.execute(
-                        "SELECT 1 FROM pending WHERE sandbox_id = ? LIMIT 1",
-                        (wake_pending_demand_id(current.sandbox_id),),
-                    ).fetchone() is not None:
-                        return None
-                    if current.worker_state == "attached" and conn.execute(
-                        "SELECT 1 FROM program_requests WHERE sandbox_id = ? "
-                        "AND sandbox_generation = ? AND state != 'terminal' LIMIT 1",
-                        (current.sandbox_id, current.generation),
-                    ).fetchone() is not None:
-                        return None
-                if current.worker_state in {"detaching", "detached"}:
-                    return current
-                if (
-                    current.worker_state != "attached"
-                    or not is_portable_parked_route(current)
-                    or bool(current.delete_operation_id)
-                ):
+                if current.worker_state == "attached" and conn.execute(
+                    "SELECT 1 FROM pending WHERE sandbox_id = ? LIMIT 1",
+                    (wake_pending_demand_id(current.sandbox_id),),
+                ).fetchone() is not None:
                     return None
-                stored = replace(
-                    current,
-                    worker_state="detaching",
-                    updated_at=utc_now().isoformat(),
-                )
-                self._write_sandbox(conn, stored)
-                conn.execute(
-                    "DELETE FROM exec_sessions WHERE sandbox_id = ?",
-                    (stored.sandbox_id,),
-                )
-            return stored
+                if current.worker_state == "attached" and conn.execute(
+                    "SELECT 1 FROM program_requests WHERE sandbox_id = ? "
+                    "AND sandbox_generation = ? AND state != 'terminal' LIMIT 1",
+                    (current.sandbox_id, current.generation),
+                ).fetchone() is not None:
+                    return None
+            if current.worker_state in {"detaching", "detached"}:
+                return current
+            if (
+                current.worker_state != "attached"
+                or not is_portable_parked_route(current)
+                or bool(current.delete_operation_id)
+            ):
+                return None
+            stored = replace(
+                current,
+                worker_state="detaching",
+                updated_at=utc_now().isoformat(),
+            )
+            self._write_sandbox(conn, stored)
+            conn.execute(
+                "DELETE FROM exec_sessions WHERE sandbox_id = ?",
+                (stored.sandbox_id,),
+            )
+        return stored
 
     def complete_sandbox_detach(
         self,
@@ -1666,27 +1581,26 @@ class RoutingStore:
     ) -> SandboxRoute | None:
         """Commit that a published park no longer occupies its last worker."""
 
-        with self._lock:
-            with self._transaction() as conn:
-                current = self._get_sandbox_unlocked(conn, route.sandbox_id)
-                if current is None or not _same_sandbox_route_incarnation(
-                    current, route
-                ):
-                    return None
-                if current.worker_state == "detached":
-                    return current
-                if (
-                    current.worker_state != "detaching"
-                    or not is_portable_parked_route(current)
-                    or bool(current.delete_operation_id)
-                ):
-                    return None
-                stored = self._detach_owner_lost_route_unlocked(
-                    conn,
-                    current,
-                    updated_at=utc_now().isoformat(),
-                )
-            return stored
+        with self._transaction() as conn:
+            current = self._get_sandbox_unlocked(conn, route.sandbox_id)
+            if current is None or not _same_sandbox_route_incarnation(
+                current, route
+            ):
+                return None
+            if current.worker_state == "detached":
+                return current
+            if (
+                current.worker_state != "detaching"
+                or not is_portable_parked_route(current)
+                or bool(current.delete_operation_id)
+            ):
+                return None
+            stored = self._detach_owner_lost_route_unlocked(
+                conn,
+                current,
+                updated_at=utc_now().isoformat(),
+            )
+        return stored
 
     def confirm_sandbox_observation(self,route: SandboxRoute,*,allow_node_epoch_adoption=True) -> SandboxRoute | None:
         """Apply a worker receipt only to the still-owned, non-deleting route.
@@ -1694,12 +1608,11 @@ class RoutingStore:
         A late create/list response is an observation, never authority to insert
         a route after deletion or replace a newer incarnation.
         """
-        with self._lock:
-            with self._transaction() as conn:
-                current=self._get_sandbox_unlocked(conn,route.sandbox_id)
-                if current is None or current.delete_operation_id or not _same_sandbox_route_incarnation(current,route):
-                    return None
-                return self.upsert_sandbox(route,allow_node_epoch_adoption=allow_node_epoch_adoption,_connection=conn)
+        with self._transaction() as conn:
+            current=self._get_sandbox_unlocked(conn,route.sandbox_id)
+            if current is None or current.delete_operation_id or not _same_sandbox_route_incarnation(current,route):
+                return None
+            return self.upsert_sandbox(route,allow_node_epoch_adoption=allow_node_epoch_adoption,_connection=conn)
 
     def upsert_sandbox(
         self,
@@ -1708,33 +1621,32 @@ class RoutingStore:
         allow_node_epoch_adoption: bool = True,
         _connection=None,
     ) -> SandboxRoute:
-        with self._lock:
-            now = utc_now().isoformat()
-            with (self._transaction() if _connection is None else nullcontext(_connection)) as conn:
-                existing = self._get_sandbox_unlocked(conn, route.sandbox_id)
-                if existing is not None and not _route_update_is_current(
-                    existing,
-                    route,
-                    allow_node_epoch_adoption=allow_node_epoch_adoption,
-                ):
-                    return existing
-                activity_epoch = route.activity_epoch
-                if existing is not None and route.node_epoch == existing.node_epoch:
-                    activity_epoch = max(activity_epoch, existing.activity_epoch)
-                stored = replace(
-                    route,
-                    activity_epoch=max(0, activity_epoch),
-                    created_at=(
-                        route.created_at
-                        or (existing.created_at if existing is not None else now)
-                    ),
-                    updated_at=now,
-                )
-                self._write_sandbox(conn, stored)
-                conn.execute(
-                    "DELETE FROM pending WHERE sandbox_id = ?", (route.sandbox_id,)
-                )
-            return stored
+        now = utc_now().isoformat()
+        with (self._transaction() if _connection is None else nullcontext(_connection)) as conn:
+            existing = self._get_sandbox_unlocked(conn, route.sandbox_id)
+            if existing is not None and not _route_update_is_current(
+                existing,
+                route,
+                allow_node_epoch_adoption=allow_node_epoch_adoption,
+            ):
+                return existing
+            activity_epoch = route.activity_epoch
+            if existing is not None and route.node_epoch == existing.node_epoch:
+                activity_epoch = max(activity_epoch, existing.activity_epoch)
+            stored = replace(
+                route,
+                activity_epoch=max(0, activity_epoch),
+                created_at=(
+                    route.created_at
+                    or (existing.created_at if existing is not None else now)
+                ),
+                updated_at=now,
+            )
+            self._write_sandbox(conn, stored)
+            conn.execute(
+                "DELETE FROM pending WHERE sandbox_id = ?", (route.sandbox_id,)
+            )
+        return stored
 
     def _claim_prepared_capacity_unlocked(
         self,
@@ -1806,7 +1718,6 @@ class RoutingStore:
         if not operation_id or not spec_hash.strip():
             raise ValueError("create operation id and spec hash are required")
         # The SQL transaction serializes all incarnation and ownership checks.
-        # Do not hold the fleet lock while queued for the shared durable writer.
         with self._transaction() as conn:
             return self._allocate_create_unlocked(conn, allocation, spec_hash, operation_id)
 
@@ -1911,13 +1822,12 @@ class RoutingStore:
     # C3.2 group create: one transaction per worker for a group's members. A
     # deleted group refuses new intents, and members the group confirmed are
     # recorded so that replaying the group never recreates one deleted since.
-    _group_lock_clause = ""
 
     def _require_active_group(self, conn, group_id: str) -> None:
         if not group_id:
             return
         row = conn.execute(
-            "SELECT state FROM sandbox_groups WHERE group_id = ?" + self._group_lock_clause,
+            "SELECT state FROM sandbox_groups WHERE group_id = ? FOR SHARE",
             (group_id,),
         ).fetchone()
         if row is None or row["state"] != "active":
@@ -1947,7 +1857,7 @@ class RoutingStore:
             return [self._retarget_create_unlocked(conn, *move) for move in moves]
 
     def confirm_creates(self, routes: list[SandboxRoute], *, group_id: str = "") -> list[SandboxRoute | None]:
-        with self._lock, self._transaction() as conn:
+        with self._transaction() as conn:
             confirmed: list[SandboxRoute | None] = []
             for route in routes:
                 current = self._get_sandbox_unlocked(conn, route.sandbox_id)
@@ -2017,29 +1927,28 @@ class RoutingStore:
     def prepare_sandbox_delete(self, sandbox_id: str) -> SandboxRoute | None:
         """Persist and reuse one delete operation for the current generation."""
 
-        with self._lock:
-            with self._transaction() as conn:
-                existing = self._get_sandbox_unlocked(conn, sandbox_id)
-                if existing is None:
-                    return None
-                if existing.delete_operation_id:
-                    stored = existing
-                else:
-                    stored = SandboxRoute(
-                        **{
-                            **existing.__dict__,
-                            "delete_operation_id": f"delete-{uuid4().hex}",
-                            "updated_at": utc_now().isoformat(),
-                        }
-                    )
-                    self._write_sandbox(conn, stored)
-                self._terminalize_program_requests_unlocked(
-                    conn,
-                    sandbox_id,
-                    generation=stored.generation,
-                    last_error="sandbox deletion requested",
+        with self._transaction() as conn:
+            existing = self._get_sandbox_unlocked(conn, sandbox_id)
+            if existing is None:
+                return None
+            if existing.delete_operation_id:
+                stored = existing
+            else:
+                stored = SandboxRoute(
+                    **{
+                        **existing.__dict__,
+                        "delete_operation_id": f"delete-{uuid4().hex}",
+                        "updated_at": utc_now().isoformat(),
+                    }
                 )
-            return stored
+                self._write_sandbox(conn, stored)
+            self._terminalize_program_requests_unlocked(
+                conn,
+                sandbox_id,
+                generation=stored.generation,
+                last_error="sandbox deletion requested",
+            )
+        return stored
 
     def begin_sandbox_migration(
         self,
@@ -2059,59 +1968,58 @@ class RoutingStore:
             or not cleaned_destination_url
         ):
             raise ValueError("migration and destination identities are required")
-        with self._lock:
-            now = utc_now().isoformat()
-            with self._transaction() as conn:
-                existing_migration = self._get_sandbox_migration_unlocked(
-                    conn,
-                    cleaned_id,
+        now = utc_now().isoformat()
+        with self._transaction() as conn:
+            existing_migration = self._get_sandbox_migration_unlocked(
+                conn,
+                cleaned_id,
+            )
+            if existing_migration is not None:
+                return existing_migration
+            active = conn.execute(
+                """
+                SELECT migration_id FROM sandbox_migrations
+                WHERE sandbox_id = ? AND phase != 'complete'
+                """,
+                (source.sandbox_id,),
+            ).fetchone()
+            if active is not None:
+                raise SandboxRouteConflictError(
+                    "sandbox already has an active migration"
                 )
-                if existing_migration is not None:
-                    return existing_migration
-                active = conn.execute(
-                    """
-                    SELECT migration_id FROM sandbox_migrations
-                    WHERE sandbox_id = ? AND phase != 'complete'
-                    """,
-                    (source.sandbox_id,),
-                ).fetchone()
-                if active is not None:
-                    raise SandboxRouteConflictError(
-                        "sandbox already has an active migration"
-                    )
-                current = self._get_sandbox_unlocked(conn, source.sandbox_id)
-                if (
-                    current is None
-                    or current.generation != source.generation
-                    or current.create_operation_id != source.create_operation_id
-                    or current.spec_hash != source.spec_hash
-                    or current.node_id != source.node_id
-                    or current.job_id != source.job_id
-                    or current.node_url.rstrip("/") != source.node_url.rstrip("/")
-                    or current.worker_state != source.worker_state
-                    or bool(current.delete_operation_id)
-                ):
-                    raise SandboxRouteConflictError(
-                        "sandbox route changed before migration began"
-                    )
-                migration = SandboxMigration(
-                    migration_id=cleaned_id,
-                    sandbox_id=source.sandbox_id,
-                    phase="planned",
-                    source_node_id=source.node_id,
-                    source_job_id=source.job_id,
-                    source_node_url=source.node_url.rstrip("/"),
-                    destination_node_id=destination_node_id.strip(),
-                    destination_job_id=destination_job_id.strip(),
-                    destination_node_url=cleaned_destination_url,
-                    generation=source.generation,
-                    create_operation_id=source.create_operation_id,
-                    spec_hash=source.spec_hash,
-                    created_at=now,
-                    updated_at=now,
+            current = self._get_sandbox_unlocked(conn, source.sandbox_id)
+            if (
+                current is None
+                or current.generation != source.generation
+                or current.create_operation_id != source.create_operation_id
+                or current.spec_hash != source.spec_hash
+                or current.node_id != source.node_id
+                or current.job_id != source.job_id
+                or current.node_url.rstrip("/") != source.node_url.rstrip("/")
+                or current.worker_state != source.worker_state
+                or bool(current.delete_operation_id)
+            ):
+                raise SandboxRouteConflictError(
+                    "sandbox route changed before migration began"
                 )
-                self._write_sandbox_migration(conn, migration)
-            return migration
+            migration = SandboxMigration(
+                migration_id=cleaned_id,
+                sandbox_id=source.sandbox_id,
+                phase="planned",
+                source_node_id=source.node_id,
+                source_job_id=source.job_id,
+                source_node_url=source.node_url.rstrip("/"),
+                destination_node_id=destination_node_id.strip(),
+                destination_job_id=destination_job_id.strip(),
+                destination_node_url=cleaned_destination_url,
+                generation=source.generation,
+                create_operation_id=source.create_operation_id,
+                spec_hash=source.spec_hash,
+                created_at=now,
+                updated_at=now,
+            )
+            self._write_sandbox_migration(conn, migration)
+        return migration
 
     def get_sandbox_migration(
         self,
@@ -2185,53 +2093,52 @@ class RoutingStore:
             return []
         now = utc_now().isoformat()
         terminalized: list[SandboxMigration] = []
-        with self._lock:
-            with self._transaction() as conn:
-                rows = conn.execute(
+        with self._transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT migration_id, sandbox_id, phase,
+                       source_node_id, source_job_id, source_node_url,
+                       destination_node_id, destination_job_id,
+                       destination_node_url, generation,
+                       create_operation_id, spec_hash,
+                       storage_schema, snapshot_sha256,
+                       storage_snapshot_json, source_fenced,
+                       created_at, updated_at, error
+                FROM sandbox_migrations AS migration
+                WHERE migration.phase != 'complete'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM sandboxes AS sandbox
+                      WHERE sandbox.sandbox_id = migration.sandbox_id
+                  )
+                ORDER BY migration.created_at, migration.migration_id
+                LIMIT ?
+                """,
+                (max_count,),
+            ).fetchall()
+            for row in rows:
+                migration = _sandbox_migration_from_row(row)
+                error = migration.error or "sandbox route is absent"
+                updated = conn.execute(
                     """
-                    SELECT migration_id, sandbox_id, phase,
-                           source_node_id, source_job_id, source_node_url,
-                           destination_node_id, destination_job_id,
-                           destination_node_url, generation,
-                           create_operation_id, spec_hash,
-                           storage_schema, snapshot_sha256,
-                           storage_snapshot_json, source_fenced,
-                           created_at, updated_at, error
-                    FROM sandbox_migrations AS migration
-                    WHERE migration.phase != 'complete'
+                    UPDATE sandbox_migrations
+                    SET phase = 'complete', updated_at = ?, error = ?
+                    WHERE migration_id = ? AND phase != 'complete'
                       AND NOT EXISTS (
                           SELECT 1 FROM sandboxes AS sandbox
-                          WHERE sandbox.sandbox_id = migration.sandbox_id
+                          WHERE sandbox.sandbox_id = sandbox_migrations.sandbox_id
                       )
-                    ORDER BY migration.created_at, migration.migration_id
-                    LIMIT ?
                     """,
-                    (max_count,),
-                ).fetchall()
-                for row in rows:
-                    migration = _sandbox_migration_from_row(row)
-                    error = migration.error or "sandbox route is absent"
-                    updated = conn.execute(
-                        """
-                        UPDATE sandbox_migrations
-                        SET phase = 'complete', updated_at = ?, error = ?
-                        WHERE migration_id = ? AND phase != 'complete'
-                          AND NOT EXISTS (
-                              SELECT 1 FROM sandboxes AS sandbox
-                              WHERE sandbox.sandbox_id = sandbox_migrations.sandbox_id
-                          )
-                        """,
-                        (now, error, migration.migration_id),
-                    )
-                    if updated.rowcount:
-                        terminalized.append(
-                            replace(
-                                migration,
-                                phase="complete",
-                                updated_at=now,
-                                error=error,
-                            )
+                    (now, error, migration.migration_id),
+                )
+                if updated.rowcount:
+                    terminalized.append(
+                        replace(
+                            migration,
+                            phase="complete",
+                            updated_at=now,
+                            error=error,
                         )
+                    )
         return terminalized
 
     def advance_sandbox_migration(
@@ -2249,42 +2156,41 @@ class RoutingStore:
         expected = set(expected_phases)
         if not expected or not phase.strip():
             raise ValueError("migration phases are required")
-        with self._lock:
-            with self._transaction() as conn:
-                existing = self._get_sandbox_migration_unlocked(
-                    conn,
-                    migration_id.strip(),
-                )
-                if existing is None or existing.phase not in expected:
-                    return None
-                stored = replace(
-                    existing,
-                    phase=phase.strip(),
-                    storage_schema=(
-                        storage_schema
-                        if storage_schema is not None
-                        else existing.storage_schema
-                    ),
-                    snapshot_sha256=(
-                        snapshot_sha256
-                        if snapshot_sha256 is not None
-                        else existing.snapshot_sha256
-                    ),
-                    storage_snapshot=(
-                        dict(storage_snapshot)
-                        if storage_snapshot is not None
-                        else existing.storage_snapshot
-                    ),
-                    source_fenced=(
-                        bool(source_fenced)
-                        if source_fenced is not None
-                        else existing.source_fenced
-                    ),
-                    error=error if error is not None else existing.error,
-                    updated_at=utc_now().isoformat(),
-                )
-                self._write_sandbox_migration(conn, stored)
-            return stored
+        with self._transaction() as conn:
+            existing = self._get_sandbox_migration_unlocked(
+                conn,
+                migration_id.strip(),
+            )
+            if existing is None or existing.phase not in expected:
+                return None
+            stored = replace(
+                existing,
+                phase=phase.strip(),
+                storage_schema=(
+                    storage_schema
+                    if storage_schema is not None
+                    else existing.storage_schema
+                ),
+                snapshot_sha256=(
+                    snapshot_sha256
+                    if snapshot_sha256 is not None
+                    else existing.snapshot_sha256
+                ),
+                storage_snapshot=(
+                    dict(storage_snapshot)
+                    if storage_snapshot is not None
+                    else existing.storage_snapshot
+                ),
+                source_fenced=(
+                    bool(source_fenced)
+                    if source_fenced is not None
+                    else existing.source_fenced
+                ),
+                error=error if error is not None else existing.error,
+                updated_at=utc_now().isoformat(),
+            )
+            self._write_sandbox_migration(conn, stored)
+        return stored
 
     def complete_sandbox_migration(
         self,
@@ -2295,65 +2201,64 @@ class RoutingStore:
         """Complete activation and optionally reserve the destination for wake.
 
         Wake relocation must not expose a parked destination after dropping the
-        migration reservation. Updating the route and journal in one SQLite
+        migration reservation. Updating the route and journal in one
         transaction prevents an unrelated create from consuming the CPU/RAM in
         that gap.
         """
 
-        with self._lock:
-            with self._transaction() as conn:
-                migration = self._get_sandbox_migration_unlocked(
-                    conn,
-                    migration_id.strip(),
-                )
-                if migration is None:
-                    return None
-                current = self._get_sandbox_unlocked(conn, migration.sandbox_id)
-                if migration.phase == "complete":
-                    if (
-                        wake_destination
-                        and current is not None
-                        and current.node_id == migration.destination_node_id
-                        and current.job_id == migration.destination_job_id
-                        and current.node_url.rstrip("/") == migration.destination_node_url.rstrip("/")
-                        and current.generation == migration.generation
-                        and current.create_operation_id == migration.create_operation_id
-                        and current.spec_hash == migration.spec_hash
-                        and not current.delete_operation_id
-                        and (current.state or "unknown").lower() == "parked"
-                    ):
-                        current = replace(
-                            current,
-                            state="waking",
-                            updated_at=utc_now().isoformat(),
-                        )
-                        self._write_sandbox(conn, current)
-                    return migration
-                if migration.phase != "activated" or current is None:
-                    return None
+        with self._transaction() as conn:
+            migration = self._get_sandbox_migration_unlocked(
+                conn,
+                migration_id.strip(),
+            )
+            if migration is None:
+                return None
+            current = self._get_sandbox_unlocked(conn, migration.sandbox_id)
+            if migration.phase == "complete":
                 if (
-                    current.generation != migration.generation
-                    or current.create_operation_id != migration.create_operation_id
-                    or current.spec_hash != migration.spec_hash
-                    or current.node_id != migration.destination_node_id
-                    or current.job_id != migration.destination_job_id
-                    or current.node_url.rstrip("/")
-                    != migration.destination_node_url.rstrip("/")
-                    or bool(current.delete_operation_id)
+                    wake_destination
+                    and current is not None
+                    and current.node_id == migration.destination_node_id
+                    and current.job_id == migration.destination_job_id
+                    and current.node_url.rstrip("/") == migration.destination_node_url.rstrip("/")
+                    and current.generation == migration.generation
+                    and current.create_operation_id == migration.create_operation_id
+                    and current.spec_hash == migration.spec_hash
+                    and not current.delete_operation_id
+                    and (current.state or "unknown").lower() == "parked"
                 ):
-                    return None
-                now = utc_now().isoformat()
-                if wake_destination:
-                    current = replace(current, state="waking", updated_at=now)
+                    current = replace(
+                        current,
+                        state="waking",
+                        updated_at=utc_now().isoformat(),
+                    )
                     self._write_sandbox(conn, current)
-                completed = replace(
-                    migration,
-                    phase="complete",
-                    updated_at=now,
-                    error="",
-                )
-                self._write_sandbox_migration(conn, completed)
-            return completed
+                return migration
+            if migration.phase != "activated" or current is None:
+                return None
+            if (
+                current.generation != migration.generation
+                or current.create_operation_id != migration.create_operation_id
+                or current.spec_hash != migration.spec_hash
+                or current.node_id != migration.destination_node_id
+                or current.job_id != migration.destination_job_id
+                or current.node_url.rstrip("/")
+                != migration.destination_node_url.rstrip("/")
+                or bool(current.delete_operation_id)
+            ):
+                return None
+            now = utc_now().isoformat()
+            if wake_destination:
+                current = replace(current, state="waking", updated_at=now)
+                self._write_sandbox(conn, current)
+            completed = replace(
+                migration,
+                phase="complete",
+                updated_at=now,
+                error="",
+            )
+            self._write_sandbox_migration(conn, completed)
+        return completed
 
     def route_sandbox_migration(
         self,
@@ -2361,98 +2266,97 @@ class RoutingStore:
     ) -> tuple[SandboxMigration, SandboxRoute] | None:
         """Atomically commit destination routing and the migration journal."""
 
-        with self._lock:
-            with self._transaction() as conn:
-                migration = self._get_sandbox_migration_unlocked(
-                    conn,
-                    migration_id.strip(),
-                )
-                if migration is None:
-                    return None
-                current = self._get_sandbox_unlocked(conn, migration.sandbox_id)
-                if migration.phase == "routed":
-                    if (
-                        current is not None
-                        and current.node_id == migration.destination_node_id
-                        and current.node_url.rstrip("/")
-                        == migration.destination_node_url.rstrip("/")
-                    ):
-                        return migration, current
-                    return None
-                if migration.phase != "staged" or current is None:
-                    return None
+        with self._transaction() as conn:
+            migration = self._get_sandbox_migration_unlocked(
+                conn,
+                migration_id.strip(),
+            )
+            if migration is None:
+                return None
+            current = self._get_sandbox_unlocked(conn, migration.sandbox_id)
+            if migration.phase == "routed":
                 if (
-                    current.generation != migration.generation
-                    or current.create_operation_id != migration.create_operation_id
-                    or current.spec_hash != migration.spec_hash
-                    or current.node_id != migration.source_node_id
-                    or current.job_id != migration.source_job_id
-                    or current.node_url.rstrip("/")
-                    != migration.source_node_url.rstrip("/")
-                    or bool(current.delete_operation_id)
+                    current is not None
+                    and current.node_id == migration.destination_node_id
+                    and current.node_url.rstrip("/")
+                    == migration.destination_node_url.rstrip("/")
                 ):
-                    return None
-                snapshot_manifest_digest = ""
-                snapshot_repository = ""
-                snapshot_tag = ""
-                if migration.storage_schema:
-                    from .storage_native_migration import SPLIT_MIGRATION_SCHEMA, StorageNativeMigration
+                    return migration, current
+                return None
+            if migration.phase != "staged" or current is None:
+                return None
+            if (
+                current.generation != migration.generation
+                or current.create_operation_id != migration.create_operation_id
+                or current.spec_hash != migration.spec_hash
+                or current.node_id != migration.source_node_id
+                or current.job_id != migration.source_job_id
+                or current.node_url.rstrip("/")
+                != migration.source_node_url.rstrip("/")
+                or bool(current.delete_operation_id)
+            ):
+                return None
+            snapshot_manifest_digest = ""
+            snapshot_repository = ""
+            snapshot_tag = ""
+            if migration.storage_schema:
+                from .storage_native_migration import SPLIT_MIGRATION_SCHEMA, StorageNativeMigration
 
-                    if migration.storage_schema == SPLIT_MIGRATION_SCHEMA:
-                        try:
-                            descriptor = StorageNativeMigration.from_dict(migration.storage_snapshot)
-                        except ValueError:
-                            return None
-                        if descriptor.schema != migration.storage_schema:
-                            return None
-                        publication = descriptor.reference.to_dict()
-                    else:
-                        publication = migration.storage_snapshot.get("publication")
-                    if not isinstance(publication, dict):
+                if migration.storage_schema == SPLIT_MIGRATION_SCHEMA:
+                    try:
+                        descriptor = StorageNativeMigration.from_dict(migration.storage_snapshot)
+                    except ValueError:
                         return None
-                    snapshot_manifest_digest = str(
-                        publication.get("manifest_digest") or ""
-                    )
-                    if not snapshot_manifest_digest:
+                    if descriptor.schema != migration.storage_schema:
                         return None
-                    snapshot_repository = str(publication.get("repository") or "")
-                    snapshot_tag = str(publication.get("tag") or "")
-                    if not snapshot_repository or not snapshot_tag:
-                        return None
-                now = utc_now().isoformat()
-                route = replace(
-                    current,
-                    node_id=migration.destination_node_id,
-                    job_id=migration.destination_job_id,
-                    node_url=migration.destination_node_url,
-                    state="parked",
-                    node_epoch="",
-                    activity_epoch=0,
-                    worker_state="attached",
-                    storage_schema=migration.storage_schema,
-                    snapshot_manifest_digest=snapshot_manifest_digest,
-                    snapshot_repository=snapshot_repository,
-                    snapshot_tag=snapshot_tag,
-                    storage_snapshot=(
-                        dict(migration.storage_snapshot)
-                        if migration.storage_schema
-                        else {}
-                    ),
-                    updated_at=now,
+                    publication = descriptor.reference.to_dict()
+                else:
+                    publication = migration.storage_snapshot.get("publication")
+                if not isinstance(publication, dict):
+                    return None
+                snapshot_manifest_digest = str(
+                    publication.get("manifest_digest") or ""
                 )
-                self._write_sandbox(conn, route)
-                conn.execute(
-                    "DELETE FROM exec_sessions WHERE sandbox_id = ?",
-                    (migration.sandbox_id,),
-                )
-                migration = replace(
-                    migration,
-                    phase="routed",
-                    updated_at=now,
-                    error="",
-                )
-                self._write_sandbox_migration(conn, migration)
-            return migration, route
+                if not snapshot_manifest_digest:
+                    return None
+                snapshot_repository = str(publication.get("repository") or "")
+                snapshot_tag = str(publication.get("tag") or "")
+                if not snapshot_repository or not snapshot_tag:
+                    return None
+            now = utc_now().isoformat()
+            route = replace(
+                current,
+                node_id=migration.destination_node_id,
+                job_id=migration.destination_job_id,
+                node_url=migration.destination_node_url,
+                state="parked",
+                node_epoch="",
+                activity_epoch=0,
+                worker_state="attached",
+                storage_schema=migration.storage_schema,
+                snapshot_manifest_digest=snapshot_manifest_digest,
+                snapshot_repository=snapshot_repository,
+                snapshot_tag=snapshot_tag,
+                storage_snapshot=(
+                    dict(migration.storage_snapshot)
+                    if migration.storage_schema
+                    else {}
+                ),
+                updated_at=now,
+            )
+            self._write_sandbox(conn, route)
+            conn.execute(
+                "DELETE FROM exec_sessions WHERE sandbox_id = ?",
+                (migration.sandbox_id,),
+            )
+            migration = replace(
+                migration,
+                phase="routed",
+                updated_at=now,
+                error="",
+            )
+            self._write_sandbox_migration(conn, migration)
+        return migration, route
 
     def delete_sandbox_if_current(
         self,
@@ -2464,23 +2368,22 @@ class RoutingStore:
     ) -> SandboxRoute | None:
         """Delete only the exact route incarnation observed by the caller."""
 
-        with self._lock:
-            with self._transaction() as conn:
-                existing = self._get_sandbox_unlocked(conn, sandbox_id)
-                if existing is None or existing.generation != generation:
-                    return None
-                if (
-                    create_operation_id
-                    and existing.create_operation_id != create_operation_id
-                ):
-                    return None
-                if (
-                    delete_operation_id
-                    and existing.delete_operation_id != delete_operation_id
-                ):
-                    return None
-                self._delete_sandbox_unlocked(conn, existing)
-            return existing
+        with self._transaction() as conn:
+            existing = self._get_sandbox_unlocked(conn, sandbox_id)
+            if existing is None or existing.generation != generation:
+                return None
+            if (
+                create_operation_id
+                and existing.create_operation_id != create_operation_id
+            ):
+                return None
+            if (
+                delete_operation_id
+                and existing.delete_operation_id != delete_operation_id
+            ):
+                return None
+            self._delete_sandbox_unlocked(conn, existing)
+        return existing
 
     def reconcile_sandboxes_for_node(
         self,
@@ -2497,7 +2400,7 @@ class RoutingStore:
     ) -> tuple[list[SandboxRoute], list[SandboxRoute]]:
         """Reconcile inventory and return removed routes and stale snapshots.
 
-        The caller owns external Registry leases, so SQLite reconciliation
+        The caller owns external Registry leases, so reconciliation
         reports the exact durable references that became obsolete instead of
         silently leaking them.
         """
@@ -2516,7 +2419,6 @@ class RoutingStore:
         reported_ids.update(item.sandbox_id for item in observed)
         observed_at_dt = parse_iso_datetime(observed_at)
         # The SQL transaction serializes all incarnation and ownership checks.
-        # Do not hold the fleet lock while queued for the shared durable writer.
         removed_sandbox_ids: list[str] = []
         removed_routes: list[SandboxRoute] = []
         stale_snapshot_routes: list[SandboxRoute] = []
@@ -2720,9 +2622,8 @@ class RoutingStore:
         return removed_routes, stale_snapshot_routes
 
     def delete_sandbox(self, sandbox_id: str) -> None:
-        with self._lock:
-            with self._transaction() as conn:
-                self._delete_sandbox_unlocked(conn, sandbox_id)
+        with self._transaction() as conn:
+            self._delete_sandbox_unlocked(conn, sandbox_id)
 
     def retire_node_epochs(
         self, job_id: str, retired_node_epochs: Iterable[str], *, node_epoch: str,
@@ -2746,7 +2647,7 @@ class RoutingStore:
         }
         lost: list[SandboxRoute] = []
         pending_deletes: list[SandboxRoute] = []
-        with self._lock, self._transaction() as conn:
+        with self._transaction() as conn:
             for row in conn.execute(
                 "SELECT * FROM sandboxes WHERE job_id = ? ORDER BY sandbox_id", (job_id,),
             ).fetchall():
@@ -2812,38 +2713,37 @@ class RoutingStore:
         target_ids = tuple(sorted({str(job_id) for job_id in job_ids if str(job_id)}))
         if not target_ids:
             return []
-        with self._lock:
-            removed: list[SandboxRoute] = []
-            preserved: list[SandboxRoute] = []
-            with self._transaction() as conn:
-                for job_id in target_ids:
-                    for row in conn.execute(
-                        "SELECT * FROM sandboxes WHERE job_id = ? ORDER BY sandbox_id", (job_id,),
-                    ).fetchall():
-                        route = _sandbox_route_from_row(row)
-                        if route is not None:
-                            if (
-                                sandbox_owner_loss_disposition(route)
-                                is SandboxOwnerLossDisposition.RECOVER_DETACHED
-                            ):
-                                preserved.append(route)
-                            else:
-                                removed.append(route)
-                for route in preserved:
-                    self._detach_owner_lost_route_unlocked(
-                        conn,
-                        route,
-                        updated_at=utc_now().isoformat(),
-                    )
-                for route in removed:
-                    self._delete_sandbox_unlocked(
-                        conn,
-                        route,
-                        terminal_error=terminal_error,
-                    )
-            if not removed and not preserved:
-                return []
-            return removed
+        removed: list[SandboxRoute] = []
+        preserved: list[SandboxRoute] = []
+        with self._transaction() as conn:
+            for job_id in target_ids:
+                for row in conn.execute(
+                    "SELECT * FROM sandboxes WHERE job_id = ? ORDER BY sandbox_id", (job_id,),
+                ).fetchall():
+                    route = _sandbox_route_from_row(row)
+                    if route is not None:
+                        if (
+                            sandbox_owner_loss_disposition(route)
+                            is SandboxOwnerLossDisposition.RECOVER_DETACHED
+                        ):
+                            preserved.append(route)
+                        else:
+                            removed.append(route)
+            for route in preserved:
+                self._detach_owner_lost_route_unlocked(
+                    conn,
+                    route,
+                    updated_at=utc_now().isoformat(),
+                )
+            for route in removed:
+                self._delete_sandbox_unlocked(
+                    conn,
+                    route,
+                    terminal_error=terminal_error,
+                )
+        if not removed and not preserved:
+            return []
+        return removed
 
     def delete_stale_sandboxes(
         self,
@@ -2854,56 +2754,55 @@ class RoutingStore:
     ) -> list[SandboxRoute]:
         keep_jobs = {str(job_id) for job_id in active_job_ids if str(job_id)}
         keep_nodes = {str(node_id) for node_id in active_node_ids if str(node_id)}
-        with self._lock:
-            removed: list[SandboxRoute] = []
-            preserved: list[SandboxRoute] = []
-            with self._transaction() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT sandbox_id, node_id, job_id, node_url,
-                           resources_json, spec_json, state, generation,
-                           create_operation_id, spec_hash, delete_operation_id,
-                           node_epoch, activity_epoch, worker_state,
-                           storage_schema,
-                           snapshot_manifest_digest, snapshot_repository,
-                           snapshot_tag, storage_snapshot_json,
-                           created_at, updated_at
-                    FROM sandboxes
-                    ORDER BY sandbox_id
-                    """
-                ).fetchall()
-                for row in rows:
-                    route = _sandbox_route_from_row(row)
-                    if route is None:
-                        continue
-                    if route.job_id in keep_jobs or route.node_id in keep_nodes:
-                        continue
-                    reference = parse_iso_datetime(
-                        route.updated_at
-                    ) or parse_iso_datetime(route.created_at)
-                    if reference is None or reference > older_than:
-                        continue
-                    if (
-                        sandbox_owner_loss_disposition(route)
-                        is SandboxOwnerLossDisposition.RECOVER_DETACHED
-                    ):
-                        preserved.append(route)
-                    else:
-                        removed.append(route)
-                detached_at = utc_now().isoformat()
-                for route in preserved:
-                    self._detach_owner_lost_route_unlocked(
-                        conn,
-                        route,
-                        updated_at=detached_at,
-                    )
-                # The owner job is gone from the provider: the same loss as a
-                # proven reboot, so clients see 410 node_lost, never a 404.
-                for route in removed:
-                    self._delete_sandbox_unlocked(conn, route, terminal_error="node_lost")
-            if not removed and not preserved:
-                return []
-            return removed
+        removed: list[SandboxRoute] = []
+        preserved: list[SandboxRoute] = []
+        with self._transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT sandbox_id, node_id, job_id, node_url,
+                       resources_json, spec_json, state, generation,
+                       create_operation_id, spec_hash, delete_operation_id,
+                       node_epoch, activity_epoch, worker_state,
+                       storage_schema,
+                       snapshot_manifest_digest, snapshot_repository,
+                       snapshot_tag, storage_snapshot_json,
+                       created_at, updated_at
+                FROM sandboxes
+                ORDER BY sandbox_id
+                """
+            ).fetchall()
+            for row in rows:
+                route = _sandbox_route_from_row(row)
+                if route is None:
+                    continue
+                if route.job_id in keep_jobs or route.node_id in keep_nodes:
+                    continue
+                reference = parse_iso_datetime(
+                    route.updated_at
+                ) or parse_iso_datetime(route.created_at)
+                if reference is None or reference > older_than:
+                    continue
+                if (
+                    sandbox_owner_loss_disposition(route)
+                    is SandboxOwnerLossDisposition.RECOVER_DETACHED
+                ):
+                    preserved.append(route)
+                else:
+                    removed.append(route)
+            detached_at = utc_now().isoformat()
+            for route in preserved:
+                self._detach_owner_lost_route_unlocked(
+                    conn,
+                    route,
+                    updated_at=detached_at,
+                )
+            # The owner job is gone from the provider: the same loss as a
+            # proven reboot, so clients see 410 node_lost, never a 404.
+            for route in removed:
+                self._delete_sandbox_unlocked(conn, route, terminal_error="node_lost")
+        if not removed and not preserved:
+            return []
+        return removed
 
     def _detach_owner_lost_route_unlocked(
         self,
@@ -3055,9 +2954,8 @@ class RoutingStore:
     def get_exec(self, session_id: str) -> ExecRoute | None:
         # The autoscaler retires routes in another process. Its commit cannot
         # invalidate this process's cache, so routing must read the indexed
-        # durable row. Do not serialize these independent reads on the writer
-        # lock: SQLite WAL supplies a consistent snapshot. One statement is
-        # one snapshot, so PostgreSQL needs no BEGIN/SET/COMMIT per exec poll.
+        # durable row. One statement is one snapshot, so an exec poll needs
+        # no BEGIN/SET/COMMIT.
         row = self._fetchone_readonly(_EXEC_ROUTE_BY_ID_SQL, (session_id,))
         return _exec_route_from_row(row) if row is not None else None
 
@@ -3067,8 +2965,7 @@ class RoutingStore:
 
     def upsert_exec(self, route: ExecRoute) -> None:
         # Reads already use the durable row because another process may retire
-        # the worker. An unused process cache must not put exec acknowledgments
-        # behind the fleet projection lock; the writer transaction fences IDs.
+        # the worker; the write transaction fences IDs.
         now = utc_now().isoformat()
         with self._transaction() as conn:
             existing = self._get_exec_unlocked(conn, route.session_id)
@@ -3094,14 +2991,13 @@ class RoutingStore:
             self._write_exec(conn, stored)
 
     def delete_exec(self, session_id: str) -> ExecRoute | None:
-        with self._lock:
-            with self._transaction() as conn:
-                existing = self._get_exec_unlocked(conn, session_id)
-                conn.execute(
-                    "DELETE FROM exec_sessions WHERE session_id = ?",
-                    (session_id,),
-                )
-            return existing
+        with self._transaction() as conn:
+            existing = self._get_exec_unlocked(conn, session_id)
+            conn.execute(
+                "DELETE FROM exec_sessions WHERE session_id = ?",
+                (session_id,),
+            )
+        return existing
 
     def upsert_pending(
         self,
@@ -3113,19 +3009,18 @@ class RoutingStore:
         spec_hash: str = "",
         failure_reason: str = "",
     ) -> None:
-        with self._lock:
-            now = utc_now()
-            with self._transaction() as conn:
-                self._upsert_pending_unlocked(
-                    conn,
-                    sandbox_id,
-                    resources,
-                    now=now,
-                    generation=generation,
-                    operation_id=operation_id,
-                    spec_hash=spec_hash,
-                    failure_reason=failure_reason,
-                )
+        now = utc_now()
+        with self._transaction() as conn:
+            self._upsert_pending_unlocked(
+                conn,
+                sandbox_id,
+                resources,
+                now=now,
+                generation=generation,
+                operation_id=operation_id,
+                spec_hash=spec_hash,
+                failure_reason=failure_reason,
+            )
 
     def upsert_pending_with_demand(
         self,
@@ -3139,120 +3034,113 @@ class RoutingStore:
     ) -> tuple[PendingSandboxDemand, SandboxDemand]:
         """Persist pending demand and return aggregate demand in one transaction."""
 
-        with self._lock:
-            now_datetime = utc_now()
-            with self._transaction() as conn:
-                stored = self._upsert_pending_unlocked(
-                    conn,
-                    sandbox_id,
-                    resources,
-                    now=now_datetime,
-                    generation=generation,
-                    operation_id=operation_id,
-                    spec_hash=spec_hash,
-                    failure_reason=failure_reason,
-                )
-                self._prune_expired_unlocked(conn, now_datetime)
-                return stored, self._sandbox_demand_unlocked(conn, now_datetime)
+        now_datetime = utc_now()
+        with self._transaction() as conn:
+            stored = self._upsert_pending_unlocked(
+                conn,
+                sandbox_id,
+                resources,
+                now=now_datetime,
+                generation=generation,
+                operation_id=operation_id,
+                spec_hash=spec_hash,
+                failure_reason=failure_reason,
+            )
+            self._prune_expired_unlocked(conn, now_datetime)
+            return stored, self._sandbox_demand_unlocked(conn, now_datetime)
 
     def clear_pending(self, sandbox_id: str) -> None:
-        with self._lock:
-            with self._transaction() as conn:
-                conn.execute("DELETE FROM pending WHERE sandbox_id = ?", (sandbox_id,))
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM pending WHERE sandbox_id = ?", (sandbox_id,))
 
     def consume_pending_demand(
         self,
         items: Iterable[PendingSandboxDemand] | None = None,
     ) -> list[PendingSandboxDemand]:
         now = utc_now()
-        with self._lock:
-            pending = self._active_pending_unlocked(now)
-            if not pending:
-                return []
-            targets = list(items) if items is not None else list(pending.values())
-            if not targets:
-                return []
-            consumed: list[PendingSandboxDemand] = []
-            with self._transaction() as conn:
-                for item in targets:
-                    cursor = conn.execute(
-                        """
-                        DELETE FROM pending
-                        WHERE sandbox_id = ?
-                          AND updated_at = ?
-                          AND attempts = ?
-                        """,
-                        (
-                            item.sandbox_id,
-                            item.updated_at,
-                            item.attempts,
-                        ),
-                    )
-                    if cursor.rowcount:
-                        consumed.append(item)
-            if not consumed:
-                return []
-            return consumed
+        pending = self._active_pending_unlocked(now)
+        if not pending:
+            return []
+        targets = list(items) if items is not None else list(pending.values())
+        if not targets:
+            return []
+        consumed: list[PendingSandboxDemand] = []
+        with self._transaction() as conn:
+            for item in targets:
+                cursor = conn.execute(
+                    """
+                    DELETE FROM pending
+                    WHERE sandbox_id = ?
+                      AND updated_at = ?
+                      AND attempts = ?
+                    """,
+                    (
+                        item.sandbox_id,
+                        item.updated_at,
+                        item.attempts,
+                    ),
+                )
+                if cursor.rowcount:
+                    consumed.append(item)
+        if not consumed:
+            return []
+        return consumed
 
     def pending_sandboxes(self) -> list[PendingSandboxDemand]:
         now = utc_now()
-        with self._lock:
-            return list(self._active_pending_unlocked(now).values())
+        return list(self._active_pending_unlocked(now).values())
 
     def upsert_pending_image_build(self, image_id: str, tag: str) -> None:
-        with self._lock:
-            now = utc_now().isoformat()
-            with self._transaction() as conn:
-                existing = self._get_image_build_unlocked(conn, image_id)
-                stored = PendingImageBuildDemand(
-                    image_id=image_id,
-                    tag=tag,
-                    created_at=existing.created_at if existing else now,
-                    updated_at=now,
-                    attempts=(existing.attempts + 1) if existing else 1,
-                )
-                self._write_image_build(conn, stored)
+        now = utc_now().isoformat()
+        with self._transaction() as conn:
+            existing = self._get_image_build_unlocked(conn, image_id)
+            stored = PendingImageBuildDemand(
+                image_id=image_id,
+                tag=tag,
+                created_at=existing.created_at if existing else now,
+                updated_at=now,
+                attempts=(existing.attempts + 1) if existing else 1,
+            )
+            self._write_image_build(conn, stored)
 
     def clear_pending_image_build(self, image_id: str) -> None:
-        with self._lock:
-            with self._transaction() as conn:
-                conn.execute("DELETE FROM image_builds WHERE image_id = ?", (image_id,))
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM image_builds WHERE image_id = ?", (image_id,))
 
     def consume_pending_image_builds(
         self,
         items: Iterable[PendingImageBuildDemand] | None = None,
     ) -> list[PendingImageBuildDemand]:
         now = utc_now()
-        with self._lock:
-            image_builds = self._active_image_builds_unlocked(now)
-            if not image_builds:
-                return []
-            targets = list(items) if items is not None else list(image_builds.values())
-            if not targets:
-                return []
-            consumed: list[PendingImageBuildDemand] = []
-            with self._transaction() as conn:
-                for item in targets:
-                    cursor = conn.execute(
-                        """
-                        DELETE FROM image_builds
-                        WHERE image_id = ?
-                          AND tag = ?
-                          AND updated_at = ?
-                          AND attempts = ?
-                        """,
-                        (
-                            item.image_id,
-                            item.tag,
-                            item.updated_at,
-                            item.attempts,
-                        ),
-                    )
-                    if cursor.rowcount:
-                        consumed.append(item)
-            if not consumed:
-                return []
-            return consumed
+        image_builds = self._active_image_builds_unlocked(now)
+        if not image_builds:
+            return []
+        targets = list(items) if items is not None else list(image_builds.values())
+        if not targets:
+            return []
+        consumed: list[PendingImageBuildDemand] = []
+        with self._transaction() as conn:
+            for item in targets:
+                cursor = conn.execute(
+                    """
+                    DELETE FROM image_builds
+                    WHERE image_id = ?
+                      AND tag = ?
+                      AND updated_at = ?
+                      AND attempts = ?
+                    """,
+                    (
+                        item.image_id,
+                        item.tag,
+                        item.updated_at,
+                        item.attempts,
+                    ),
+                )
+                if cursor.rowcount:
+                    consumed.append(item)
+        if not consumed:
+            return []
+        return consumed
 
     def upsert_image_warmup(
         self,
@@ -3270,33 +3158,32 @@ class RoutingStore:
             raise ValueError("warmup id is required.")
         if not cleaned_image:
             raise ValueError("image is required.")
-        with self._lock:
-            now = utc_now()
-            with self._transaction() as conn:
-                existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
-                preserve_warmed_nodes = (
-                    existing.warmed_node_ids
-                    if existing is not None
-                    and existing.image == cleaned_image
-                    and existing.image_id == image_id.strip()
-                    else ()
-                )
-                stored = PendingImageWarmup(
-                    warmup_id=cleaned_warmup_id,
-                    image=cleaned_image,
-                    image_id=image_id.strip(),
-                    resources=resources,
-                    count=max(1, count),
-                    created_at=existing.created_at if existing else now.isoformat(),
-                    updated_at=now.isoformat(),
-                    expires_at=(
-                        now + timedelta(seconds=max(1, ttl_seconds))
-                    ).isoformat(),
-                    warmed_node_ids=tuple(dict.fromkeys(preserve_warmed_nodes)),
-                    attempts=(existing.attempts + 1) if existing else 1,
-                )
-                self._write_image_warmup(conn, stored)
-            return stored
+        now = utc_now()
+        with self._transaction() as conn:
+            existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
+            preserve_warmed_nodes = (
+                existing.warmed_node_ids
+                if existing is not None
+                and existing.image == cleaned_image
+                and existing.image_id == image_id.strip()
+                else ()
+            )
+            stored = PendingImageWarmup(
+                warmup_id=cleaned_warmup_id,
+                image=cleaned_image,
+                image_id=image_id.strip(),
+                resources=resources,
+                count=max(1, count),
+                created_at=existing.created_at if existing else now.isoformat(),
+                updated_at=now.isoformat(),
+                expires_at=(
+                    now + timedelta(seconds=max(1, ttl_seconds))
+                ).isoformat(),
+                warmed_node_ids=tuple(dict.fromkeys(preserve_warmed_nodes)),
+                attempts=(existing.attempts + 1) if existing else 1,
+            )
+            self._write_image_warmup(conn, stored)
+        return stored
 
     def image_warmups(self) -> list[PendingImageWarmup]:
         now = utc_now()
@@ -3314,8 +3201,8 @@ class RoutingStore:
         cleaned_node_id = node_id.strip()
         if not cleaned_warmup_id or not cleaned_node_id:
             return None
-        # Heartbeats often repeat the same observation. Do not queue a durable
-        # write (or retain the fleet mutex) just to refresh its timestamp.
+        # Heartbeats often repeat the same observation. Do not open a write
+        # transaction just to refresh its timestamp.
         with self._connect() as conn:
             existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
             if existing is None:
@@ -3351,14 +3238,13 @@ class RoutingStore:
         cleaned_warmup_id = warmup_id.strip()
         if not cleaned_warmup_id:
             return None
-        with self._lock:
-            with self._transaction() as conn:
-                existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
-                conn.execute(
-                    "DELETE FROM image_warmups WHERE warmup_id = ?",
-                    (cleaned_warmup_id,),
-                )
-            return existing
+        with self._transaction() as conn:
+            existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
+            conn.execute(
+                "DELETE FROM image_warmups WHERE warmup_id = ?",
+                (cleaned_warmup_id,),
+            )
+        return existing
 
     def upsert_prepared_capacity(
         self,
@@ -3376,45 +3262,42 @@ class RoutingStore:
                 "prepared capacity count must be between 1 and "
                 f"{MAX_PREPARED_CAPACITY_COUNT}"
             )
-        with self._lock:
-            now = utc_now()
-            with self._transaction() as conn:
-                existing = self._get_prepared_unlocked(conn, prepare_id)
-                stored = PreparedCapacityDemand(
-                    prepare_id=prepare_id,
-                    resources=resources,
-                    count=count,
-                    created_at=existing.created_at if existing else now.isoformat(),
-                    updated_at=now.isoformat(),
-                    expires_at=(
-                        now + timedelta(seconds=max(1, ttl_seconds))
-                    ).isoformat(),
-                    image=image.strip(),
-                )
-                self._write_prepared(conn, stored)
-            return stored
+        now = utc_now()
+        with self._transaction() as conn:
+            existing = self._get_prepared_unlocked(conn, prepare_id)
+            stored = PreparedCapacityDemand(
+                prepare_id=prepare_id,
+                resources=resources,
+                count=count,
+                created_at=existing.created_at if existing else now.isoformat(),
+                updated_at=now.isoformat(),
+                expires_at=(
+                    now + timedelta(seconds=max(1, ttl_seconds))
+                ).isoformat(),
+                image=image.strip(),
+            )
+            self._write_prepared(conn, stored)
+        return stored
 
     def delete_prepared_capacity(
         self, prepare_id: str
     ) -> PreparedCapacityDemand | None:
-        with self._lock:
-            with self._transaction() as conn:
-                existing = self._get_prepared_unlocked(conn, prepare_id)
-                conn.execute(
-                    "DELETE FROM prepared_capacity WHERE prepare_id = ?",
-                    (prepare_id,),
-                )
-                conn.execute(
-                    "DELETE FROM image_warmups WHERE warmup_id = ?",
-                    (prepare_id,),
-                )
-            return existing
+        with self._transaction() as conn:
+            existing = self._get_prepared_unlocked(conn, prepare_id)
+            conn.execute(
+                "DELETE FROM prepared_capacity WHERE prepare_id = ?",
+                (prepare_id,),
+            )
+            conn.execute(
+                "DELETE FROM image_warmups WHERE warmup_id = ?",
+                (prepare_id,),
+            )
+        return existing
 
     def prepared_capacity(self) -> list[PreparedCapacityDemand]:
         now = utc_now()
-        with self._lock:
-            prepared = self._active_prepared_unlocked(now)
-            return list(prepared.values())
+        prepared = self._active_prepared_unlocked(now)
+        return list(prepared.values())
 
     def upsert_prepared_builder(
         self,
@@ -3423,95 +3306,88 @@ class RoutingStore:
         count: int,
         ttl_seconds: int,
     ) -> PreparedBuilderDemand:
-        with self._lock:
-            now = utc_now()
-            with self._transaction() as conn:
-                existing = self._get_prepared_builder_unlocked(conn, prepare_id)
-                stored = PreparedBuilderDemand(
-                    prepare_id=prepare_id,
-                    count=max(1, count),
-                    created_at=existing.created_at if existing else now.isoformat(),
-                    updated_at=now.isoformat(),
-                    expires_at=(
-                        now + timedelta(seconds=max(1, ttl_seconds))
-                    ).isoformat(),
-                )
-                self._write_prepared_builder(conn, stored)
-            return stored
+        now = utc_now()
+        with self._transaction() as conn:
+            existing = self._get_prepared_builder_unlocked(conn, prepare_id)
+            stored = PreparedBuilderDemand(
+                prepare_id=prepare_id,
+                count=max(1, count),
+                created_at=existing.created_at if existing else now.isoformat(),
+                updated_at=now.isoformat(),
+                expires_at=(
+                    now + timedelta(seconds=max(1, ttl_seconds))
+                ).isoformat(),
+            )
+            self._write_prepared_builder(conn, stored)
+        return stored
 
     def delete_prepared_builder(self, prepare_id: str) -> PreparedBuilderDemand | None:
-        with self._lock:
-            with self._transaction() as conn:
-                existing = self._get_prepared_builder_unlocked(conn, prepare_id)
-                conn.execute(
-                    "DELETE FROM prepared_builders WHERE prepare_id = ?",
-                    (prepare_id,),
-                )
-            return existing
+        with self._transaction() as conn:
+            existing = self._get_prepared_builder_unlocked(conn, prepare_id)
+            conn.execute(
+                "DELETE FROM prepared_builders WHERE prepare_id = ?",
+                (prepare_id,),
+            )
+        return existing
 
     def prepared_builders(self) -> list[PreparedBuilderDemand]:
         now = utc_now()
-        with self._lock:
-            prepared_builders = self._active_prepared_builders_unlocked(now)
-            return list(prepared_builders.values())
+        prepared_builders = self._active_prepared_builders_unlocked(now)
+        return list(prepared_builders.values())
 
     def consume_prepared_builders(
         self,
         items: Iterable[PreparedBuilderDemand] | None = None,
     ) -> list[PreparedBuilderDemand]:
         now = utc_now()
-        with self._lock:
-            prepared_builders = self._active_prepared_builders_unlocked(now)
-            if not prepared_builders:
-                return []
-            targets = (
-                list(items) if items is not None else list(prepared_builders.values())
-            )
-            if not targets:
-                return []
-            consumed: list[PreparedBuilderDemand] = []
-            with self._transaction() as conn:
-                for item in targets:
-                    cursor = conn.execute(
-                        """
-                        DELETE FROM prepared_builders
-                        WHERE prepare_id = ?
-                          AND count = ?
-                          AND updated_at = ?
-                          AND expires_at = ?
-                        """,
-                        (
-                            item.prepare_id,
-                            item.count,
-                            item.updated_at,
-                            item.expires_at,
-                        ),
-                    )
-                    if cursor.rowcount:
-                        consumed.append(item)
-            if not consumed:
-                return []
-            return consumed
+        prepared_builders = self._active_prepared_builders_unlocked(now)
+        if not prepared_builders:
+            return []
+        targets = (
+            list(items) if items is not None else list(prepared_builders.values())
+        )
+        if not targets:
+            return []
+        consumed: list[PreparedBuilderDemand] = []
+        with self._transaction() as conn:
+            for item in targets:
+                cursor = conn.execute(
+                    """
+                    DELETE FROM prepared_builders
+                    WHERE prepare_id = ?
+                      AND count = ?
+                      AND updated_at = ?
+                      AND expires_at = ?
+                    """,
+                    (
+                        item.prepare_id,
+                        item.count,
+                        item.updated_at,
+                        item.expires_at,
+                    ),
+                )
+                if cursor.rowcount:
+                    consumed.append(item)
+        if not consumed:
+            return []
+        return consumed
 
     def prepared_builder_count(self) -> int:
         now = utc_now()
-        with self._lock:
-            return sum(
-                item.count
-                for item in self._active_prepared_builders_unlocked(now).values()
-            )
+        return sum(
+            item.count
+            for item in self._active_prepared_builders_unlocked(now).values()
+        )
 
     def pending_image_build_count(self) -> int:
         now = utc_now()
-        with self._lock:
-            return len(self._active_image_builds_unlocked(now))
+        return len(self._active_image_builds_unlocked(now))
 
     def pending_demand(self) -> SandboxDemand:
-        with self._lock:
-            now = utc_now()
-            with self._transaction() as conn:
-                self._prune_expired_unlocked(conn, now)
-                return self._sandbox_demand_unlocked(conn, now)
+        now = utc_now()
+        with self._transaction() as conn:
+            self._prune_expired_unlocked(conn, now)
+            return self._sandbox_demand_unlocked(conn, now)
 
     def _active_pending_unlocked(
         self,
@@ -3629,7 +3505,7 @@ class RoutingStore:
         now: datetime,
     ) -> dict[str, PendingImageWarmup]:
         # Expiry filtering is a read. Normal state pruning removes expired rows;
-        # heartbeat warmup checks must not acquire a durable writer just to list.
+        # heartbeat warmup checks must not open a write transaction just to list.
         with self._connect() as conn:
             rows = conn.execute(
                 """
@@ -3785,405 +3661,6 @@ class RoutingStore:
             placement_requests=tuple(placement_requests),
             prepared_placement_requests=tuple(prepared_placement_requests),
         )
-
-    def _ensure_db(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        has_state = self.path.exists() and self.path.stat().st_size > 0
-        if has_state and not _is_sqlite_file(self.path):
-            raise sqlite3.DatabaseError(
-                f"routing state is not a SQLite database: {self.path}"
-            )
-        with self._connect() as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=30000")
-            schema_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-            if has_state and schema_version not in {2, ROUTING_SCHEMA_VERSION}:
-                raise sqlite3.DatabaseError(
-                    "unsupported routing schema version "
-                    f"{schema_version}; expected {ROUTING_SCHEMA_VERSION}"
-                )
-            if has_state and schema_version == 2:
-                conn.execute(
-                    """
-                    ALTER TABLE sandboxes ADD COLUMN worker_state TEXT NOT NULL
-                    DEFAULT 'attached' CHECK (
-                        worker_state IN ('attached', 'detaching', 'detached')
-                    )
-                    """
-                )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sandboxes (
-                    sandbox_id TEXT PRIMARY KEY CHECK (length(trim(sandbox_id)) > 0),
-                    node_id TEXT NOT NULL CHECK (length(trim(node_id)) > 0),
-                    job_id TEXT NOT NULL CHECK (length(trim(job_id)) > 0),
-                    node_url TEXT NOT NULL CHECK (length(trim(node_url)) > 0),
-                    resources_json TEXT NOT NULL,
-                    spec_json TEXT NOT NULL,
-                    state TEXT NOT NULL CHECK (length(trim(state)) > 0),
-                    generation INTEGER NOT NULL CHECK (generation > 0),
-                    create_operation_id TEXT NOT NULL
-                        CHECK (length(create_operation_id) BETWEEN 1 AND 128),
-                    spec_hash TEXT NOT NULL CHECK (
-                        length(spec_hash) = 64
-                        AND spec_hash NOT GLOB '*[^0-9a-f]*'
-                    ),
-                    delete_operation_id TEXT NOT NULL DEFAULT '',
-                    node_epoch TEXT NOT NULL DEFAULT '',
-                    activity_epoch INTEGER NOT NULL DEFAULT 0
-                        CHECK (activity_epoch >= 0),
-                    worker_state TEXT NOT NULL DEFAULT 'attached' CHECK (
-                        worker_state IN ('attached', 'detaching', 'detached')
-                    ),
-                    storage_schema TEXT NOT NULL DEFAULT '',
-                    snapshot_manifest_digest TEXT NOT NULL DEFAULT '',
-                    snapshot_repository TEXT NOT NULL DEFAULT '',
-                    snapshot_tag TEXT NOT NULL DEFAULT '',
-                    storage_snapshot_json TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
-                    updated_at TEXT NOT NULL CHECK (length(trim(updated_at)) > 0)
-                ) STRICT
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sandbox_storage_dependencies (
-                    sandbox_id TEXT PRIMARY KEY,
-                    generation INTEGER NOT NULL,
-                    storage_snapshot_json TEXT NOT NULL
-                ) STRICT
-                """
-            )
-            # Upgrade existing parked routes before a wake can clear their
-            # restore metadata. Dependency ownership lasts until route deletion
-            # or replacement by a newer, complete layer publication.
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO sandbox_storage_dependencies
-                SELECT sandbox_id, generation, storage_snapshot_json
-                FROM sandboxes WHERE storage_snapshot_json != '{}'
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sandbox_generation_hwm (
-                    sandbox_id TEXT PRIMARY KEY,
-                    generation INTEGER NOT NULL CHECK (generation > 0)
-                ) STRICT
-                """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS sandboxes_node_id
-                ON sandboxes(node_id)
-                """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS sandboxes_job_id
-                ON sandboxes(job_id)
-                """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS sandboxes_node_url
-                ON sandboxes(node_url)
-                """
-            )
-            conn.execute(
-                """
-                INSERT INTO sandbox_generation_hwm (sandbox_id, generation)
-                SELECT sandbox_id, MAX(generation) FROM sandboxes GROUP BY sandbox_id
-                ON CONFLICT(sandbox_id) DO UPDATE SET generation =
-                    CASE WHEN sandbox_generation_hwm.generation > excluded.generation
-                    THEN sandbox_generation_hwm.generation ELSE excluded.generation END
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS exec_sessions (
-                    session_id TEXT PRIMARY KEY,
-                    sandbox_id TEXT NOT NULL,
-                    node_id TEXT NOT NULL,
-                    job_id TEXT NOT NULL,
-                    node_url TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS exec_sessions_sandbox ON exec_sessions(sandbox_id)"
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS managed_processes (
-                    sandbox_id TEXT PRIMARY KEY,
-                    sandbox_generation INTEGER NOT NULL,
-                    job_id TEXT NOT NULL,
-                    spec_sha256 TEXT NOT NULL,
-                    record_json TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS managed_process_identity
-                ON managed_processes (
-                    sandbox_id, sandbox_generation, job_id, spec_sha256
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sandbox_migrations (
-                    migration_id TEXT PRIMARY KEY,
-                    sandbox_id TEXT NOT NULL,
-                    phase TEXT NOT NULL,
-                    source_node_id TEXT NOT NULL,
-                    source_job_id TEXT NOT NULL,
-                    source_node_url TEXT NOT NULL,
-                    destination_node_id TEXT NOT NULL,
-                    destination_job_id TEXT NOT NULL,
-                    destination_node_url TEXT NOT NULL,
-                    generation INTEGER NOT NULL,
-                    create_operation_id TEXT NOT NULL,
-                    spec_hash TEXT NOT NULL,
-                    storage_schema TEXT NOT NULL DEFAULT '',
-                    snapshot_sha256 TEXT NOT NULL DEFAULT '',
-                    storage_snapshot_json TEXT NOT NULL DEFAULT '{}',
-                    source_fenced INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    error TEXT NOT NULL DEFAULT ''
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE UNIQUE INDEX IF NOT EXISTS
-                    sandbox_migrations_active_sandbox
-                ON sandbox_migrations (sandbox_id)
-                WHERE phase != 'complete'
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS pending (
-                    sandbox_id TEXT PRIMARY KEY,
-                    resources_json TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    attempts INTEGER NOT NULL,
-                    generation INTEGER NOT NULL DEFAULT 0,
-                    operation_id TEXT NOT NULL DEFAULT '',
-                    spec_hash TEXT NOT NULL DEFAULT '',
-                    failure_reason TEXT NOT NULL DEFAULT ''
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS image_builds (
-                    image_id TEXT PRIMARY KEY,
-                    tag TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    attempts INTEGER NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS prepared_capacity (
-                    prepare_id TEXT PRIMARY KEY,
-                    resources_json TEXT NOT NULL,
-                    count INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    image TEXT NOT NULL DEFAULT ''
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS prepared_builders (
-                    prepare_id TEXT PRIMARY KEY,
-                    count INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS image_warmups (
-                    warmup_id TEXT PRIMARY KEY,
-                    image TEXT NOT NULL,
-                    image_id TEXT NOT NULL DEFAULT '',
-                    resources_json TEXT NOT NULL,
-                    count INTEGER NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL,
-                    warmed_node_ids_json TEXT NOT NULL DEFAULT '[]',
-                    attempts INTEGER NOT NULL DEFAULT 1
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS program_requests (
-                    request_id TEXT PRIMARY KEY,
-                    rollout_id TEXT NOT NULL,
-                    sandbox_id TEXT NOT NULL,
-                    sandbox_generation INTEGER NOT NULL,
-                    state TEXT NOT NULL,
-                    resources_json TEXT NOT NULL,
-                    accepted_at TEXT NOT NULL DEFAULT '',
-                    parked_at TEXT NOT NULL DEFAULT '',
-                    response_ready_at TEXT NOT NULL DEFAULT '',
-                    wake_started_at TEXT NOT NULL DEFAULT '',
-                    wake_completed_at TEXT NOT NULL DEFAULT '',
-                    updated_at TEXT NOT NULL,
-                    last_error TEXT NOT NULL DEFAULT ''
-                )
-                """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS program_requests_state_updated
-                ON program_requests(state, updated_at)
-                """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS program_requests_rollout
-                ON program_requests(rollout_id, updated_at)
-                """
-            )
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS program_requests_sandbox
-                ON program_requests(sandbox_id, sandbox_generation)
-                """
-            )
-            # Additive diagnostic state: existing route/lease contracts and
-            # schema-3 readers remain compatible. Backfill once from retained
-            # program failures so already-lost callers gain the same response.
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS exec_losses (
-                    session_id TEXT PRIMARY KEY,
-                    sandbox_id TEXT NOT NULL,
-                    generation INTEGER NOT NULL CHECK (generation > 0),
-                    job_id TEXT NOT NULL,
-                    lost_at TEXT NOT NULL
-                ) STRICT
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS exec_losses_time ON exec_losses(lost_at)"
-            )
-            has_losses = (
-                conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sandbox_losses'"
-                ).fetchone()
-                is not None
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS sandbox_losses (
-                    sandbox_id TEXT PRIMARY KEY,
-                    generation INTEGER NOT NULL CHECK (generation > 0),
-                    job_id TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    lost_at TEXT NOT NULL
-                ) STRICT
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS sandbox_losses_time ON sandbox_losses(lost_at)"
-            )
-            if not has_losses:
-                conn.execute(
-                    """
-                    INSERT INTO sandbox_losses
-                    SELECT p.sandbox_id, p.sandbox_generation, '', 'node_lost', MAX(p.updated_at)
-                    FROM program_requests AS p
-                    JOIN sandbox_generation_hwm AS h ON p.sandbox_id = h.sandbox_id
-                        AND p.sandbox_generation = h.generation
-                    WHERE p.state = 'terminal' AND p.last_error = 'node_lost'
-                    GROUP BY p.sandbox_id, p.sandbox_generation
-                    """
-                )
-            for statement in SANDBOX_GROUP_DDL:
-                conn.execute(statement)
-            conn.execute(f"PRAGMA user_version={ROUTING_SCHEMA_VERSION}")
-            conn.commit()
-
-    def _read(self):
-        """Connection for a read that issues exactly one statement.
-
-        SQLite shares _connect. PostgreSQL runs it as one autocommit statement,
-        which is already a coherent snapshot, instead of BEGIN/SET/COMMIT.
-        """
-        return self._connect()
-
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        if os.getpid() != self._connection_pid:
-            raise sqlite3.DatabaseError("reopen routing store after fork")
-        with self._reader_pool.connection(self._open_connection) as conn:
-            self._validate_connection_file()
-            yield conn
-
-    def _validate_connection_file(self):
-        if os.getpid() != self._connection_pid:
-            raise sqlite3.DatabaseError("reopen routing store after fork")
-        if self._connection_identity is not None:
-            info = self.path.stat()
-            if (info.st_dev, info.st_ino) != self._connection_identity:
-                raise sqlite3.DatabaseError("routing database file was replaced")
-            if stat.S_IMODE(info.st_mode) != 0o600:
-                os.chmod(self.path, 0o600)
-
-    def _open_connection(self):
-        try:
-            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
-            pass
-        else:
-            os.close(fd)
-        _chmod_sqlite_state_files(self.path)
-        conn = sqlite3.connect(self.path, timeout=30, check_same_thread=False)
-        try:
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA busy_timeout=30000")
-            conn.execute("PRAGMA synchronous=FULL")
-            info = self.path.stat()
-            with self._connections_guard:
-                identity = (info.st_dev, info.st_ino)
-                if self._connection_identity is not None and identity != self._connection_identity:
-                    raise sqlite3.DatabaseError("routing database file was replaced")
-                self._connection_identity = identity
-            _chmod_sqlite_state_files(self.path)
-            return conn
-        except BaseException:
-            conn.close()
-            raise
-
-    @contextmanager
-    def _transaction(self) -> Iterator[sqlite3.Connection]:
-        # Each operation retains its own savepoint and generation checks. A
-        # short group shares the FULL WAL commit; callers wait for durability,
-        # and pooled readers see only committed state. All stores for this
-        # database identity share the writer, without taking the fleet lock.
-        with self._write_batches.transaction() as conn:
-            yield conn
 
     def _load_unlocked(
         self,
@@ -4497,18 +3974,6 @@ class RoutingStore:
             (warmup_id,),
         ).fetchone()
         return _image_warmup_from_row(row) if row is not None else None
-
-    def _write_storage_dependencies(self, conn, dependencies):
-        conn.execute(
-            """INSERT INTO sandbox_storage_dependencies
-            SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'),
-                   json_extract(value, '$[2]') FROM json_each(?) WHERE true
-            ON CONFLICT(sandbox_id) DO UPDATE SET
-                generation = excluded.generation,
-                storage_snapshot_json = excluded.storage_snapshot_json
-            WHERE excluded.storage_snapshot_json != '{}'""",
-            (json.dumps(dependencies),),
-        )
 
     def _write_sandbox_lifecycle(self, conn, route: SandboxRoute) -> None:
         # The caller already checked an existing incarnation under this writer
@@ -4865,18 +4330,6 @@ class RoutingStore:
         )
 
 
-def _chmod_sqlite_state_files(path: Path) -> None:
-    for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
-        try:
-            # chmod dirties filesystem metadata even when the mode is unchanged.
-            # Check on every access so newly created sidecars and permission
-            # changes are still repaired, without making normal reads writes.
-            if stat.S_IMODE(candidate.stat().st_mode) != 0o600:
-                os.chmod(candidate, 0o600)
-        except FileNotFoundError:
-            continue
-
-
 def _string(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -5015,61 +4468,6 @@ def sandbox_demand_from_routing_state(
         placement_requests=tuple(placement_requests),
         prepared_placement_requests=tuple(prepared_placement_requests),
     )
-
-
-def _route_lock(path: Path) -> RLock:
-    with _ROUTE_LOCKS_GUARD:
-        return _ROUTE_LOCKS[path.resolve()]
-
-
-def _route_write_batch(path: Path) -> DurableSqliteBatch:
-    path = path.resolve()
-    info = path.stat()
-    identity = (info.st_dev, info.st_ino)
-    pid = os.getpid()
-    key = (path, pid, *identity)
-
-    def validate():
-        if os.getpid() != pid:
-            raise sqlite3.DatabaseError("reopen routing store after fork")
-        current = path.stat()
-        if (current.st_dev, current.st_ino) != identity:
-            raise sqlite3.DatabaseError("routing database file was replaced")
-        if stat.S_IMODE(current.st_mode) != 0o600:
-            os.chmod(path, 0o600)
-
-    def connect():
-        validate()
-        _chmod_sqlite_state_files(path)
-        conn = sqlite3.connect(path, timeout=30, check_same_thread=False)
-        try:
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA synchronous=FULL")
-            validate()
-            return conn
-        except BaseException:
-            conn.close()
-            raise
-
-    with _ROUTE_LOCKS_GUARD:
-        batch = _ROUTE_WRITE_BATCHES.get(key)
-        if batch is None:
-            # Lifecycle bursts need enough time to join the same durable
-            # commit. A 1 ms window often closed while callers were still
-            # acquiring the writer, turning a burst into many small commits.
-            # This is a coalescing delay, not a request-admission limit.
-            batch = DurableSqliteBatch(connect, validate, delay_seconds=0.005)
-            _ROUTE_WRITE_BATCHES[key] = batch
-        return batch
-
-
-def _is_sqlite_file(path: Path) -> bool:
-    try:
-        with path.open("rb") as file:
-            header = file.read(16)
-    except OSError:
-        return False
-    return header == b"SQLite format 3\x00"
 
 
 def _resources_json(resources: ResourceQuantity) -> str:

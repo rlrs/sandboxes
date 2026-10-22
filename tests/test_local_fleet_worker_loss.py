@@ -2,9 +2,8 @@
 
 Tier: contract. A silent worker's routes are retryable and never proxied. A
 new boot epoch loses the old boot's processes as node_lost (reason
-rebooted), over SQLite and PostgreSQL routing, but keeps its complete local
-parks; fenced deletes then free every other old-boot registration, recorded
-client deletes included. A restart within one boot keeps everything. A
+rebooted) but keeps its complete local parks; fenced deletes then free
+every other old-boot registration, recorded client deletes included. A restart within one boot keeps everything. A
 quarantined worker keeps serving existing work but admits none, and its
 inventory cannot retire routes, but it still wakes its own parks. The
 autoscaler's continuity step (a fake provider job, the real probe) retires
@@ -23,6 +22,8 @@ import unittest
 from tests.harness import LocalFleet, process_alive
 from sandboxes.control_state import QUARANTINE_REASON
 from sandboxes.models import utc_now
+
+TEST_TIER = "contract"
 
 SPEC = {"cpus": 1, "memory_mb": 256, "disk_mb": 1024, "network": "none"}
 
@@ -109,13 +110,7 @@ class WorkerLossTests(unittest.TestCase):
             time.sleep(0.02)
 
     def test_reboot_loses_processes_and_keeps_complete_parks(self):
-        self._reboot_loses_processes_and_keeps_complete_parks(postgres=False)
-
-    def test_reboot_loses_processes_and_keeps_complete_parks_with_postgres_routing(self):
-        self._reboot_loses_processes_and_keeps_complete_parks(postgres=True)
-
-    def _reboot_loses_processes_and_keeps_complete_parks(self, *, postgres: bool) -> None:
-        with LocalFleet(postgres=postgres) as fleet:
+        with LocalFleet() as fleet:
             node = fleet.nodes[0]
             store = fleet.gateway.RequestHandlerClass.services.fleet.store
             fleet.create("alpha")

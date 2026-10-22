@@ -1,18 +1,37 @@
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from dataclasses import replace
 from datetime import datetime, timedelta
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import io
+import json
+import os
 import sqlite3
 import unittest
 from unittest.mock import patch
+from uuid import uuid4
 
+from sandboxes import cli
 from sandboxes import routing as routing_module
+from sandboxes.config import DeploymentConfig
+from sandboxes.shared_control.__main__ import main as shared_control_main
+from sandboxes.routing import open_routing_store
+from sandboxes.shared_control.routing_repository import init_routing_authority
 from sandboxes.control_plane import _sandbox_transport_epoch
 from sandboxes.models import SandboxInventoryEntry, ResourceQuantity, utc_now
 from sandboxes.managed_process import ManagedProcessRecord
+from tests.support import (
+    POSTGRES_DSN,
+    POSTGRES_SKIP_REASON,
+    create_routing_file,
+    drop_postgres_schema,
+    drop_routing_schema,
+    postgres_routing_file,
+    reopen_routing_store,
+    routing_store_for,
+)
 from sandboxes.routing import (
     ExecRoute,
     PENDING_DEMAND_TTL_SECONDS,
@@ -48,9 +67,9 @@ def sandbox_allocation(**values: object) -> SandboxRouteAllocation:
 
 
 @contextmanager
-def routing_store() -> Iterator[RoutingStore]:
+def routing_store(test: unittest.TestCase) -> Iterator[RoutingStore]:
     with TemporaryDirectory() as raw_dir:
-        yield RoutingStore(Path(raw_dir) / "routes.sqlite")
+        yield routing_store_for(test, Path(raw_dir) / "routes.sqlite")
 
 
 def allocate_sandbox_create(
@@ -144,7 +163,7 @@ def seed_routing_state(store: RoutingStore, state: RoutingState) -> None:
 
 class RoutingStoreTests(unittest.TestCase):
     def test_capacity_snapshot_omits_exec_history_without_changing_state(self):
-        with routing_store() as store:
+        with routing_store(self) as store:
             route = store.upsert_sandbox(sandbox_route(
                 sandbox_id="running", node_id="node", job_id="job",
                 node_url="http://node", state="running",
@@ -189,7 +208,7 @@ class RoutingStoreTests(unittest.TestCase):
             )
 
     def test_observation_cannot_recreate_deleted_or_deleting_incarnation(self):
-        with routing_store() as store:
+        with routing_store(self) as store:
             route=store.upsert_sandbox(sandbox_route(sandbox_id='late-create',node_id='n',job_id='j',node_url='http://n'))
             store.prepare_sandbox_delete(route.sandbox_id)
             self.assertIsNone(store.confirm_sandbox_observation(route))
@@ -201,7 +220,7 @@ class RoutingStoreTests(unittest.TestCase):
             self.assertEqual(store.get_sandbox(route.sandbox_id),newer)
 
     def test_scoped_epoch_history_preserves_completed_handoffs(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             for name in ("one", "two"):
                 route = store.upsert_sandbox(sandbox_route(
                     sandbox_id=name, node_id="node", job_id="job",
@@ -224,7 +243,7 @@ class RoutingStoreTests(unittest.TestCase):
             self.assertNotEqual(_sandbox_transport_epoch(moved, scoped), _sandbox_transport_epoch(moved, []))
 
     def test_active_migration_lookup_is_scoped_to_sandbox(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             for name in ("one", "two"):
                 route = store.upsert_sandbox(sandbox_route(
                     sandbox_id=name, node_id="node", job_id="job",
@@ -242,65 +261,44 @@ class RoutingStoreTests(unittest.TestCase):
                 self.assertEqual(store.sandbox_migrations(active_only=True, sandbox_id="absent"), [])
                 self.assertEqual(decode.call_count, 1)
 
-    def test_node_loss_backfill_and_retention(self) -> None:
-        with routing_store() as store:
-            store.upsert_sandbox(
-                sandbox_route(
-                    sandbox_id="lost",
-                    node_id="node",
-                    job_id="job",
-                    node_url="http://node",
-                    state="running",
-                )
+    def test_terminal_incarnations_report_losses_and_deletions_within_retention(self) -> None:
+        with routing_store(self) as store:
+            store.upsert_sandbox(sandbox_route(
+                sandbox_id="lost", node_id="node", job_id="job",
+                node_url="http://node", state="running",
+            ))
+            store.delete_sandboxes_for_jobs_with_error(["job"], terminal_error="node_lost")
+            deleted = store.upsert_sandbox(sandbox_route(
+                sandbox_id="deleted", node_id="other", job_id="other-job",
+                node_url="http://other", state="parked", generation=4,
+            ))
+            store.upsert_program_request_transition_with_change(
+                deleted, request_id="request", rollout_id="rollout", state="model_wait",
             )
-            with sqlite3.connect(store.path) as conn:
-                conn.execute("DELETE FROM sandboxes")
-                conn.execute("DROP TABLE sandbox_losses")
-                conn.execute(
-                    """INSERT INTO program_requests
-                    (request_id, rollout_id, sandbox_id, sandbox_generation,
-                     state, resources_json, updated_at, last_error)
-                    VALUES ('request', 'rollout', 'lost', 1, 'terminal', '{}', ?, 'node_lost')
-                """,
-                    (utc_now().isoformat(),),
-                )
-            reopened = RoutingStore(store.path)
-            self.assertEqual(reopened.get_sandbox_loss("lost")["reason"], "node_lost")
-            with sqlite3.connect(store.path) as conn:
-                conn.execute(
-                    """INSERT INTO program_requests
-                    (request_id, rollout_id, sandbox_id, sandbox_generation,
-                     state, resources_json, updated_at, last_error)
-                    VALUES ('deleted', 'rollout', 'deleted', 4, 'terminal', '{}', ?, 'sandbox deletion requested')""",
-                    (utc_now().isoformat(),),
-                )
-            self.assertEqual(reopened.terminal_sandbox_incarnations(), {
+            store.prepare_sandbox_delete("deleted")
+            self.assertEqual(store.get_sandbox_loss("lost")["reason"], "node_lost")
+            self.assertEqual(store.terminal_sandbox_incarnations(), {
                 ("lost", 1): "node_lost", ("deleted", 4): "sandbox_deleted",
             })
             # Filter by exact incarnation, including batches larger than the
             # query parameter budget, without rebuilding all retained history.
             candidates = {(f"unrelated-{i}", 1) for i in range(450)}
             candidates.update({("lost", 1), ("deleted", 3), ("deleted", 4)})
-            self.assertEqual(reopened.terminal_sandbox_incarnations(candidates), {
+            self.assertEqual(store.terminal_sandbox_incarnations(candidates), {
                 ("lost", 1): "node_lost", ("deleted", 4): "sandbox_deleted",
             })
-            self.assertEqual(reopened.terminal_sandbox_incarnations({("deleted", 3)}), {})
-            self.assertEqual(reopened.terminal_sandbox_incarnations(set()), {})
+            self.assertEqual(store.terminal_sandbox_incarnations({("deleted", 3)}), {})
+            self.assertEqual(store.terminal_sandbox_incarnations(set()), {})
             with patch(
                 "sandboxes.routing.utc_now",
                 return_value=utc_now() + timedelta(days=8),
             ):
-                self.assertIsNone(reopened.get_sandbox_loss("lost"))
-                self.assertEqual(reopened.terminal_sandbox_incarnations(), {})
-                self.assertEqual(reopened.terminal_sandbox_incarnations(candidates), {})
-                reopened.load()
-            with sqlite3.connect(store.path) as conn:
-                self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM sandbox_losses").fetchone()[0], 0
-                )
+                self.assertIsNone(store.get_sandbox_loss("lost"))
+                self.assertEqual(store.terminal_sandbox_incarnations(), {})
+                self.assertEqual(store.terminal_sandbox_incarnations(candidates), {})
 
     def test_lifecycle_proof_fences_pre_mutation_heartbeats(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             route = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-lifecycle-fence",
@@ -388,7 +386,7 @@ class RoutingStoreTests(unittest.TestCase):
             job_id="job-1",
             node_url="http://node-1:8090",
         )
-        with routing_store() as store:
+        with routing_store(self) as store:
             store.upsert_exec(route)
             store.upsert_exec(route)
 
@@ -404,8 +402,28 @@ class RoutingStoreTests(unittest.TestCase):
         assert stored is not None
         self.assertEqual(stored.job_id, "job-1")
 
+    def test_exec_route_delete_returns_the_route_once(self) -> None:
+        route = ExecRoute(
+            session_id="exec-1",
+            sandbox_id="sandbox-1",
+            node_id="node-1",
+            job_id="job-1",
+            node_url="http://node-1:8090",
+        )
+        with routing_store(self) as store:
+            store.upsert_exec(route)
+            stored = store.get_exec(route.session_id)
+            deleted = store.delete_exec(route.session_id)
+            after = store.get_exec(route.session_id)
+            repeated = store.delete_exec(route.session_id)
+
+        self.assertIsNotNone(stored)
+        self.assertEqual(deleted, stored)
+        self.assertIsNone(after)
+        self.assertIsNone(repeated)
+
     def test_generic_route_upsert_accepts_internal_transition_state(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             running = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-transition",
@@ -421,7 +439,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(waking.state, "waking")
 
     def test_generic_route_upsert_cannot_reassign_worker_owner(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             assigned = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-assigned",
@@ -449,7 +467,7 @@ class RoutingStoreTests(unittest.TestCase):
     def test_managed_primary_state_survives_route_handoff_and_is_generation_fenced(
         self,
     ) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             route = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="managed-one",
@@ -498,28 +516,10 @@ class RoutingStoreTests(unittest.TestCase):
                     running,
                 )
 
-    def test_managed_status_poll_is_readonly_but_fences_deleted_generation(self):
-        with routing_store() as store:
-            route = store.upsert_sandbox(sandbox_route(
-                sandbox_id="poll", node_id="n", job_id="vm", node_url="http://n",
-            ))
-            record = ManagedProcessRecord(
-                sandbox_id="poll", sandbox_generation=route.generation,
-                job_id="agent", spec_sha256="a" * 64, state="running",
-                sequence=1, updated_at="2026-09-22T00:00:00+00:00",
-            )
-            store.upsert_managed_process(route, record)
-            refreshed = replace(record, updated_at="2026-09-22T00:01:00+00:00")
-            with patch.object(store, "_transaction", side_effect=AssertionError("poll wrote")):
-                self.assertEqual(store.upsert_managed_process(route, refreshed), record)
-            store.delete_sandbox(route.sandbox_id)
-            with self.assertRaises(SandboxRouteConflictError):
-                store.upsert_managed_process(route, refreshed)
-
     def test_program_request_lifecycle_is_monotonic_durable_and_terminal(self) -> None:
         with TemporaryDirectory() as raw_dir:
             path = Path(raw_dir) / "routes.sqlite"
-            store = RoutingStore(path)
+            store = routing_store_for(self, path)
             route = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -569,7 +569,8 @@ class RoutingStoreTests(unittest.TestCase):
                 transition_at="2026-07-31T10:00:13+00:00",
                 clear_error=True,
             )
-            durable = RoutingStore(path).program_requests_readonly()[0]
+            store = reopen_routing_store(path)
+            durable = store.program_requests_readonly()[0]
             store.delete_sandbox_if_current(
                 route.sandbox_id,
                 generation=route.generation,
@@ -588,7 +589,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(terminal.state, "terminal")
 
     def test_program_request_identity_is_generation_fenced(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             route = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -621,7 +622,7 @@ class RoutingStoreTests(unittest.TestCase):
                 )
 
     def test_delete_intent_terminalizes_program_requests_transactionally(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             route = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-delete",
@@ -652,7 +653,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(terminal[0].last_error, "sandbox deletion requested")
 
     def test_migration_pending_shape_excludes_source_job(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -680,7 +681,7 @@ class RoutingStoreTests(unittest.TestCase):
             route_file = Path(raw_dir) / "routes.json"
 
             def write(index: int) -> None:
-                store = RoutingStore(route_file)
+                store = routing_store_for(self, route_file)
                 store.upsert_pending(
                     f"pending-{index}",
                     ResourceQuantity(vcpu=1.0, memory_mb=1024, disk_mb=2048),
@@ -700,7 +701,7 @@ class RoutingStoreTests(unittest.TestCase):
             with ThreadPoolExecutor(max_workers=16) as executor:
                 list(executor.map(write, range(32)))
 
-            state = RoutingStore(route_file).load()
+            state = routing_store_for(self, route_file).load()
 
         self.assertEqual(len(state.pending), 32)
         self.assertEqual(len(state.sandboxes), 32)
@@ -712,7 +713,7 @@ class RoutingStoreTests(unittest.TestCase):
     def test_migration_journal_and_route_switch_commit_atomically(self) -> None:
         with TemporaryDirectory() as raw_dir:
             path = Path(raw_dir) / "routes.sqlite"
-            store = RoutingStore(path)
+            store = routing_store_for(self, path)
             source = allocate_sandbox_create(
                 store,
                 sandbox_allocation(
@@ -757,7 +758,7 @@ class RoutingStoreTests(unittest.TestCase):
             assert migration is not None
 
             routed = store.route_sandbox_migration(migration.migration_id)
-            replayed = RoutingStore(path).route_sandbox_migration(
+            replayed = reopen_routing_store(path).route_sandbox_migration(
                 migration.migration_id
             )
 
@@ -769,7 +770,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(replayed, routed)
 
     def test_route_delete_terminalizes_active_migration(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             source = allocate_sandbox_create(
                 store,
                 sandbox_allocation(
@@ -811,7 +812,7 @@ class RoutingStoreTests(unittest.TestCase):
         )
 
     def test_orphaned_migration_reconciliation_is_bounded(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             migration_ids: list[str] = []
             for index in range(2):
                 sandbox_id = f"legacy-orphan-{index}"
@@ -855,7 +856,7 @@ class RoutingStoreTests(unittest.TestCase):
         )
 
     def test_wake_completion_atomically_marks_destination_waking(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             source = allocate_sandbox_create(
                 store,
                 sandbox_allocation(
@@ -924,7 +925,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(destination.node_id, "destination-node")
 
     def test_reconcile_sandboxes_for_node_removes_missing_node_routes(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             now = utc_now()
             old = (now - timedelta(seconds=60)).isoformat()
             seed_routing_state(
@@ -1015,7 +1016,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertIn("other-node", state.sandboxes)
 
     def test_reconcile_sandboxes_for_node_keeps_newer_routes(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             now = utc_now()
             future = (now + timedelta(seconds=5)).isoformat()
             seed_routing_state(
@@ -1053,7 +1054,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertIn("new-after-list-started", state.sandboxes)
 
     def test_reconcile_inventory_cannot_advance_route_generation(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             existing = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -1101,7 +1102,7 @@ class RoutingStoreTests(unittest.TestCase):
             "sandbox-1",
             create_operation_id="create-1",
         )
-        with routing_store() as store:
+        with routing_store(self) as store:
             existing = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -1178,7 +1179,7 @@ class RoutingStoreTests(unittest.TestCase):
             generation=2,
             create_operation_id="create-2",
         )
-        with routing_store() as store:
+        with routing_store(self) as store:
             existing = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -1223,7 +1224,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertFalse(is_portable_parked_route(stored))
 
     def test_transient_inventory_cannot_regress_stable_lifecycle_state(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             current = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -1265,7 +1266,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(stored.activity_epoch, current.activity_epoch)
 
     def test_non_routable_inventory_only_proves_sandbox_presence(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             current = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="sandbox-1",
@@ -1317,7 +1318,7 @@ class RoutingStoreTests(unittest.TestCase):
                     self.assertEqual(stored.activity_epoch, current.activity_epoch)
 
     def test_delete_sandboxes_for_jobs_removes_routes_and_dependents(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             now = utc_now().isoformat()
             seed_routing_state(
                 store,
@@ -1395,7 +1396,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertIsNotNone(kept_exec)
 
     def test_node_loss_keeps_only_fully_published_parked_route(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             live = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="live-lost",
@@ -1500,7 +1501,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(state.exec_sessions, {})
 
     def test_worker_detach_is_generation_fenced_and_idempotent(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             route = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="portable-parked",
@@ -1544,7 +1545,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertNotIn("exec-after-detach-fence", durable_state.exec_sessions)
 
     def test_delete_stale_sandboxes_removes_missing_jobs_after_grace(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             now = utc_now()
             old = (now - timedelta(seconds=600)).isoformat()
             recent = (now - timedelta(seconds=30)).isoformat()
@@ -1684,24 +1685,12 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(portable.activity_epoch, 0)
         self.assertNotIn("exec-portable-preserved", state.exec_sessions)
 
-    def test_unversioned_sqlite_state_fails_closed(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            route_file = Path(raw_dir) / "routes.sqlite"
-            with sqlite3.connect(route_file) as conn:
-                conn.execute("CREATE TABLE obsolete_state (value TEXT)")
-
-            with self.assertRaisesRegex(
-                sqlite3.DatabaseError,
-                "unsupported routing schema version 0",
-            ):
-                RoutingStore(route_file)
-
     def test_route_claims_image_specific_capacity_before_generic_capacity(
         self,
     ) -> None:
         resources = ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024)
         image = "registry.example.org/workload:latest"
-        with routing_store() as store:
+        with routing_store(self) as store:
             store.upsert_prepared_capacity(
                 "generic-older",
                 resources,
@@ -1740,7 +1729,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(after_delete.prepared_resources, ResourceQuantity())
 
     def test_image_warmup_survives_automatic_prepared_capacity_claim(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             store.upsert_prepared_capacity(
                 "prep-1",
                 ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024),
@@ -1789,6 +1778,12 @@ class RoutingStoreTests(unittest.TestCase):
                 "node-1",
                 expected_image="registry.example.org/replacement:latest",
             )
+            repeated = store.mark_image_warmup_node(
+                "prep-1",
+                "node-1",
+                expected_image="registry.example.org/replacement:latest",
+            )
+            merged = store.mark_image_warmup_node("prep-1", "node-2")
             deleted = store.delete_image_warmup("prep-1")
             warmups_after_delete = store.image_warmups()
 
@@ -1799,7 +1794,10 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual([item.warmup_id for item in warmups_after_claim], ["prep-1"])
         self.assertIsNone(stale)
         self.assertEqual(marked.warmed_node_ids, ("node-1",))
-        self.assertEqual(deleted.warmed_node_ids, ("node-1",))
+        # A repeated observation is answered from the stored row, unchanged.
+        self.assertEqual(repeated, marked)
+        self.assertEqual(merged.warmed_node_ids, ("node-1", "node-2"))
+        self.assertEqual(deleted.warmed_node_ids, ("node-1", "node-2"))
         self.assertEqual(warmups_after_delete, [])
 
     def test_transient_capacity_signals_are_consumable(self) -> None:
@@ -1822,53 +1820,11 @@ class RoutingStoreTests(unittest.TestCase):
             ),
         )
         for name, create, count, consume in cases:
-            with self.subTest(signal=name), routing_store() as store:
+            with self.subTest(signal=name), routing_store(self) as store:
                 create(store)
                 self.assertEqual(count(store), 2 if name == "builder" else 1)
                 self.assertEqual(len(consume(store)), 1)
                 self.assertEqual(count(store), 0)
-
-    def test_sqlite_store_refreshes_signals_consumed_by_another_process(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            route_file = Path(raw_dir) / "routes.sqlite"
-            gateway_store = RoutingStore(route_file)
-            autoscaler_store = RoutingStore(route_file)
-
-            gateway_store.upsert_pending(
-                "sandbox-1",
-                ResourceQuantity(vcpu=1, memory_mb=1024, disk_mb=2048),
-            )
-            gateway_store.upsert_pending_image_build(
-                "custom",
-                "registry.example.org/custom:latest",
-            )
-            gateway_store.upsert_prepared_capacity(
-                "prep-1",
-                ResourceQuantity(vcpu=2, memory_mb=2048, disk_mb=4096),
-                count=1,
-                ttl_seconds=600,
-            )
-            gateway_store.upsert_prepared_builder(
-                "builder-prep-1",
-                count=1,
-                ttl_seconds=600,
-            )
-
-            self.assertEqual(autoscaler_store.pending_image_build_count(), 1)
-            self.assertEqual(autoscaler_store.prepared_builder_count(), 1)
-            autoscaler_store.consume_pending_demand()
-            autoscaler_store.consume_pending_image_builds()
-            autoscaler_store.delete_prepared_capacity("prep-1")
-            autoscaler_store.consume_prepared_builders()
-
-            gateway_demand = gateway_store.pending_demand()
-            gateway_pending_images = gateway_store.pending_image_build_count()
-            gateway_prepared_builders = gateway_store.prepared_builder_count()
-
-        self.assertEqual(gateway_demand.pending_resources, ResourceQuantity())
-        self.assertEqual(gateway_demand.prepared_resources, ResourceQuantity())
-        self.assertEqual(gateway_pending_images, 0)
-        self.assertEqual(gateway_prepared_builders, 0)
 
     def test_expired_signals_are_pruned_by_their_public_read_paths(self) -> None:
         now = utc_now()
@@ -1929,7 +1885,7 @@ class RoutingStoreTests(unittest.TestCase):
         )
 
         for name, age_seconds, create, observe, expected, collection in cases:
-            with self.subTest(signal=name), routing_store() as store:
+            with self.subTest(signal=name), routing_store(self) as store:
                 with patch(
                     "sandboxes.routing.utc_now",
                     return_value=now - timedelta(seconds=age_seconds),
@@ -1940,7 +1896,7 @@ class RoutingStoreTests(unittest.TestCase):
 
     def test_allocation_returns_and_consumes_pending_demand_atomically(self) -> None:
         resources = ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024)
-        with routing_store() as store:
+        with routing_store(self) as store:
             _first, first_demand = store.upsert_pending_with_demand(
                 "pending-one", resources
             )
@@ -1970,7 +1926,7 @@ class RoutingStoreTests(unittest.TestCase):
     def test_failed_create_pending_demand_preserves_incarnation_identity(self) -> None:
         with TemporaryDirectory() as raw_dir:
             path = Path(raw_dir) / "routes.sqlite"
-            store = RoutingStore(path)
+            store = routing_store_for(self, path)
             resources = ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024)
 
             store.upsert_pending(
@@ -1989,7 +1945,8 @@ class RoutingStoreTests(unittest.TestCase):
                 spec_hash="4" * 64,
                 failure_reason="image_pull_http_503",
             )
-            replay = RoutingStore(path).get_pending("pending-one")
+            store = reopen_routing_store(path)
+            replay = store.get_pending("pending-one")
             assert replay is not None
             self.assertEqual(replay.attempts, 2)
             self.assertEqual(replay.generation, 4)
@@ -2005,7 +1962,7 @@ class RoutingStoreTests(unittest.TestCase):
                 spec_hash="5" * 64,
                 failure_reason="registry_lease_unavailable",
             )
-            replacement = RoutingStore(path).get_pending("pending-one")
+            replacement = reopen_routing_store(path).get_pending("pending-one")
 
         assert replacement is not None
         self.assertEqual(replacement.attempts, 1)
@@ -2013,7 +1970,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(replacement.operation_id, "create-5")
 
     def test_post_placement_failures_do_not_request_fleet_capacity(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             capacity = ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024)
             failed = ResourceQuantity(vcpu=4, memory_mb=8192, disk_mb=33_856)
             store.upsert_pending("no-node", capacity)
@@ -2045,7 +2002,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(len(demand.placement_requests), 1)
 
     def test_snapshot_consume_does_not_delete_refreshed_signals(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             store.upsert_pending(
                 "pending-one",
                 ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024),
@@ -2087,7 +2044,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(remaining.prepared_builders["builder-one"].count, 2)
 
     def test_stale_inventory_cannot_overwrite_or_delete_newer_generation(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             current = sandbox_route(
                 sandbox_id="versioned-one",
                 node_id="node-1",
@@ -2145,7 +2102,7 @@ class RoutingStoreTests(unittest.TestCase):
             self.assertEqual(route.resources, current.resources)
 
     def test_same_generation_update_requires_exact_nonempty_identity(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             current = sandbox_route(
                 sandbox_id="versioned-one",
                 node_id="node-1",
@@ -2197,7 +2154,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(stored.spec_hash, "4" * 64)
 
     def test_route_incarnation_normalizes_node_url_for_every_mutation(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             current = store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="normalized-owner",
@@ -2284,7 +2241,7 @@ class RoutingStoreTests(unittest.TestCase):
             entry("deleting"), entry("new-boot", "running"), entry("detaching"),
         )
         observed_at = utc_now().isoformat()
-        with routing_store() as store:
+        with routing_store(self) as store:
             stored = {name: store.upsert_sandbox(route) for name, route in routes.items()}
             store.upsert_exec(ExecRoute(session_id="exec-kept", sandbox_id="kept", **owner))
             retirement = store.retire_node_epochs(
@@ -2333,7 +2290,7 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual([route.sandbox_id for route in unproven.lost], ["unproven"])
 
     def test_inventory_never_settles_another_boots_route(self) -> None:
-        with routing_store() as store:
+        with routing_store(self) as store:
             old = store.upsert_sandbox(sandbox_route(
                 sandbox_id="old-boot", node_id="node-1", job_id="job-1",
                 node_url="http://node-1:8090", state="running", node_epoch="boot-a",
@@ -2357,12 +2314,10 @@ class RoutingStoreTests(unittest.TestCase):
     def test_concurrent_different_spec_allocation_rejects_loser_atomically(
         self,
     ) -> None:
-        with TemporaryDirectory() as raw_dir:
-            path = Path(raw_dir) / "routes.sqlite"
-            first_store = RoutingStore(path)
-            second_store = RoutingStore(path)
+        # Each thread borrows its own connection, as two gateways would.
+        with routing_store(self) as store:
 
-            def allocate(store: RoutingStore, image: str, spec_hash: str):
+            def allocate(image: str, spec_hash: str):
                 return allocate_sandbox_create(
                     store,
                     sandbox_allocation(
@@ -2377,8 +2332,8 @@ class RoutingStoreTests(unittest.TestCase):
 
             with ThreadPoolExecutor(max_workers=2) as executor:
                 futures = [
-                    executor.submit(allocate, first_store, "busybox", "a" * 64),
-                    executor.submit(allocate, second_store, "python", "b" * 64),
+                    executor.submit(allocate, "busybox", "a" * 64),
+                    executor.submit(allocate, "python", "b" * 64),
                 ]
                 results: list[SandboxRoute] = []
                 conflicts = 0
@@ -2387,7 +2342,7 @@ class RoutingStoreTests(unittest.TestCase):
                         results.append(future.result())
                     except SandboxRouteConflictError:
                         conflicts += 1
-            stored = RoutingStore(path).get_sandbox_readonly("same-id")
+            stored = store.get_sandbox_readonly("same-id")
 
         self.assertEqual(len(results), 1)
         self.assertEqual(conflicts, 1)
@@ -2395,6 +2350,93 @@ class RoutingStoreTests(unittest.TestCase):
         assert stored is not None
         self.assertEqual(stored.create_operation_id, results[0].create_operation_id)
         self.assertEqual(stored.spec_hash, results[0].spec_hash)
+
+
+class RoutingAuthorityInitTests(unittest.TestCase):
+    """init_routing_authority: what `shared_control migrate --routing-file` runs."""
+
+    def setUp(self) -> None:
+        if not POSTGRES_DSN:
+            self.skipTest(POSTGRES_SKIP_REASON)
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.dsn_file = self.root / "routing.dsn"
+        self.dsn_file.write_text(POSTGRES_DSN)
+        self.dsn_file.chmod(0o600)
+
+    def test_init_creates_the_schema_and_descriptor_and_is_idempotent(self) -> None:
+        path = self.root / "routes.sqlite"
+        schema = create_routing_file(path)
+        self.addCleanup(drop_routing_schema, path, schema)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        descriptor = json.loads(path.read_text())
+        self.assertEqual(descriptor["format"], "ucloud-postgres-routing-v1")
+        self.assertEqual(descriptor["schema"], schema)
+        self.assertNotIn(POSTGRES_DSN, path.read_text())
+        before = path.read_bytes()
+        rerun = init_routing_authority(path, dsn_file=Path(descriptor["dsn_file"]), schema=schema)
+        self.assertEqual(rerun, {"routing_schema": schema, "created": False})
+        self.assertEqual(path.read_bytes(), before)
+        store = open_routing_store(path)
+        store.upsert_pending("pending", ResourceQuantity(vcpu=1))
+        self.assertEqual(list(store.load().pending), ["pending"])
+
+    def test_init_refuses_to_replace_other_state(self) -> None:
+        sqlite_file = self.root / "sqlite-routes.sqlite"
+        with sqlite3.connect(sqlite_file) as conn:
+            conn.execute("CREATE TABLE sandboxes (sandbox_id TEXT)")
+        other = self.root / "other-routes.sqlite"
+        schema = create_routing_file(other)
+        self.addCleanup(drop_routing_schema, other, schema)
+        for path, wanted in ((sqlite_file, "ucloud_routing_never"), (other, "ucloud_routing_other")):
+            before = path.read_bytes()
+            with self.subTest(path=path.name), self.assertRaisesRegex(ValueError, "refusing"):
+                init_routing_authority(path, dsn_file=self.dsn_file, schema=wanted)
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_migrate_command_initialises_routing_without_printing_the_dsn(self) -> None:
+        path = self.root / "routes.sqlite"
+        relay_schema = "ucloud_shared_test_" + uuid4().hex
+        routing_schema = "ucloud_routing_test_" + uuid4().hex
+        self.addCleanup(drop_postgres_schema, relay_schema)
+        self.addCleanup(drop_routing_schema, path, routing_schema)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = shared_control_main([
+                "migrate", "--dsn-file", str(self.dsn_file), "--deployment-id", "test",
+                "--schema", relay_schema,
+                "--routing-file", str(path), "--routing-schema", routing_schema,
+            ])
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn(POSTGRES_DSN, output.getvalue())
+        result = json.loads(output.getvalue())
+        self.assertEqual((result["routing_schema"], result["created"]), (routing_schema, True))
+        self.assertEqual(json.loads(path.read_text())["schema"], routing_schema)
+
+    def test_placement_unit_condition_passes_once_routing_is_initialised(self) -> None:
+        config = DeploymentConfig.default("project").to_dict()
+        config["data_root"] = str(self.root / "state")
+        config_file = self.root / "deployment.json"
+        config_file.write_text(json.dumps(config))
+        command = ["serve-control-plane", "--check-placement-enabled", "--config", str(config_file)]
+        with self.assertRaisesRegex(sqlite3.DatabaseError, "migrate --routing-file"):
+            cli.main(command)
+        postgres_routing_file(self, self.root / "state" / "routes.sqlite")
+        self.assertEqual(cli.main(command), 0)
+
+    def test_open_fails_closed_until_initialised(self) -> None:
+        missing = self.root / "missing.sqlite"
+        empty = self.root / "empty.sqlite"
+        empty.touch()
+        sqlite_file = self.root / "sqlite.sqlite"
+        sqlite3.connect(sqlite_file).execute("CREATE TABLE t (x)").connection.close()
+        for path in (missing, empty, sqlite_file):
+            with self.subTest(path=path.name), self.assertRaisesRegex(
+                sqlite3.DatabaseError, "migrate --routing-file"
+            ):
+                open_routing_store(path)
+        self.assertFalse(missing.exists())
 
 
 if __name__ == "__main__":

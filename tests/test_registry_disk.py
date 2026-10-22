@@ -173,7 +173,7 @@ class RegistryDiskUsageTests(unittest.TestCase):
 class GatewayDiskPressureTests(unittest.TestCase):
     def _post_build(self, monitor) -> tuple[int, dict, dict]:
         with TemporaryDirectory() as raw:
-            server = gateway_fixtures._gateway_server(
+            server = gateway_fixtures._gateway_server(self,
                 Path(raw), registry_disk_monitor=monitor,
             )
             with gateway_fixtures._running_server(server) as base:

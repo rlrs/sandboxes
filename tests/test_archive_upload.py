@@ -145,9 +145,9 @@ class ArchiveEndpointTests(unittest.TestCase):
             capabilities = ("sandbox", ARCHIVE_UPLOAD_CAPABILITY) if capable else ("sandbox",)
             with _running_server(node) as node_url:
                 for sid in ("shell", "static"):
-                    heartbeats, routes = _seed_gateway_node(root, node_url=node_url, sandbox_id=sid,
+                    heartbeats, routes = _seed_gateway_node(self, root, node_url=node_url, sandbox_id=sid,
                                                             capabilities=capabilities)
-                with _running_server(_gateway_server(root, heartbeat_file=heartbeats, routing_file=routes)) as url:
+                with _running_server(_gateway_server(self, root, heartbeat_file=heartbeats, routing_file=routes)) as url:
                     yield url, service, runner
 
     @staticmethod

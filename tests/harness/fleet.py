@@ -25,8 +25,9 @@ these boundaries:
   ``ucloud-noded --admission-only`` (tests/noded_admission.py) that owns the
   node's registry and outlives agent restarts, as noded does on a worker.
 
-The gateway uses distinct real tokens and, when ``UCLOUD_TEST_POSTGRES_DSN``
-is set and requested, PostgreSQL routing through the production descriptor.
+The gateway uses distinct real tokens and PostgreSQL routing through the
+production descriptor, on its own schema (``UCLOUD_TEST_POSTGRES_DSN``; a
+fleet skips its test without it).
 Node agents run in the test process, or with ``node_processes=True`` each in
 its own process (``node_process.py``) so a test can SIGKILL it mid-operation.
 """
@@ -83,11 +84,11 @@ from .fake_runsc import kill_exec_groups
 from .images import ImageCatalog, LocalRootfsStore
 from .pidfd import SyscallPidfdFencer, native_pidfd_available
 from .storage import FakeBlockBackend, FakeStorageHost
+from ..support import POSTGRES_DSN, POSTGRES_SKIP_REASON, create_routing_file, drop_routing_schema
 
 HARNESS = Path(__file__).resolve().parent
 PYTHON = Path(os.path.realpath(sys.executable))
 DEFAULT_IMAGE = "harness/base:1"
-POSTGRES_DSN = os.environ.get("UCLOUD_TEST_POSTGRES_DSN", "")
 # Scenarios send heartbeats explicitly; the periodic one never fires in a test.
 HEARTBEAT_INTERVAL_SECONDS = 3600
 
@@ -814,8 +815,8 @@ class FleetNode:
 class LocalFleet:
     """Gateway plus ``nodes`` workers in one temporary directory.
 
-    Use as a context manager. ``postgres=True`` routes through PostgreSQL when
-    ``UCLOUD_TEST_POSTGRES_DSN`` is set and skips the test otherwise.
+    Use as a context manager. Routing is PostgreSQL: without
+    ``UCLOUD_TEST_POSTGRES_DSN`` the fleet skips its test.
     ``node_processes=True`` runs each node agent in its own process, so
     ``FleetNode.crash`` can SIGKILL it; request observation, settable host
     samples and the exec-prefix knob then raise. ``admission_wait_seconds``
@@ -832,7 +833,7 @@ class LocalFleet:
     ``fleet.catalog.ref(name)``, refs on the fleet's registry.
     """
 
-    def __init__(self, *, nodes: int = 1, postgres: bool = False, heartbeat_ttl_seconds: int = 120,
+    def __init__(self, *, nodes: int = 1, heartbeat_ttl_seconds: int = 120,
                  node_processes: bool = False, admission_wait_seconds: float = 30.0,
                  max_concurrent_sandbox_creates: int | None = None, gateways: int = 1,
                  gateway_options: dict | None = None,
@@ -845,10 +846,9 @@ class LocalFleet:
         self.environments = environments
         self.registry: FakeOciRegistry | None = None
         self.publisher: EnvironmentPublisher | None = None
-        if postgres and not POSTGRES_DSN:
-            raise unittest.SkipTest("requires real PostgreSQL (UCLOUD_TEST_POSTGRES_DSN)")
+        if not POSTGRES_DSN:
+            raise unittest.SkipTest(POSTGRES_SKIP_REASON)
         self.node_count = nodes
-        self.postgres = postgres
         self.heartbeat_ttl_seconds = heartbeat_ttl_seconds
         self.node_processes = node_processes
         self.admission_wait_seconds = admission_wait_seconds
@@ -866,7 +866,7 @@ class LocalFleet:
         self.gateway = None
         self.gateway_url = ""
         self._temporary: tempfile.TemporaryDirectory | None = None
-        self._postgres_schema = ""
+        self._routing_schema = ""
 
     def __enter__(self) -> "LocalFleet":
         try:
@@ -896,8 +896,7 @@ class LocalFleet:
         gateway_root = self.root / "gateway"
         gateway_root.mkdir(mode=0o700)
         routing_file = self.routing_file = gateway_root / "routes.sqlite"
-        if self.postgres:
-            self._prepare_postgres_routing(routing_file)
+        self._routing_schema = create_routing_file(routing_file)
         for _index in range(self.gateway_count):
             server = build_server(
                 "127.0.0.1",
@@ -926,25 +925,6 @@ class LocalFleet:
             node.start()
         self.heartbeat()
 
-    def _prepare_postgres_routing(self, routing_file: Path) -> None:
-        from sandboxes.shared_control.routing_repository import PostgresRoutingStore
-
-        schema = "ucloud_routing_fleet_" + uuid.uuid4().hex
-        store = PostgresRoutingStore(routing_file, dsn=POSTGRES_DSN, schema=schema)
-        self._postgres_schema = schema
-        try:
-            store.migrate()
-        finally:
-            store.close()
-        dsn_file = routing_file.with_suffix(".dsn")
-        dsn_file.write_text(POSTGRES_DSN, encoding="utf-8")
-        dsn_file.chmod(0o600)
-        routing_file.write_text(json.dumps({
-            "format": "ucloud-postgres-routing-v1",
-            "schema": self._postgres_schema,
-            "dsn_file": str(dsn_file),
-        }), encoding="utf-8")
-
     def close(self) -> None:
         errors: list[BaseException] = []
         for server, thread in self.gateways:
@@ -966,12 +946,12 @@ class LocalFleet:
             except BaseException as exc:
                 errors.append(exc)
         self.gateways, self.gateway = [], None
-        if self._postgres_schema:
+        if self._routing_schema:
             try:
-                self._drop_postgres_routing()
+                drop_routing_schema(self.routing_file, self._routing_schema)
             except BaseException as exc:
                 errors.append(exc)
-            self._postgres_schema = ""
+            self._routing_schema = ""
         if self.registry is not None:
             try:
                 self.registry.close()
@@ -983,18 +963,6 @@ class LocalFleet:
             self._temporary = None
         if errors:
             raise errors[0]
-
-    def _drop_postgres_routing(self) -> None:
-        import psycopg
-        from psycopg import sql
-
-        cached = routing._POSTGRES_ROUTING_STORES.pop((os.getpid(), self.routing_file.resolve()), None)
-        if cached is not None:
-            cached.close()
-        with psycopg.connect(POSTGRES_DSN, autocommit=True) as connection:
-            connection.execute(
-                sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(self._postgres_schema))
-            )
 
     # -- public API ------------------------------------------------------------
 

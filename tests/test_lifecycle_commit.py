@@ -14,7 +14,7 @@ from sandboxes.lifecycle_commit import (
     SnapshotReferences,
 )
 from sandboxes.models import NodeHeartbeat, utc_now
-from sandboxes.routing import RoutingStore
+from tests.support import routing_store_for
 
 TEST_TIER = "contract"
 
@@ -23,7 +23,7 @@ class LifecycleCommitTests(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.routes = RoutingStore(Path(self.tmp.name) / "routes.sqlite")
+        self.routes = routing_store_for(self, Path(self.tmp.name) / "routes.sqlite")
         self.snapshot = _portable_snapshot("sandbox")
         self.route = self.routes.upsert_sandbox(
             _sandbox_route(

@@ -1,15 +1,23 @@
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import unittest
 
 from hypothesis import settings, strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
 from sandboxes.models import ResourceQuantity
 from sandboxes.routing import (
-    RoutingStore,
     SandboxRoute,
     SandboxRouteAllocation,
+    open_routing_store,
+)
+from tests.support import (
+    POSTGRES_DSN,
+    POSTGRES_SKIP_REASON,
+    create_routing_file,
+    drop_routing_schema,
+    reopen_routing_store,
 )
 
 TEST_TIER = "contract"
@@ -24,13 +32,15 @@ class RoutingStoreStateMachine(RuleBasedStateMachine):
         super().__init__()
         self._temporary_directory = TemporaryDirectory()
         self.path = Path(self._temporary_directory.name) / "routes.sqlite"
-        self.store = RoutingStore(self.path)
+        self.schema = create_routing_file(self.path)
+        self.store = open_routing_store(self.path)
         self.current: SandboxRoute | None = None
         self.current_allocation: SandboxRouteAllocation | None = None
         self.retired: list[SandboxRoute] = []
         self.high_water_generation = 0
 
     def teardown(self) -> None:
+        drop_routing_schema(self.path, self.schema)
         self._temporary_directory.cleanup()
 
     @rule()
@@ -67,7 +77,7 @@ class RoutingStoreStateMachine(RuleBasedStateMachine):
     def replay_allocation_after_reopen(self) -> None:
         assert self.current is not None
         assert self.current_allocation is not None
-        self.store = RoutingStore(self.path)
+        self.store = reopen_routing_store(self.path)
 
         replay, pending = self.store.allocate_sandbox_create_with_pending(
             self.current_allocation,
@@ -102,7 +112,7 @@ class RoutingStoreStateMachine(RuleBasedStateMachine):
     def prepare_delete_is_replay_safe_across_reopen(self) -> None:
         prepared = self.store.prepare_sandbox_delete(self.sandbox_id)
         assert prepared is not None
-        self.store = RoutingStore(self.path)
+        self.store = reopen_routing_store(self.path)
 
         replay = self.store.prepare_sandbox_delete(self.sandbox_id)
 
@@ -124,7 +134,7 @@ class RoutingStoreStateMachine(RuleBasedStateMachine):
         self.retired.append(self.current)
         self.current = None
         self.current_allocation = None
-        self.store = RoutingStore(self.path)
+        self.store = reopen_routing_store(self.path)
         assert self.store.get_sandbox_readonly(self.sandbox_id) is None
         assert (
             self.store.delete_sandbox_if_current(
@@ -200,11 +210,12 @@ class RoutingStoreStateMachine(RuleBasedStateMachine):
 
     @rule()
     def reopen(self) -> None:
-        self.store = RoutingStore(self.path)
+        self.store = reopen_routing_store(self.path)
 
     @invariant()
     def durable_state_matches_model(self) -> None:
-        stored = RoutingStore(self.path).get_sandbox_readonly(self.sandbox_id)
+        # Every read is a fresh PostgreSQL query; the reopen rules restart the store.
+        stored = self.store.get_sandbox_readonly(self.sandbox_id)
         assert stored == self.current
         if stored is not None:
             assert stored.generation == self.high_water_generation
@@ -213,7 +224,9 @@ class RoutingStoreStateMachine(RuleBasedStateMachine):
         )
 
 
-TestRoutingStoreStateMachine = RoutingStoreStateMachine.TestCase
+TestRoutingStoreStateMachine = unittest.skipUnless(POSTGRES_DSN, POSTGRES_SKIP_REASON)(
+    RoutingStoreStateMachine.TestCase
+)
 TestRoutingStoreStateMachine.settings = settings(
     max_examples=20,
     stateful_step_count=15,
