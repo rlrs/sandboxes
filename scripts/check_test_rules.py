@@ -21,7 +21,7 @@ TESTS = REPO / "tests"
 BASELINE = TESTS / "test_rules_baseline.json"
 
 RULES = {
-    "sleep": "sleeps to synchronize; wait for the end state with tests.support.wait_until",
+    "sleep": "sleeps to synchronize; wait for the end state with tests.support.wait_until (or wait_until_async)",
     "clock": "reads the clock; test time-dependent logic with an explicit `now`",
     "private": "touches another object's private member",
     "private_patch": "patches a private name",

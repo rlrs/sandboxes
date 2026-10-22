@@ -63,8 +63,9 @@ Write tests of four kinds:
 Rules:
 
 - Test a behaviour once, at the lowest layer that can show it.
-- Wait for end states with `tests.support.wait_until(condition)`. Don't sleep to
-  synchronize, and don't assert on elapsed time.
+- Wait for end states with `tests.support.wait_until(condition)` (or
+  `wait_until_async` in asyncio tests). Don't sleep to synchronize, and don't
+  assert on elapsed time.
 - Don't patch, call or assign private members (`_name`), and don't build objects
   with `object.__new__`. If logic is only reachable that way, move it into a
   function that can be called directly.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import errno
 from functools import lru_cache
 import os
@@ -13,7 +14,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, TypeVar
+from typing import Any, Awaitable, Callable, TypeVar
 import unittest
 from uuid import uuid4
 
@@ -132,6 +133,23 @@ def wait_until(condition: Callable[[], _T], timeout: float = 10.0, message: str 
         if time.monotonic() >= deadline:
             raise AssertionError(message or f"condition not met within {timeout} s")
         time.sleep(delay)
+        delay = min(delay * 2, 0.05)
+
+
+async def wait_until_async(
+    condition: Callable[[], Awaitable[_T]], timeout: float = 10.0, message: str = ""
+) -> _T:
+    """wait_until for asyncio tests: condition is awaited, and the event loop
+    keeps running the background work under test between polls."""
+    deadline = time.monotonic() + timeout
+    delay = 0.001
+    while True:
+        value = await condition()
+        if value:
+            return value
+        if time.monotonic() >= deadline:
+            raise AssertionError(message or f"condition not met within {timeout} s")
+        await asyncio.sleep(delay)
         delay = min(delay * 2, 0.05)
 
 

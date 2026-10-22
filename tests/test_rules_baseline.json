@@ -552,9 +552,9 @@
  },
  "test_postgres_relay.py": {
   "clock": 4,
-  "private": 77,
+  "private": 76,
   "private_patch": 11,
-  "sleep": 21
+  "sleep": 20
  },
  "test_postgres_routing_snapshot.py": {
   "private": 1,

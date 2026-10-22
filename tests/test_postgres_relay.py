@@ -10,8 +10,9 @@ from uuid import uuid4
 
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
+from hypothesis import given, strategies as st
 
-from tests.support import requires_sdk
+from tests.support import requires_sdk, wait_until_async
 from sandboxes import model_relay as api
 from sandboxes.shared_control import relay
 from sandboxes.shared_control.model import cancel_until_done
@@ -29,6 +30,21 @@ if DSN:
         PostgresRelayState,
         RESPONSE_RESERVATION,
     )
+
+
+class LifecycleRenewalTests(unittest.TestCase):
+    @given(st.floats(min_value=0.001, max_value=7 * 86400))
+    def test_renewal_outpaces_lease_expiry(self, lease):
+        interval, extension = relay.lifecycle_renewal(lease)
+        # Each pass grants a full lease again, as the claim did.
+        self.assertEqual(extension, lease)
+        # A claim taken just after a pass is first renewed one interval later.
+        # If that pass fails, the next still lands before the claim lapses,
+        # with a quarter of the lease to spare for its own stall (event-loop
+        # delay, a slow commit). Otherwise a peer, or the owner's own claim
+        # loop, would wake again a delivery whose wake is still running.
+        self.assertGreater(interval, 0)
+        self.assertLess(2 * interval + lease / 4, extension)
 
 
 @unittest.skipUnless(DSN, "requires real PostgreSQL")
@@ -259,7 +275,16 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(row["claim_until"], before[row["request_id"]]["claim_until"])
         await self.state._renew_lifecycle_claims()
 
-    async def test_batch_loop_keeps_live_wake_owned_until_shutdown(self):
+    async def wake_claim(self, state, request):
+        async with state.store.transaction("test_wake_claim") as conn:
+            return await (await conn.execute(
+                "SELECT claim_token,claim_until,attempts,done FROM relay_lifecycle "
+                "WHERE deployment_id=%s AND request_id=%s AND action='wake'",
+                (state.deployment, request.request_id),
+            )).fetchone()
+
+    async def held_wake(self, **kwargs):
+        """A deferred delivery whose wake notifier is running until release is set."""
         entered, release = asyncio.Event(), asyncio.Event()
         seen = []
 
@@ -268,18 +293,54 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
             entered.set()
             await release.wait()
 
-        state = await self.bound_state(result_notifier=wake, lifecycle_lease_seconds=0.6)
+        state = await self.bound_state(result_notifier=wake, **kwargs)
         request = await self.enqueue(state)
         (leased,) = await self.poll(state)
         await self.respond(leased, state, defer_delivery=True)
         await asyncio.wait_for(entered.wait(), 2)
-        peer = await self.new_state(result_notifier=wake, lifecycle_lease_seconds=0.6)
-        await asyncio.sleep(1.5)
-        self.assertEqual(seen, [request.request_id])
-        self.assertEqual((await peer.stats())["delivery_pending"], 1)
+        return state, request, wake, release, seen
+
+    async def test_batch_loop_renews_a_running_wake_claim_and_clears_it_on_return(self):
+        # One dispatch slot and no peer: nothing can claim this wake again,
+        # so the result does not depend on renewal beating lease expiry
+        # (LifecycleRenewalTests covers that schedule).
+        state, request, _, release, seen = await self.held_wake(
+            lifecycle_lease_seconds=0.3, lifecycle_concurrency=1)
+        claimed = await self.wake_claim(state, request)
+
+        async def renewed():
+            row = await self.wake_claim(state, request)
+            return row["claim_until"] > claimed["claim_until"] and row
+
+        row = await wait_until_async(renewed)
+        self.assertEqual((row["claim_token"], row["attempts"], row["done"]),
+                         (claimed["claim_token"], 1, False))
         release.set()
         self.assertEqual((await state.wait_for_response(request, timeout_seconds=2)).body, b"answer")
-        self.assertFalse(state._active_claims)
+        self.assertEqual(seen, [request.request_id])
+        row = await self.wake_claim(state, request)
+        self.assertEqual((row["claim_token"], row["attempts"], row["done"]), (None, 1, True))
+
+    async def test_peer_leaves_a_wake_with_a_live_claim_to_its_owner(self):
+        # The default 30 s lease cannot lapse while this test runs.
+        state, request, wake, release, seen = await self.held_wake()
+        claimed = await self.wake_claim(state, request)
+        peer = await self.new_state(result_notifier=wake)
+
+        async def peer_claim_pass_finished():
+            counters = (await peer.stats())["counters"]
+            finished = (counters.get("lifecycle_wake_claim_empty", 0)
+                        + counters.get("lifecycle_wake_claim_rows", 0))
+            return finished and counters
+
+        counters = await wait_until_async(peer_claim_pass_finished)
+        self.assertEqual(counters.get("lifecycle_wake_claim_rows", 0), 0)
+        row = await self.wake_claim(peer, request)
+        self.assertEqual((row["claim_token"], row["attempts"]), (claimed["claim_token"], 1))
+        self.assertEqual((await peer.stats())["delivery_pending"], 1)
+        release.set()
+        self.assertEqual((await peer.wait_for_response(request, timeout_seconds=2)).body, b"answer")
+        self.assertEqual(seen, [request.request_id])
 
     async def test_terminal_node_loss_retires_pending_and_leased_callers(self):
         state = await self.bound_state()
@@ -544,21 +605,34 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first.call_count + second.call_count, 1)
 
     async def test_poll_heartbeat_refresh_uses_existing_retention_and_lease_lifetimes(self):
+        async def last_seen():
+            async with self.state.store.transaction('test_time') as conn:
+                row = await (await conn.execute(
+                    "SELECT last_seen_at FROM relay_workers WHERE worker_id='idle'")).fetchone()
+            return row['last_seen_at']
+
         for retention, lease in ((3600, 0.15), (0.15, 600)):
             with self.subTest(retention=retention, lease=lease):
                 self.state.worker_retention = retention
                 await self.poll(worker_id='idle', timeout_seconds=0, lease_seconds=lease)
-                async with self.state.store.transaction('test_time') as conn:
-                    before = await (await conn.execute("SELECT last_seen_at FROM relay_workers WHERE worker_id='idle'")).fetchone()
-                # Outstanding long polls refresh even without notifications.
-                await self.poll(worker_id='idle', timeout_seconds=0.18, lease_seconds=lease)
-                async with self.state.store.transaction('test_time') as conn:
-                    after = await (await conn.execute("SELECT last_seen_at FROM relay_workers WHERE worker_id='idle'")).fetchone()
-                self.assertGreater(after['last_seen_at'] - before['last_seen_at'], 0.1)
+                before = await last_seen()
+                # An outstanding long poll refreshes on the shorter lifetime
+                # even without notifications; the longer one is ten minutes or more.
+                long_poll = asyncio.create_task(
+                    self.poll(worker_id='idle', timeout_seconds=60, lease_seconds=lease))
+
+                async def refreshed():
+                    seen = await last_seen()
+                    return seen > before and seen
+
+                try:
+                    after = await wait_until_async(refreshed)
+                finally:
+                    await cancel_until_done(long_poll)
                 # An explicit heartbeat is never coalesced or metadata-delayed.
                 explicit = await self.state.record_worker_heartbeat(rollout_id='agent',
                     registration_token=self.token, worker_id='idle', metadata={'ready': True})
-                self.assertGreater(explicit['last_seen_at'], after['last_seen_at'])
+                self.assertGreater(explicit['last_seen_at'], after)
                 self.assertEqual(explicit['metadata'], {'ready': True})
 
     async def test_poll_hydration_failure_rolls_back_heartbeat_and_claims(self):
