@@ -279,9 +279,9 @@
   "test_import": 2
  },
  "test_gateway_event_proxy.py": {
-  "clock": 6,
+  "clock": 4,
   "private": 9,
-  "sleep": 2
+  "sleep": 1
  },
  "test_gateway_job_reads.py": {
   "private": 4,

@@ -28,10 +28,19 @@ class BufferedNodeResponse(BytesIO):
         self.headers = headers
 
 
+def _closes_connection(headers: Mapping[str, str]) -> bool:
+    return any(
+        name.lower() == "connection"
+        and "close" in (token.strip().lower() for token in value.split(","))
+        for name, value in headers.items()
+    )
+
+
 class AsyncNodeHttpPool:
     # Connection lanes per worker origin: control RPCs, exec event polls, and
     # held job reads (docs/architecture.md). Waiting requests in one
-    # lane never take the connections another lane needs.
+    # lane never take the connections another lane needs. A fourth lane, with
+    # the control limit, carries requests that say "Connection: close".
     def __init__(
         self,
         *,
@@ -83,8 +92,15 @@ class AsyncNodeHttpPool:
 
         async def initialize():
             clients = []
+            # RFC 9112 9.6: a client that sends "close" never reuses that
+            # connection. aiohttp pools it unless the response also says close,
+            # and ucloud-noded closes it without saying so. Reused, it would
+            # carry the next RPC to a closing socket, which fails without
+            # reaching the worker and cannot be resent. Never pool it.
+            lanes = [(limit, False) for limit in self._limits]
+            lanes.append((self._limits[0], True))
             try:
-                for limit in self._limits:
+                for limit, force_close in lanes:
                     trace = aiohttp.TraceConfig()
 
                     async def sent(_session, context, _params):
@@ -105,7 +121,8 @@ class AsyncNodeHttpPool:
                     clients.append(
                         aiohttp.ClientSession(
                             connector=aiohttp.TCPConnector(
-                                limit=0, limit_per_host=limit, use_dns_cache=False
+                                limit=0, limit_per_host=limit, use_dns_cache=False,
+                                force_close=force_close,
                             ),
                             auto_decompress=False,
                             skip_auto_headers={"Accept-Encoding", "Content-Type"},
@@ -153,7 +170,9 @@ class AsyncNodeHttpPool:
         event_poll,
         held_read=False,
     ):
-        client = self._clients[2 if held_read else int(event_poll)]
+        client = self._clients[
+            3 if _closes_connection(headers) else 2 if held_read else int(event_poll)
+        ]
         # The public tracing hook fences any library reconnect retry before
         # headers are sent twice, including nominally idempotent PUT/DELETE.
         # An ambiguous failure stays ambiguous to the gateway.

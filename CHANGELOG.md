@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **The gateway never reuses a worker connection it asked to close.** A request
+  with a body says `Connection: close` unless the handler just resolved that
+  worker as `request-body-keepalive-v1`, and ucloud-noded closes the connection
+  after answering without saying so. The gateway still pooled it, so the next
+  RPC to that worker could go out on the closing socket and fail with a
+  retryable 502 (`worker RPC reconnect replay refused`) although the worker never
+  received it. Such requests now get a connection that closes after its one
+  response. No request is resent.
+
 ## 0.10.0 - 2026-10-22 (gateway; workers; store node)
 
 - **The project is now `sandboxes`.** The distribution, the Python package

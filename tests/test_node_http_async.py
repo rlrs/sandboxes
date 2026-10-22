@@ -4,6 +4,7 @@ import asyncio
 import gzip
 import inspect
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import select
 import socket
 from threading import Event, Thread, current_thread
 import unittest
@@ -50,11 +51,12 @@ class AsyncNodeHttpTests(unittest.TestCase):
         self.pool = AsyncNodeHttpPool(control_connections=1, poll_connections=1)
         self.addCleanup(self.pool.close)
 
-    def call(self, url, *, method="GET", body=None, limit=1024, poll=False, timeout=1):
+    def call(self, url, *, method="GET", body=None, limit=1024, poll=False, timeout=1,
+             headers=None):
         return self.pool.request(
             method,
             url,
-            headers={"Authorization": "Bearer test-token"},
+            headers={"Authorization": "Bearer test-token", **(headers or {})},
             body=body,
             timeout=timeout,
             connect_timeout=timeout,
@@ -271,6 +273,29 @@ class AsyncNodeHttpTests(unittest.TestCase):
         with server(Truncated) as url:
             with self.assertRaises(URLError):
                 self.call(url)
+
+    def test_connection_the_request_closed_is_never_reused(self):
+        # ucloud-noded closes the connection after answering a request that
+        # said "Connection: close", without saying so in its answer. This
+        # worker closes it only once the client has closed it or written the
+        # next request on it, which it then never reads.
+        bodies = []
+
+        class Handler(Node):
+            def do_PUT(inner):
+                bodies.append(inner.rfile.read(int(inner.headers["Content-Length"])))
+                inner.reply(status=409 if len(bodies) == 1 else 200)
+                if inner.close_connection:
+                    inner.wfile.flush()
+                    select.select([inner.connection], [], [], 10)
+
+        with server(Handler) as url:
+            with self.call(url, method="PUT", body=b"first",
+                           headers={"Connection": "close"}) as response:
+                self.assertEqual(response.status, 409)
+            with self.call(url, method="PUT", body=b"second") as response:
+                self.assertEqual(response.status, 200)
+        self.assertEqual(bodies, [b"first", b"second"])
 
     def test_connection_admission_timeout_is_proven_pre_dispatch(self):
         from urllib3.exceptions import EmptyPoolError
