@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 import sqlite3
-from threading import Event, RLock, Thread
+from threading import RLock
 import time
 from typing import Any
 from urllib.parse import urlparse
@@ -13,9 +13,9 @@ from urllib.parse import urlparse
 from ..image_inventory_cache import ImageInventoryCache, ImageInventorySnapshot
 from ..images import ImageManager, ImageRecord
 from ..managed_registry import (
-    RegistryClient, RegistryManifestLayers, RegistryRequestError, canonical_image_digest_ref,
-    image_ref_with_manifest_digest, manifest_digest_from_image_ref, normalize_manifest_digest,
-    registry_host_from_image_ref, registry_repository_tag_from_image_ref, registry_summary,
+    RegistryClient, RegistryRequestError, image_ref_with_manifest_digest, manifest_digest_from_image_ref,
+    normalize_manifest_digest, registry_host_from_image_ref, registry_repository_tag_from_image_ref,
+    registry_summary,
 )
 from ..registry_disk import RegistryDiskMonitor, RegistryDiskUsage
 from .exchange import Exchange
@@ -35,128 +35,11 @@ TRANSIENT_IMAGE_RESOLUTION_ERROR_CODES = frozenset(
 )
 REGISTRY_METRICS_TIMEOUT_SECONDS = 1.5
 REGISTRY_STATUS_CACHE_TTL_SECONDS = 30.0
-REGISTRY_LAYER_METADATA_TIMEOUT_SECONDS = 2.0
-REGISTRY_LAYER_METADATA_CACHE_MAX_ENTRIES = 4096
 REGISTRY_MANIFEST_CACHE_MAX_ENTRIES = 4096
 REGISTRY_IMMUTABLE_MANIFEST_CACHE_TTL_SECONDS = 5 * 60.0
 REGISTRY_MUTABLE_MANIFEST_CACHE_TTL_SECONDS = 5.0
 IMAGE_EVICTED_ERROR_CODE = "image_evicted"
 IMAGE_INVENTORY_CACHE_TTL_SECONDS = 5.0
-
-
-class RegistryLayerMetadataCache:
-    """Bounded immutable-manifest cache used by placement scoring."""
-
-    def __init__(
-        self,
-        registry_url: str,
-        *,
-        registry_worker_url: str | None = None,
-        max_entries: int = 4096,
-    ) -> None:
-        self.registry_url = registry_url.rstrip("/")
-        self.registry_worker_url = (registry_worker_url or "").rstrip("/")
-        self.max_entries = max(1, int(max_entries))
-        self._lock = RLock()
-        self._records: OrderedDict[str, RegistryManifestLayers] = OrderedDict()
-        self._loading: dict[str, Event] = {}
-
-    def get(
-        self,
-        image_ref: str,
-        *,
-        load: bool = False,
-    ) -> RegistryManifestLayers | None:
-        coordinates = self._coordinates(image_ref)
-        if coordinates is None:
-            return None
-        key, repository, digest = coordinates
-        waiter: Event | None = None
-        with self._lock:
-            if key in self._records:
-                record = self._records.pop(key)
-                self._records[key] = record
-                return record
-            if key in self._loading:
-                if load:
-                    waiter = self._loading[key]
-                else:
-                    return None
-            elif not load:
-                return None
-            else:
-                self._loading[key] = Event()
-        if waiter is not None:
-            waiter.wait(REGISTRY_LAYER_METADATA_TIMEOUT_SECONDS)
-            with self._lock:
-                return self._records.get(key)
-        return self._load_one(key, repository, digest)
-
-    def hydrate_async(self, image_refs: tuple[str, ...]) -> None:
-        pending: list[tuple[str, str, str]] = []
-        with self._lock:
-            for image_ref in image_refs:
-                coordinates = self._coordinates(image_ref)
-                if coordinates is None:
-                    continue
-                key, repository, digest = coordinates
-                if key in self._records or key in self._loading:
-                    continue
-                self._loading[key] = Event()
-                pending.append((key, repository, digest))
-        if not pending:
-            return
-        Thread(
-            target=self._hydrate,
-            args=(tuple(pending),),
-            daemon=True,
-            name="registry-layer-metadata",
-        ).start()
-
-    def _hydrate(self, pending: tuple[tuple[str, str, str], ...]) -> None:
-        for key, repository, digest in pending:
-            self._load_one(key, repository, digest)
-
-    def _load_one(
-        self,
-        key: str,
-        repository: str,
-        digest: str,
-    ) -> RegistryManifestLayers | None:
-        record: RegistryManifestLayers | None = None
-        try:
-            record = RegistryClient(
-                self.registry_url,
-                timeout_seconds=REGISTRY_LAYER_METADATA_TIMEOUT_SECONDS,
-            ).manifest_layers(repository, digest)
-        except (OSError, RegistryRequestError, ValueError):
-            record = None
-        finally:
-            waiter: Event | None = None
-            with self._lock:
-                waiter = self._loading.pop(key, None)
-                if record is not None:
-                    self._records[key] = record
-                    while len(self._records) > self.max_entries:
-                        self._records.popitem(last=False)
-            if waiter is not None:
-                waiter.set()
-        return record
-
-    def _coordinates(self, image_ref: str) -> tuple[str, str, str] | None:
-        coordinates = _managed_registry_image_coordinates(
-            image_ref,
-            self.registry_url,
-            self.registry_worker_url,
-        )
-        digest = manifest_digest_from_image_ref(image_ref)
-        if coordinates is None or not digest:
-            return None
-        repository, _tag = coordinates
-        key = canonical_image_digest_ref(image_ref)
-        if not key:
-            return None
-        return key, repository, digest
 
 
 @dataclass(frozen=True)

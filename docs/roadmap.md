@@ -48,16 +48,14 @@ under [Open decisions](#open-decisions).
   delete `environment_nbd.py`, `environment_cache.py` and the RAFS reader in `environment_rafs.py`.
 - **Docker off sandbox workers** (`DockerOverlay2RootfsStore` in `image_rootfs.py`, `image_eviction.py`).
 - **No per-create init copy:** mount `/.ucloud-init` read-only (`runtime/noded/src/guest.rs`).
-- **Placement by chunk residency** (`gateway/heartbeats.py`, `gateway/placement.py`).
+- **Placement by chunk residency** (`gateway/heartbeats.py`, `placement_choice.py`).
 - **S3 outages** still fail commits and fills until S3 recovers (stalls are bounded since 0.9.67).
 
 ## Scaling and control plane
 
 - **Cluster create rate:** target ≥ 300 creates/s; ~30/s measured at production's worker cap.
 - **Cold start:** ready p50 ~2 min from zero; add image-gated scale-up (`policy.py`, `node_agent.py`).
-- **Finish power-of-k:** the code default is still `ranked`. Flip `gateway_create_placement`,
-  delete the ranked path (`control_plane.py`, `gateway/placement.py`), then move wakes to
-  node-gated admission and delete the placement service.
+- **Finish power-of-k:** move wakes to node-gated admission and delete the placement service.
 - **Stateless exec ingress:** drop `upsert_exec` and `exec_sessions` once no old worker can join;
   add route tokens for events and files.
 - **Split the single gateway host:** first move heartbeats, quarantine, host locks, build

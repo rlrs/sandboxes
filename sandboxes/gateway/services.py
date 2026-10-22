@@ -16,10 +16,8 @@ from .create import CreatePlacement
 from .fleet import FleetView
 from .groups import GroupCreate
 from .heartbeats import HeartbeatIngest, RebootReaper, WorkerDelete
-from .image_resolution import (
-    REGISTRY_LAYER_METADATA_CACHE_MAX_ENTRIES, ImageResolution, RegistryLayerMetadataCache,
-)
-from .placement import InflightCreatePlacements, Placement
+from .image_resolution import ImageResolution
+from .placement import Placement
 from .registry_refs import RegistryReferences
 
 
@@ -58,11 +56,6 @@ def build_services(
         dependency_resolver=dependency_resolver,
     )
     fleet = FleetView(store, heartbeat_ttl_seconds, registry_refs=registry_refs)
-    # Heartbeats hydrate it and placement scores layer overlap from it.
-    layer_cache = RegistryLayerMetadataCache(
-        registry_url, registry_worker_url=registry_worker_url,
-        max_entries=REGISTRY_LAYER_METADATA_CACHE_MAX_ENTRIES,
-    ) if registry_url else None
     creates = CreatePlacement(
         routing_store, store, heartbeat_ttl_seconds=heartbeat_ttl_seconds,
         registry_refs=registry_refs, metrics_store=metrics_store, telemetry=telemetry,
@@ -74,17 +67,13 @@ def build_services(
         fleet=fleet,
         heartbeats=HeartbeatIngest(
             store=store, routing_store=routing_store, metrics_store=metrics_store,
-            deployment_id=deployment_id, registry_refs=registry_refs, layer_cache=layer_cache,
+            deployment_id=deployment_id, registry_refs=registry_refs,
             reaper=RebootReaper(
                 routing_store=routing_store, registry_refs=registry_refs,
                 metrics_store=metrics_store, delete_on_worker=delete_on_worker,
             ) if delete_on_worker is not None else None,
         ),
-        placement=Placement(
-            routing_store, fleet, telemetry=telemetry,
-            create_target_concurrency=create_target_concurrency_per_node,
-            layer_cache=layer_cache, inflight=InflightCreatePlacements(),
-        ),
+        placement=Placement(routing_store, telemetry=telemetry),
         creates=creates,
         groups=GroupCreate(creates, target_creates_per_node=create_target_concurrency_per_node),
         images=ImageResolution(

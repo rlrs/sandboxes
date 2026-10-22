@@ -162,7 +162,6 @@ class DrainAdmissionTests(unittest.TestCase):
                                      (lambda: create("unknown"), "node_active_admission_deferred")):
                 response, elapsed = timed(call)
                 self.assert_retryable(response, error_code)
-                self.assertIn("no fresh runtime metrics", response.json()["error"])
                 self.assertLess(elapsed, WAIT)
 
             # Headroom that arrives within the deadline admits the create. It

@@ -99,9 +99,8 @@
   "test_import": 1
  },
  "test_control_plane.py": {
-  "clock": 2,
-  "new": 11,
-  "private": 59,
+  "new": 10,
+  "private": 54,
   "private_patch": 7
  },
  "test_control_state_cache.py": {
@@ -562,11 +561,6 @@
   "sleep": 3,
   "test_import": 1
  },
- "test_placement_scoring.py": {
-  "private": 6,
-  "private_patch": 1,
-  "test_import": 1
- },
  "test_postgres_gateway.py": {
   "private": 2,
   "test_import": 3
@@ -765,7 +759,7 @@
  "test_soft_drain.py": {
   "new": 1,
   "private": 19,
-  "private_patch": 3,
+  "private_patch": 2,
   "test_import": 3
  },
  "test_split_memory_lifecycle.py": {

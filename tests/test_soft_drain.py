@@ -16,7 +16,6 @@ from sandboxes.capabilities import (
 from sandboxes.config import DeploymentConfig
 from sandboxes.control_state import SOFT_DRAIN, ControlStateStore
 from sandboxes.deployment import package_version
-from sandboxes.gateway import placement as placement_rules
 from sandboxes.models import (
     LiveScaleSignals,
     EPOCH_RETIREMENTS_LABEL,
@@ -36,7 +35,7 @@ from tests.test_cli import (
     temporary_root, ucloud_config, write_jobs,
 )
 from tests.gateway_support import gateway_services
-from tests.test_control_plane import _portable_snapshot, _sandbox_route, build_heartbeat
+from tests.test_control_plane import _portable_snapshot, _sandbox_route
 from tests.test_policy import demand, node
 
 TEST_TIER = "contract"
@@ -688,27 +687,6 @@ class SoftDrainGatewayTests(unittest.TestCase):
             self.assertEqual(aborted, ["m-3"])
             self.assertEqual(written[0][0], 503)
             self.assertTrue(written[0][1]["aborted"])
-
-    def test_create_placement_prefers_undrained_but_falls_back(self):
-        drained = replace(
-            build_heartbeat(node_id="a", job_id="job-a", node_url="http://a",
-                            total_resources=ResourceQuantity(16, 16384, 1_000_000)),
-            labels={SOFT_DRAIN: "t0"},
-        )
-        other = build_heartbeat(node_id="b", job_id="job-b", node_url="http://b",
-                                total_resources=ResourceQuantity(16, 16384, 1_000_000))
-
-        def selector(heartbeats):
-            placement = gateway_services(create_target_concurrency_per_node=4).placement
-            placement.routes = lambda: []
-            placement.fleet.ready_sandbox_heartbeats = lambda **_kwargs: list(heartbeats)
-            placement.image_locality = lambda *_args, **_kwargs: {"a"}
-            return placement
-
-        requested = ResourceQuantity(1, 1024, 4096)
-        with patch.object(placement_rules, "_node_can_fit_available", return_value=True):
-            self.assertEqual(selector([drained, other]).select(requested).node_id, "b")
-            self.assertEqual(selector([drained]).select(requested).node_id, "a")
 
 
 class SoftDrainConfigTests(unittest.TestCase):

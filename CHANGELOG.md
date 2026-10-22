@@ -27,6 +27,15 @@
   concurrent creates may have filled that worker since the choice. The gateway now
   checks fit, with its current in-flight charges, before each later candidate and
   skips one that is full; when none fits, the create queues with a retryable 503.
+- **Power-of-k is the only create placement.** Ranked placement, still the code
+  default, is deleted with what only it used: the fleet scan and reservation in
+  `gateway/placement.py`, the 503 `gateway_placement_busy` and 501
+  `sandbox_group_create_unavailable` answers, and the registry layer-metadata cache
+  with the manifest fetches each heartbeat started for it. `gateway_create_placement`
+  is no longer written; a config naming `power_of_k` still loads and any other value
+  is refused. The placement service claims wakes only, as it already did under
+  power-of-k. A rollback to 0.9.75 must restore the previous `deployment.json`:
+  without the key, 0.9.75 places with ranked.
 
 ## 0.9.75 - 2026-10-12 (gateway)
 

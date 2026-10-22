@@ -27,7 +27,7 @@ PER_NODE = 65536 // SPEC["disk_mb"]
 
 class CreateBurstTests(unittest.TestCase):
     def test_burst_reselects_around_a_closed_worker_without_overbooking(self):
-        with LocalFleet(nodes=3, create_placement="power_of_k") as fleet:
+        with LocalFleet(nodes=3) as fleet:
             closed, *open_nodes = fleet.nodes
             # Closed at the worker only; the gateway still ranks it.
             self.assertEqual(closed.drain("burst").status, 200)

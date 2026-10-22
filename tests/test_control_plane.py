@@ -8,7 +8,6 @@ from tempfile import TemporaryDirectory
 from http.client import HTTPConnection
 from threading import Event, Thread
 import time
-from time import monotonic
 from types import SimpleNamespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -29,6 +28,7 @@ from sandboxes import control_plane
 from sandboxes.control_state import ControlStateStore
 from sandboxes.capabilities import HIBERNATE_LOCAL_CAPABILITY
 from sandboxes.gateway import image_resolution, node_rpc, placement, registry_refs
+from sandboxes.gateway.groups import group_budget
 from sandboxes.image_inventory_cache import ImageInventoryCache, ImageInventorySnapshot
 from tests.gateway_support import gateway_services
 from sandboxes.control_plane import (
@@ -412,8 +412,8 @@ class ControlPlaneTests(unittest.TestCase):
             )
             try:
                 self.assertEqual(
-                    server.RequestHandlerClass.services.placement.create_target_concurrency,
-                    3,
+                    server.RequestHandlerClass.services.groups.budget,
+                    group_budget(3),
                 )
             finally:
                 server.server_close()
@@ -2077,160 +2077,6 @@ class ControlPlaneTests(unittest.TestCase):
             )
         )
 
-    def test_wake_image_pull_does_not_hold_global_placement_lock(self) -> None:
-        with _temporary_root() as root:
-            routing = RoutingStore(root / "routes.sqlite")
-            resources = ResourceQuantity(vcpu=4, memory_mb=8192, disk_mb=8192)
-            snapshot = _portable_snapshot("parked")
-            snapshot = replace(snapshot, manifest=replace(
-                snapshot.manifest, spec=SandboxSpec.from_dict({
-                    "id": "parked", "image": "cold-image", "parkable": True,
-                    "network": "none", "cpus": 4, "memory_mb": 8192, "disk_mb": 8192,
-                }),
-            ))
-            parked = routing.upsert_sandbox(
-                _sandbox_route(
-                    sandbox_id="parked",
-                    node_id="source-node",
-                    job_id="source-job",
-                    node_url="http://source:8090",
-                    resources=resources,
-                    spec=snapshot.manifest.spec.to_dict(),
-                    state="parked",
-                    storage_schema="storage-native-v1",
-                    snapshot_manifest_digest=snapshot.reference.manifest_digest,
-                    snapshot_repository=snapshot.reference.repository,
-                    snapshot_tag=snapshot.reference.tag,
-                    storage_snapshot=snapshot.to_dict(),
-                )
-            )
-            routing.upsert_sandbox(
-                _sandbox_route(
-                    sandbox_id="source-busy",
-                    node_id="source-node",
-                    job_id="source-job",
-                    node_url="http://source:8090",
-                    resources=resources,
-                    state="running",
-                )
-            )
-            heartbeats = ControlStateStore(root / "control-state.sqlite")
-            for heartbeat in (
-                NodeHeartbeat(
-                    node_id="source-node",
-                    job_id="source-job",
-                    deployment_id="test-deployment",
-                    updated_at=utc_now(),
-                    active_sandboxes=1,
-                    node_url="http://source:8090",
-                    agent_version=package_version(),
-                    capabilities=(
-                        "sandbox",
-                        "disk-quota",
-                        "storage-native-v1",
-                        "sandbox-migrate-storage-native-v1",
-                    ),
-                    total_resources=ResourceQuantity(
-                        vcpu=4,
-                        memory_mb=8192,
-                        disk_mb=100_000,
-                    ),
-                    resources_known=True,
-                    runtime_metrics=NodeRuntimeMetrics(
-                        collected_at=utc_now(),
-                        cpu_percent=95.0,
-                        cpu_count=4,
-                        storage_hard_capacity_mb=100_000,
-                    ),
-                    inventory_complete=True,
-                ),
-                NodeHeartbeat(
-                    node_id="destination-node",
-                    job_id="destination-job",
-                    deployment_id="test-deployment",
-                    updated_at=utc_now(),
-                    active_sandboxes=0,
-                    node_url="http://destination:8090",
-                    agent_version=package_version(),
-                    capabilities=(
-                        "sandbox",
-                        "disk-quota",
-                        "storage-native-v1",
-                        "sandbox-migrate-storage-native-v1",
-                    ),
-                    total_resources=ResourceQuantity(
-                        vcpu=8,
-                        memory_mb=16_384,
-                        disk_mb=100_000,
-                    ),
-                    resources_known=True,
-                    runtime_metrics=NodeRuntimeMetrics(
-                        collected_at=utc_now(),
-                        cpu_percent=0.0,
-                        cpu_count=8,
-                        storage_hard_capacity_mb=100_000,
-                    ),
-                    inventory_complete=True,
-                ),
-            ):
-                heartbeats.upsert_heartbeat(replace(heartbeat, capabilities=(
-                    *heartbeat.capabilities, HIBERNATE_LOCAL_CAPABILITY,
-                    control_plane.RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX
-                    + snapshot.manifest.runtime.node_compatibility_sha256,
-                )))
-
-            handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = routing
-            handler.services = gateway_services(
-                store=heartbeats, routing_store=routing, registry_url="", registry_worker_url="",
-                create_target_concurrency_per_node=4,
-            )
-            handler._write_json = lambda *_args, **_kwargs: None
-            pull_started = Event()
-            release_pull = Event()
-            pull_finished = Event()
-
-            def slow_prepare(_source, _destination):
-                pull_started.set()
-                release_pull.wait(timeout=10)
-                pull_finished.set()
-                raise control_plane.WakePlacementStopped(control_plane.WakeUnavailable("test image preparation pending"))
-
-            handler._prepare_migration_destination_image = slow_prepare
-            # This case intentionally exercises remote placement. The source
-            # admission refresh fails promptly rather than contacting a real
-            # host named "source" before the controlled slow image pull.
-            handler._proxy_request = lambda *_args, **_kwargs: control_plane.ProxiedResponse(503, {}, b"{}")
-            wake_thread = Thread(
-                target=lambda route: _prepare_wake_route(handler, route),
-                args=(parked,),
-                daemon=True,
-            )
-            wake_thread.start()
-            self.assertTrue(pull_started.wait(timeout=1))
-            placement = handler.services.placement.select_and_reserve(
-                "concurrent-create",
-                ResourceQuantity(vcpu=1, memory_mb=1024, disk_mb=1024),
-                image="",
-                spec={"id": "concurrent-create", "image": "busybox"},
-                spec_hash=sandbox_spec_fingerprint(
-                    SandboxSpec.from_dict(
-                        {"id": "concurrent-create", "image": "busybox"}
-                    )
-                ),
-                lock_timeout=handler.admission_wait_seconds,
-            )
-            # Placed while the pull is still held: behind the pull's lock it
-            # could only have run once the pull had finished.
-            self.assertFalse(pull_finished.is_set())
-            release_pull.set()
-            wake_thread.join(timeout=2)
-            migrations = routing.sandbox_migrations(active_only=True)
-
-        self.assertIsNotNone(placement)
-        self.assertEqual(len(migrations), 1)
-        self.assertEqual(migrations[0].destination_node_id, "destination-node")
-
     def test_unpublished_park_retries_without_starting_blocking_migration(self) -> None:
         self._assert_unpublished_wake_error(storage_errors=0)
         self._assert_unpublished_wake_error(storage_errors=1)
@@ -2892,23 +2738,14 @@ class ControlPlaneTests(unittest.TestCase):
                         allow_error=True,
                     )
 
-                self.assertTrue(
-                    placement._GATEWAY_SCHEDULING_LOCK.acquire(blocking=False)
-                )
-                started = monotonic()
-                try:
-                    with ThreadPoolExecutor(max_workers=96) as executor:
-                        results = list(executor.map(create, range(192)))
-                finally:
-                    placement._GATEWAY_SCHEDULING_LOCK.release()
-                elapsed = monotonic() - started
+                with ThreadPoolExecutor(max_workers=96) as executor:
+                    results = list(executor.map(create, range(192)))
 
         self.assertEqual({result["status"] for result in results}, {503})
         self.assertTrue(all(result["body"]["retryable"] for result in results))
         self.assertTrue(
             all(isinstance(result["body"].get("error"), str) for result in results)
         )
-        self.assertLess(elapsed, 5)
 
     def test_registry_reference_survives_ambiguous_create_restart_and_reconciliation(
         self,

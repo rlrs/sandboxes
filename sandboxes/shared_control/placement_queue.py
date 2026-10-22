@@ -572,12 +572,6 @@ def create_concurrency(policy, processes=1):
     return max(32, -(-policy.create_target_concurrency_per_node * policy.max_nodes // processes))
 
 
-def placement_kinds(create_placement):
-    """What the placement process claims. In power_of_k the API processes
-    claim creates and groups themselves (C4.3 phase 2), so it claims wakes."""
-    return ("wake",) if create_placement == "power_of_k" else ("create", "wake", "group")
-
-
 GROUP_DELIVERED_HEADER = "X-UCloud-Group-Delivered"  # gateway.groups sets it
 
 

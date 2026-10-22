@@ -49,7 +49,7 @@ class GroupFleetTests(unittest.TestCase):
     def test_a_group_packs_onto_one_worker_and_its_members_stay_ordinary(self):
         for postgres in (False, True):
             with self.subTest(postgres=postgres), LocalFleet(
-                    nodes=2, create_placement="power_of_k", postgres=postgres) as fleet:
+                    nodes=2, postgres=postgres) as fleet:
                 created = post_group(fleet, "g", 4)
                 self.assertEqual(created.status, 201, created.body)
                 self.assertEqual(created.json()["counts"], {"running": 4})
@@ -80,7 +80,7 @@ class GroupFleetTests(unittest.TestCase):
                                                    token="sandbox").status, 400)
 
     def test_overflow_spills_to_the_next_worker_with_one_attach_each(self):
-        with LocalFleet(nodes=3, create_placement="power_of_k") as fleet:
+        with LocalFleet(nodes=3) as fleet:
             fleet.gateway.RequestHandlerClass.services.groups.budget = 2
             created = post_group(fleet, "spill", 5)
             self.assertEqual(created.status, 201, created.body)
@@ -89,7 +89,7 @@ class GroupFleetTests(unittest.TestCase):
             self.assertEqual(sorted(calls.values()), [(1, 1), (1, 2), (1, 2)])
 
     def test_a_definite_reject_replans_the_members_on_another_worker(self):
-        with LocalFleet(nodes=2, create_placement="power_of_k", admission_wait_seconds=1) as fleet:
+        with LocalFleet(nodes=2, admission_wait_seconds=1) as fleet:
             first, second = fleet.nodes
             second.sample_metrics = lambda: replace(fixed_metrics(), cpu_percent=90.0)  # Ranks behind.
             fleet.heartbeat()
@@ -109,7 +109,7 @@ class GroupFleetTests(unittest.TestCase):
         # failure re-plans on another worker or leaves the members pending.
         timed_out = ProxiedResponse(504, {"Content-Type": "application/json"}, b'{"error": '
                                     b'"sandbox node request timed out", "code": "node_request_timeout", "retryable": true}')
-        with LocalFleet(nodes=2, create_placement="power_of_k") as fleet:
+        with LocalFleet(nodes=2) as fleet:
             first, second = fleet.nodes
             second.sample_metrics = lambda: replace(fixed_metrics(), cpu_percent=90.0)  # Ranks behind.
             fleet.heartbeat()
@@ -138,7 +138,7 @@ class GroupFleetTests(unittest.TestCase):
             self.assertEqual((failed.status, failed.json()["counts"]), (502, {"failed": 1}))
 
     def test_leftovers_become_pending_and_a_repeat_places_them(self):
-        with LocalFleet(create_placement="power_of_k") as fleet:
+        with LocalFleet() as fleet:
             node = fleet.nodes[0]
             fleet.create("seed")  # Its image is cached: the creates themselves are refused.
             fleet.heartbeat()
@@ -156,12 +156,6 @@ class GroupFleetTests(unittest.TestCase):
             fleet.heartbeat()
             placed_now = post_group(fleet, "later", 2)
             self.assertEqual((placed_now.status, placed_now.json()["counts"]), (201, {"running": 2}))
-
-    def test_ranked_placement_refuses_groups(self):
-        with LocalFleet() as fleet:
-            refused = post_group(fleet, "g", 2)
-            self.assertEqual((refused.status, refused.json()["error_code"]),
-                             (501, "sandbox_group_create_unavailable"))
 
 
 class GroupPlanTests(unittest.TestCase):

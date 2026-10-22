@@ -53,8 +53,10 @@ Full record: `git show a04c1ad:docs/greenfield-simplification-review.md`,
 
 ### Creates use power-of-k placement and node admission; exec skips the database
 
-The direction, but the code default is still `ranked` (`gateway_create_placement:
-"power_of_k"` opts in). Each process samples k = 3 nodes and must hold its choice in an
+Ranked placement (the lexicographic minimum over every fresh node) was deleted on
+2026-10-22 (last present at d6d3973): in the herding simulation (10 workers, 8–32 API
+processes, 600-create bursts) its busiest worker ran 3–12× more creates above the fleet
+average than power-of-3's. Each process samples k = 3 nodes and must hold its choice in an
 in-flight overlay before the database write, or `pack` put 504 of 512 on one worker.
 It replaced a 32-at-a-time placement process: 512-sandbox p95 went from 36 s to 17.9 s.
 Groups default to `pack` (equal to `spread` within noise, less work per node). Exec
