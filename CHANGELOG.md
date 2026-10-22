@@ -21,6 +21,12 @@
   `sandboxes/guest_agent.py`), which was never wired into the exec path, and the
   flat-image qualification modules (`flat_image_qualification.py`,
   `oci_flat_delta.py`), which only their own test imported.
+- **A rejected create no longer overbooks the next candidate.** When a power-of-k
+  create's first worker refused it (admission closed or deferred), the gateway sent
+  it to the next sampled worker without checking fit again, although this process's
+  concurrent creates may have filled that worker since the choice. The gateway now
+  checks fit, with its current in-flight charges, before each later candidate and
+  skips one that is full; when none fits, the create queues with a retryable 503.
 
 ## 0.9.75 - 2026-10-12 (gateway)
 

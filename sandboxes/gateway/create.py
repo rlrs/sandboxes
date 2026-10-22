@@ -22,6 +22,7 @@ from ..metrics import MetricsStore, record_sandbox_scheduled
 from ..models import NodeHeartbeat, utc_now
 from ..placement_choice import (
     DEFAULT_K, FleetView, InflightOverlay, PlacementRequest, PowerOfKChooser, SandboxIncarnation,
+    node_fits,
 )
 from ..routing import (
     PendingSandboxDemand, RoutingStore, SandboxRoute, SandboxRouteAllocation,
@@ -130,6 +131,13 @@ class CreatePlacement:
                     break
                 for index, shared in enumerate(candidates):
                     excluded.add(shared.job_id)
+                    if index:
+                        # Fit when chosen, but concurrent creates may have filled it since.
+                        with self.chooser.planning:
+                            if not node_fits(shared, request.resources,
+                                             [*view.routes.routes_for(shared), *self.overlay.records(shared)]):
+                                continue
+                            holds.append((shared.job_id, self.overlay.hold(shared, request)))
                     heartbeat = detached_heartbeat(shared)
                     allocation = SandboxRouteAllocation(
                         sandbox_id=spec.id, node_id=heartbeat.node_id, job_id=heartbeat.job_id,
