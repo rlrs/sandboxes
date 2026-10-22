@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (gateway; workers; store node)
+## 0.10.0 - 2026-10-22 (gateway; workers; store node)
 
 - **The project is now `sandboxes`.** The distribution, the Python package
   (`import sandboxes`) and the CLI (`sandboxes …`, `sandboxes-storage`,

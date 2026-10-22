@@ -1246,7 +1246,7 @@ wheels = [
 
 [[package]]
 name = "sandboxes"
-version = "0.9.75"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
