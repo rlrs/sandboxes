@@ -130,24 +130,13 @@ bazel test //pkg/sentry/pgalloc:pgalloc_test //runsc/boot:boot_test \
   //runsc/cmd:cmd_test //pkg/sentry/fsimpl/tmpfs:tmpfs_test
 ```
 
-The repository benchmarks exercise the current direct-Warden boundary:
-
-- `benchmark_disk_memory.py`: disk-backed application-memory behavior;
-- `benchmark_hibernate.py`: park/wake latency and content verification;
-- [`../storage_native/benchmark_warden.py`](../storage_native/benchmark_warden.py):
-  storage-native Warden lifecycle, wake-burst, and density qualification;
-- `benchmark_direct_node_api.py`: product-facing API lifecycle;
-- `benchmark_crash_recovery.py`: durable recovery;
-- `benchmark_fsync.py`: artifact publication cost.
-
-`qualify_direct_node.py` verifies create, exec, file transfer, park, wake,
-delete, and daemon-restart recovery through the node API.
-
-`compatibility_workload.py` additionally verifies cross-user writes with
-default ACLs and umasks 0022/0077 on `/tmp` and `/srv`, including nested
-directories, FIFOs, Unix sockets, setgid ownership, explicit 0600/0700 modes,
-and controls without default ACLs. The matrix must pass before and after
-hibernation; adding the patch does not itself establish a live runtime pass.
+[`../storage_native/benchmark_warden.py`](../storage_native/benchmark_warden.py)
+qualifies the storage-native Warden lifecycle, wake bursts and density against
+this runtime. The one-off benchmarks, qualifiers and RL-scale spike probe that
+used to sit here (park/wake, disk-backed memory, crash recovery, fsync, node API,
+the ACL/umask compatibility matrix, EROFS, spikes S1, S2, S4 and S6-S8) are in
+`git show d6d39733:runtime/gvisor/`; `scripts/bench/bench_rl_scale.py` still names
+`spike_rl_scale.py --probe s2` as the source of page sharing and PSS/USS.
 
 ## Ownership invariants
 
@@ -158,51 +147,3 @@ hibernation; adding the patch does not itself establish a live runtime pass.
 - Failure leaves one recoverable owner; it never creates two writable owners.
 - OCI rootfs layers stay immutable. Writable state belongs to the
   storage-native service.
-
-## RL-scale spikes
-
-`spike_rl_scale.py` answers spikes S1, S2, S4, S6, S7 and S8 of the
-RL-scale plan (`git show a04c1ad:docs/rl-scale-architecture-plan.md`, section 9) against
-the pinned runsc. S3 (multi-lower EROFS) and S5 (restore into another netns)
-need runtime changes and are not covered. Run it as root on a disposable
-qualification VM, never on a node that serves sandboxes:
-
-```bash
-sudo python3 runtime/gvisor/spike_rl_scale.py \
-  --runsc /usr/local/bin/runsc --work-root /srv/rl-spike \
-  --output rl-spike-$(hostname)-$(date +%Y%m%dT%H%M).json \
-  --rootfs /srv/images/python-rootfs \
-  --variant gofer,gofer-shared,erofs --erofs-image /srv/images/python.erofs
-```
-
-- `--work-root` must be an existing root-owned directory that is not group- or
-  world-writable, and either empty or previously used by this script. Each run
-  works in `run-<id>/` below it and in its own cgroup
-  `/sys/fs/cgroup/ucloud-rl-spike-<id>`. Container cgroups are pre-created
-  there so runsc never writes to an ancestor's `cgroup.subtree_control`.
-- `--probe s1,s7` selects probes (default: all). S2 needs `--rootfs` (an
-  unpacked image) for the `gofer` and `gofer-shared` variants and
-  `--erofs-image` for `erofs`. Build the image as `qualify_erofs.py` does:
-  `mkfs.erofs -T0 -E noinline_data`.
-- S2 starts K ∈ `--k` (default 1,8,32) sandboxes per variant and runs
-  `--read-command` in each. It reports host `MemAvailable`, per-sandbox cgroup
-  `memory.current` and `memory.stat`, Sentry RSS/PSS/USS from `smaps_rollup`,
-  and memory-file allocation. The ratio is host bytes for K / (K × bytes for 1):
-  1.0 means duplicated per Sentry. `scaling_vs_k1` is the plan's ≤ 1.2 gate.
-  `gofer-shared` also passes `--overlay2=none`, because runsc rejects
-  `--file-access=shared` together with a root overlay.
-- S1 and S4 use a static busybox (`--busybox`, default `/usr/bin/busybox`).
-- S6 always probes `memory.reclaim swappiness=` on an empty test cgroup. The
-  freeze-and-reclaim swap test runs only with `--allow-swap-test` and an active
-  swap device.
-
-Status `pass` means the answer is the one the plan assumes; S2 reports its
-duplication verdict per variant in `answer`. `fail` is a measured contrary
-answer, `unsupported` an absent feature, and `error` a probe that could not
-complete. Every section lists the exact commands it ran. On a cleanup failure
-the run directory is kept and named in `retained_run_dir`. The script never
-overwrites an existing report.
-
-The client-side metrics (time to first command, burst, creation rate, density
-at p99, park/wake) come from `scripts/bench/bench_rl_scale.py`. Its reports point to
-this probe for page sharing and PSS/USS.

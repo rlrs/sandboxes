@@ -89,8 +89,9 @@ The dedicated work directory must already exist. The test formats temporary
 devices and a bounded loop filesystem; it never fills the host root filesystem.
 Its range server runs in a separate process so mmap page faults cannot block
 the HTTP server on Python's GIL. Add `--runsc`, `--conformance-workload` and
-`--noop-workload` (the latter two built statically from the repository C
-sources) to verify real gVisor processes across all three migration cases.
+`--noop-workload` (the latter two built statically from `conformance_workload.c`
+and `noop.c` in this directory) to verify real gVisor processes across all three
+migration cases.
 See the qualification report
 (`git show a04c1ad:docs/reviews/agentenv022-upgrade-2026-09-22.md`)
 for measured results and remaining production acceptance checks.
