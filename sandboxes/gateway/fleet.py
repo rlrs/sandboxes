@@ -28,27 +28,20 @@ class FleetView:
         self.heartbeat_ttl_seconds = heartbeat_ttl_seconds
         self.registry_refs = registry_refs
 
-    def ready_heartbeats(self, *, shared: bool = False) -> list[NodeHeartbeat]:
+    def ready_heartbeats(self) -> list[NodeHeartbeat]:
         now = utc_now()
         return [
             heartbeat
-            for heartbeat in (
-                self.store.load_heartbeats(shared=True) if shared
-                else self.store.load_heartbeats()
-            ).values()
+            for heartbeat in self.store.load_heartbeats().values()
             if heartbeat.node_url
             and not heartbeat.draining
             and heartbeat.admission_open
             and heartbeat.is_fresh(now, self.heartbeat_ttl_seconds)
         ]
 
-    def ready_sandbox_heartbeats(self, *, shared: bool = False) -> list[NodeHeartbeat]:
+    def ready_sandbox_heartbeats(self) -> list[NodeHeartbeat]:
         return [
-            heartbeat
-            for heartbeat in (
-                self.ready_heartbeats(shared=True) if shared
-                else self.ready_heartbeats()
-            )
+            heartbeat for heartbeat in self.ready_heartbeats()
             if "sandbox" in heartbeat.capabilities
         ]
 

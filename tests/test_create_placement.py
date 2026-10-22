@@ -1,7 +1,7 @@
-"""C4.3 phases 1-2: power-of-k creates behind ``gateway_create_placement``.
+"""C4.3 phases 1-2: power-of-k creates.
 
 Tier: contract. Two gateways over one routing and heartbeat state place
-creates in both modes. Power-of-k moves a definitely rejected create to the
+creates. Power-of-k moves a definitely rejected create to the
 next candidate as a fresh incarnation, keeps an ambiguous one where it is,
 and queues demand once every candidate rejects. A worker bounds its
 admission wait by the gateway's header. The route intent keeps today's
@@ -46,30 +46,28 @@ HASH = "a" * 64
 
 
 class TwoGatewayTests(unittest.TestCase):
-    def test_both_modes_place_creates_from_either_gateway(self):
-        for mode in ("ranked", "power_of_k"):
-            for postgres in (False, True):
-                with self.subTest(mode=mode, postgres=postgres), LocalFleet(
-                        nodes=2, gateways=2, create_placement=mode, postgres=postgres) as fleet:
-                    names = [f"{mode}-{index}" for index in range(6)]
-                    for index, name in enumerate(names):
-                        response = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image},
-                                                 token="sandbox", gateway=index % 2)
-                        self.assertEqual(response.status, 201, response.body)
-                    for name in names:
-                        route = fleet.route(name)
-                        self.assertEqual((route.generation, route.state), (1, "running"))
-                        self.assertIsNotNone(fleet.node_for(name).registration(name))
-                    retried = fleet.request("POST", "/v1/sandboxes", payload={"id": names[0], **SPEC, "image": fleet.image},
-                                            token="sandbox", gateway=1)
-                    self.assertEqual((retried.status, retried.json()["recovered"]), (200, True))
-                    self.assertEqual(fleet.exec(names[1], ["cat", "/opt/greeting"]).stdout,
-                                     "hello from the image\n")
-                    self.assertEqual(fleet.delete(names[2]).status, 200)
-                    self.assertIsNone(fleet.route(names[2]))
+    def test_creates_place_from_either_gateway(self):
+        for postgres in (False, True):
+            with self.subTest(postgres=postgres), LocalFleet(nodes=2, gateways=2, postgres=postgres) as fleet:
+                names = [f"sbx-{index}" for index in range(6)]
+                for index, name in enumerate(names):
+                    response = fleet.request("POST", "/v1/sandboxes", payload={"id": name, **SPEC, "image": fleet.image},
+                                             token="sandbox", gateway=index % 2)
+                    self.assertEqual(response.status, 201, response.body)
+                for name in names:
+                    route = fleet.route(name)
+                    self.assertEqual((route.generation, route.state), (1, "running"))
+                    self.assertIsNotNone(fleet.node_for(name).registration(name))
+                retried = fleet.request("POST", "/v1/sandboxes", payload={"id": names[0], **SPEC, "image": fleet.image},
+                                        token="sandbox", gateway=1)
+                self.assertEqual((retried.status, retried.json()["recovered"]), (200, True))
+                self.assertEqual(fleet.exec(names[1], ["cat", "/opt/greeting"]).stdout,
+                                 "hello from the image\n")
+                self.assertEqual(fleet.delete(names[2]).status, 200)
+                self.assertIsNone(fleet.route(names[2]))
 
     def test_a_stale_view_sends_a_deferred_create_to_the_next_candidate(self):
-        with LocalFleet(nodes=2, create_placement="power_of_k") as fleet:
+        with LocalFleet(nodes=2) as fleet:
             first, second = fleet.nodes
             # The second ranks behind; CPU alone defers nothing at the worker.
             second.sample_metrics = lambda: replace(fixed_metrics(), cpu_percent=90.0)
@@ -92,7 +90,7 @@ class TwoGatewayTests(unittest.TestCase):
         # gateway timeout) tries the next candidate instead of failing with 502.
         timed_out = ProxiedResponse(504, {"Content-Type": "application/json"}, b'{"error": '
                                     b'"sandbox node request timed out", "code": "node_request_timeout", "retryable": true}')
-        with LocalFleet(nodes=2, create_placement="power_of_k") as fleet:
+        with LocalFleet(nodes=2) as fleet:
             first, second = fleet.nodes
             second.sample_metrics = lambda: replace(fixed_metrics(), cpu_percent=90.0)  # Ranks behind.
             fleet.heartbeat()
@@ -110,7 +108,7 @@ class TwoGatewayTests(unittest.TestCase):
             self.assertNotIn(("POST", "/v1/sandboxes"), first.requests)
 
     def test_every_candidate_rejecting_queues_retryable_demand(self):
-        with LocalFleet(create_placement="power_of_k") as fleet:
+        with LocalFleet() as fleet:
             node = fleet.nodes[0]
             fleet.create("seed")  # Its image is cached: the create itself is refused.
             fleet.heartbeat()
@@ -126,7 +124,7 @@ class TwoGatewayTests(unittest.TestCase):
                              ("node_admission_closed", 1))
 
     def test_a_dispatched_root_needs_a_capable_worker(self):
-        with LocalFleet(create_placement="power_of_k") as fleet:
+        with LocalFleet() as fleet:
             handler = fleet.gateway.RequestHandlerClass
             mapped = {fleet.image: ROOT}
             handler.dispatch_environment_roots = True
@@ -165,7 +163,7 @@ class QueuedCreateTests(unittest.TestCase):
     and groups and runs them itself. Here two gateways are those processes."""
 
     def fleet(self, nodes=2, **options):
-        return LocalFleet(nodes=nodes, gateways=2, postgres=True, create_placement="power_of_k",
+        return LocalFleet(nodes=nodes, gateways=2, postgres=True,
                           gateway_options={"queue_placement": True, **options})
 
     def test_two_api_processes_claim_creates_and_place_each_once(self):
@@ -345,15 +343,13 @@ class AdmissionWaitTests(unittest.TestCase):
                 CREATE_ADMISSION_WAIT.reset(token)
                 service._startup_slots.release()
 
-    def test_the_switch_defaults_to_ranked_and_round_trips(self):
+    def test_a_config_naming_power_of_k_still_loads_and_ranked_is_refused(self):
         raw = DeploymentConfig.default(scope_id="project").to_dict()
         self.assertNotIn("gateway_create_placement", raw)
-        self.assertEqual(DeploymentConfig.from_dict(raw).gateway_create_placement, "ranked")
-        raw["gateway_create_placement"] = "power_of_k"
-        self.assertEqual(DeploymentConfig.from_dict(raw).to_dict()["gateway_create_placement"], "power_of_k")
-        raw["gateway_create_placement"] = "random"
+        self.assertEqual(DeploymentConfig.from_dict({**raw, "gateway_create_placement": "power_of_k"}),
+                         DeploymentConfig.from_dict(raw))
         with self.assertRaises(ValueError):
-            DeploymentConfig.from_dict(raw)
+            DeploymentConfig.from_dict({**raw, "gateway_create_placement": "ranked"})
 
 
 class IntentFences:

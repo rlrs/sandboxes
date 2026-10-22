@@ -822,9 +822,9 @@ class LocalFleet:
     bounds the gateway's and each node's admission waits (production: 30 s),
     and ``max_concurrent_sandbox_creates`` caps the gateway's in-flight creates.
     ``gateways`` servers share the routing and heartbeat state, as one host's
-    gateway processes do (nodes heartbeat to the first); ``create_placement``
-    is the deployment switch; ``gateway_options`` pass further ``build_server``
-    arguments (a managed registry, an environment registry).
+    gateway processes do (nodes heartbeat to the first); ``gateway_options``
+    pass further ``build_server`` arguments (a managed registry, an
+    environment registry).
     ``rust_admission`` runs each node's admission in a real noded
     (``NodedAdmission``; in-process nodes only). ``environments`` selects
     signed environment images (the default) over the legacy local image
@@ -835,7 +835,7 @@ class LocalFleet:
     def __init__(self, *, nodes: int = 1, postgres: bool = False, heartbeat_ttl_seconds: int = 120,
                  node_processes: bool = False, admission_wait_seconds: float = 30.0,
                  max_concurrent_sandbox_creates: int | None = None, gateways: int = 1,
-                 create_placement: str = "ranked", gateway_options: dict | None = None,
+                 gateway_options: dict | None = None,
                  rust_admission: bool = False, environments: bool = True) -> None:
         if nodes < 1:
             raise ValueError("a fleet needs at least one node")
@@ -856,7 +856,7 @@ class LocalFleet:
             {} if max_concurrent_sandbox_creates is None
             else {"max_concurrent_sandbox_creates": max_concurrent_sandbox_creates}
         )
-        self.gateway_options.update(create_placement=create_placement, process_count=gateways, **(gateway_options or {}))
+        self.gateway_options.update(process_count=gateways, **(gateway_options or {}))
         self.gateway_count = gateways
         self.gateways: list = []
         self.tokens = FleetTokens.generate()

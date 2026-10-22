@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import Event, Thread
+from threading import Thread
 import time
 import unittest
 
@@ -58,31 +58,3 @@ class FairReservationLockTests(unittest.TestCase):
                 pool.submit(lock.release).result()
         with self.assertRaises(RuntimeError):
             lock.release()
-
-    def test_create_waits_through_short_contention_without_restarting_request(self):
-        from tempfile import TemporaryDirectory
-        from pathlib import Path
-        from tests.gateway_support import gateway_services
-        from sandboxes.gateway.placement import _GATEWAY_SCHEDULING_LOCK
-        from sandboxes.models import ResourceQuantity
-        from sandboxes.routing import RoutingStore
-
-        entered = Event()
-        with TemporaryDirectory() as directory:
-            placement = gateway_services(
-                routing_store=RoutingStore(Path(directory) / 'routes.sqlite'),
-            ).placement
-            placement.select = lambda *_args, **_kwargs: entered.set()
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                with _GATEWAY_SCHEDULING_LOCK:
-                    future = pool.submit(
-                        placement.select_and_reserve, 'test', ResourceQuantity(),
-                        spec={'id': 'test'}, spec_hash='a' * 64, lock_timeout=2,
-                    )
-                    self.wait_queued(_GATEWAY_SCHEDULING_LOCK, 1)
-                    # Previously this aborted at 250 ms and repeated the entire
-                    # image-resolution/HTTP pipeline on the next SDK retry.
-                    self.assertFalse(entered.wait(.35))
-                    self.assertFalse(future.done())
-                self.assertIsNone(future.result(timeout=2))
-                self.assertTrue(entered.is_set())

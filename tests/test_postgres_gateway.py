@@ -67,31 +67,6 @@ class PostgresGatewayContracts(control_plane.ControlPlaneTests):
 
     _store = postgres_routing.PostgresRoutingContracts._store
 
-    def test_postgres_placement_does_not_wait_for_legacy_process_lock(self):
-        from tempfile import TemporaryDirectory
-        from tests.gateway_support import gateway_services
-        from sandboxes.gateway.placement import _GATEWAY_SCHEDULING_LOCK
-        from sandboxes.models import ResourceQuantity
-
-        with TemporaryDirectory() as directory:
-            placement = gateway_services(
-                routing_store=self.store(Path(directory) / "routes.sqlite"),
-            ).placement
-            placement.select = lambda *a, **kw: None
-            with (
-                _GATEWAY_SCHEDULING_LOCK,
-                ThreadPoolExecutor(1) as executor,
-            ):
-                result = executor.submit(
-                    placement.select_and_reserve,
-                    "s",
-                    ResourceQuantity(),
-                    spec={"id": "s"},
-                    spec_hash="a" * 64,
-                    lock_timeout=30,
-                ).result(timeout=0.5)
-                self.assertIsNone(result)
-
     def test_gateway_factory_reuses_pool_for_concurrent_path_lookups(self):
         from tempfile import TemporaryDirectory
 

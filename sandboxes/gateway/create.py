@@ -22,6 +22,7 @@ from ..metrics import MetricsStore, record_sandbox_scheduled
 from ..models import NodeHeartbeat, utc_now
 from ..placement_choice import (
     DEFAULT_K, FleetView, InflightOverlay, PlacementRequest, PowerOfKChooser, SandboxIncarnation,
+    node_fits,
 )
 from ..routing import (
     PendingSandboxDemand, RoutingStore, SandboxRoute, SandboxRouteAllocation,
@@ -50,7 +51,7 @@ CREATE_ROUNDS = 2
 
 
 class CreateExchange(Exchange, Protocol):
-    """The handler's create steps this use case shares with ranked placement."""
+    """The handler's create steps this use case calls back into."""
 
     def _ensure_image_for_create(self, heartbeat: NodeHeartbeat, image: str,
                                  environment_root: str | None = None) -> ProxiedResponse | None: ...
@@ -130,6 +131,13 @@ class CreatePlacement:
                     break
                 for index, shared in enumerate(candidates):
                     excluded.add(shared.job_id)
+                    if index:
+                        # Fit when chosen, but concurrent creates may have filled it since.
+                        with self.chooser.planning:
+                            if not node_fits(shared, request.resources,
+                                             [*view.routes.routes_for(shared), *self.overlay.records(shared)]):
+                                continue
+                            holds.append((shared.job_id, self.overlay.hold(shared, request)))
                     heartbeat = detached_heartbeat(shared)
                     allocation = SandboxRouteAllocation(
                         sandbox_id=spec.id, node_id=heartbeat.node_id, job_id=heartbeat.job_id,
@@ -334,12 +342,6 @@ def _node_create_may_still_be_running(response: ProxiedResponse) -> bool:
         # the node cannot have received or persisted this create operation.
         return False
     return response.status in {408, 425, 429, 500, 502, 503, 504}
-
-
-def _node_create_definitively_rejected(response: ProxiedResponse) -> bool:
-    """An explicit pre-provisioning rejection is safe to place elsewhere."""
-
-    return _node_create_rejection_reason(response) is not None
 
 
 def _node_create_rejection_reason(response: ProxiedResponse) -> str | None:

@@ -1,9 +1,7 @@
 """Power-of-k placement library (plan C4.3) and its herding simulation.
 
-The simulation gives the library and the gateway's lexicographic ranking the
-same information, which is C4.3's regime: one stale fleet view plus each
-process's own overlay. Run with PLACEMENT_SIMULATION_REPORT=1 to print the
-table, with a reference row for today's serialized shared-route view.
+The simulation gives each process one stale fleet view plus its own overlay,
+which is C4.3's regime.
 """
 from __future__ import annotations
 
@@ -11,9 +9,7 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 import heapq
-import os
 import random
-from statistics import median
 import unittest
 
 from sandboxes.deployment import package_version
@@ -23,7 +19,6 @@ from sandboxes.models import (
     NodeRuntimeMetrics,
     ResourceQuantity,
     SandboxInventoryEntry,
-    is_soft_drained,
     utc_now,
 )
 from sandboxes.placement_accounting import (
@@ -387,102 +382,6 @@ class HoldTests(unittest.TestCase):
             self.assertEqual(overlay.reservation_count(), 0)
 
 
-class LexicographicRanking:
-    """The essence of gateway Placement.rank (lexicographic min
-    over every candidate) given the same inputs as power-of-k: the fleet view
-    plus this process's own unconfirmed creates, which play the part of
-    InflightCreatePlacements claims and of its own committed creating routes.
-    Heartbeat used resources stand in for durably assigned shapes. Rejected
-    workers are excluded and the rest re-ranked, as Placement.select_and_reserve
-    does, which here is the remaining order."""
-
-    def __init__(self, overlay, rng, target, processes):
-        self.overlay, self.target = overlay, target
-
-    def choose(self, fleet, request):
-        candidates = []
-        for node in fleet.nodes:
-            own = list(self.overlay.records(node))
-            if node.job_id not in request.excluded_job_ids and node_fits(node, request.resources, own):
-                candidates.append((self.rank(node, own, request), node))
-        return tuple(node for _rank, node in sorted(candidates, key=lambda item: item[0]))
-
-    def rank(self, node, own, request):
-        total = node.total_resources
-        shape = max(
-            (node.used_resources.vcpu + sum(r.resources.vcpu for r in own)) / max(1, total.vcpu),
-            (node.used_resources.memory_mb + sum(r.resources.memory_mb for r in own))
-            / max(1, total.memory_mb),
-        )
-        active_creates = node.active_sandbox_creates + len(own)
-        load = node_pressure_score(node) + active_creates / self.target
-        busy = load >= 0.6  # gateway.placement._AFFINITY_LOAD_BAND
-        cached = request.residency.get(node.node_id, 0.0) >= 1.0
-        sending = not cached and any(r.image == request.image for r in own)
-        free = _node_available_resources(node, own)
-        return (
-            is_soft_drained(node), busy,
-            shape if busy else 0.0, load if busy else 0.0,
-            0 if cached else 1 if sending else 2,
-            # No registry manifest: _cold_image_placement_cost_for_state is
-            # (1, max(in-flight image count, active creates)).
-            (1, max(int(sending), active_creates)),
-            shape, load, active_creates,
-            (max(0.0, free.vcpu - request.resources.vcpu),
-             max(0, free.memory_mb - request.resources.memory_mb),
-             max(0, free.disk_mb - request.resources.disk_mb)),
-            node.node_id,
-        )
-
-
-class LexicographicFidelityTests(unittest.TestCase):
-    def test_reimplementation_picks_what_rank_candidates_picks(self):
-        # Fails rather than skips when the live ranking moves (C6.1) or goes
-        # (C4.3 wiring): the simulation's baseline must not drift unchecked.
-        from tests.gateway_support import gateway_services
-        from sandboxes.gateway.placement import NodePlacementState
-
-        placement = gateway_services(create_target_concurrency_per_node=8).placement
-        rng, contested = random.Random(42), 0
-        for trial in range(400):
-            overlay, nodes = InflightOverlay(clock=FakeClock()), []
-            for index in range(rng.randint(1, 8)):
-                nodes.append(heartbeat(
-                    f"n{index}", slots=rng.choice([8, 32, 64]), used=rng.randint(0, 8),
-                    creating=rng.randint(0, 12), cpu=rng.choice([5.0, 20.0, 45.0, 70.0, 95.0]),
-                    labels={SOFT_DRAIN_LABEL: "x"} if rng.random() < 0.1 else {},
-                ))
-                for claim in range(rng.randint(0, 4)):
-                    overlay.reserve(nodes[-1], incarnation(f"{trial}-{index}-{claim}"),
-                                    rng.choice([IMG, PLAIN]))
-            request = replace(IMG, residency={n.node_id: 1.0 for n in nodes if rng.random() < 0.3})
-            ranked = LexicographicRanking(overlay, None, 8, 1).choose(FleetView(tuple(nodes)), request)
-            states, sending = [], set()
-            for node in nodes:
-                own = list(overlay.records(node))
-                if not node_fits(node, SHAPE, own):
-                    continue
-                vcpu = node.used_resources.vcpu + sum(r.resources.vcpu for r in own)
-                memory = node.used_resources.memory_mb + sum(r.resources.memory_mb for r in own)
-                pending = node.node_id not in request.residency and any(r.image == "img" for r in own)
-                sending |= {node.node_id} if pending else set()
-                states.append((node, NodePlacementState(
-                    available_resources=_node_available_resources(node, own),
-                    inflight_image_identities=frozenset({"img"} if pending else ()),
-                    projected_image_identities=frozenset(),
-                    active_creates=node.active_sandbox_creates + len(own),
-                    assigned_shape_pressure=max(vcpu / 32, memory / TOTAL_MEMORY_MB),
-                    assigned_vcpu=vcpu, assigned_memory_mb=memory,
-                )))
-            if not states:
-                self.assertEqual(ranked, ())
-                continue
-            chosen = placement.rank(states, SHAPE, "img", set(request.residency), sending, None)
-            self.assertEqual(chosen.node_id, ranked[0].node_id)
-            contested += len(states) > 1
-        self.assertGreater(contested, 200)
-
-
 def power_of_k(overlay, rng, target, processes):
     return PowerOfKChooser(
         overlay, rng=rng, target_creates_per_node=target, api_processes=processes,
@@ -531,11 +430,10 @@ class Scenario:
     target: int = 8
 
 
-def simulate(policy, scenario: Scenario, seed: int, *, shared_overlay=False) -> dict:
+def simulate(policy, scenario: Scenario, seed: int) -> dict:
     """Place a create burst from independent API processes. Each worker
     publishes a heartbeat every interval; its node gate accepts while the
-    sandbox fits its disk, as direct_service does. A shared overlay models
-    today's committed-route view, which C4.3 deletes with its serialization."""
+    sandbox fits its disk, as direct_service does."""
 
     rng = random.Random(seed)
     clock = FakeClock()
@@ -560,10 +458,7 @@ def simulate(policy, scenario: Scenario, seed: int, *, shared_overlay=False) -> 
             heapq.heappush(events, (phase + beat * scenario.heartbeat_seconds, 0, worker.node))
     for index in range(scenario.creates):
         heapq.heappush(events, (index * scenario.seconds / scenario.creates, 1, index))
-    overlays = (
-        [InflightOverlay(clock=clock)] * scenario.processes if shared_overlay
-        else [InflightOverlay(clock=clock) for _ in range(scenario.processes)]
-    )
+    overlays = [InflightOverlay(clock=clock) for _ in range(scenario.processes)]
     choosers = [
         policy(overlay, random.Random(seed * 1000 + index), scenario.target, scenario.processes)
         for index, overlay in enumerate(overlays)
@@ -620,7 +515,6 @@ SCENARIOS = (
     Scenario("near-full", slots=64),
 )
 SEEDS = range(3)
-POLICIES = (("lexicographic", LexicographicRanking), ("power-of-3", power_of_k))
 
 
 def summarize(runs) -> dict:
@@ -634,65 +528,22 @@ def summarize(runs) -> dict:
 
 
 class HerdingSimulationTests(unittest.TestCase):
-    """N processes with independent overlays place a burst on M workers."""
+    """N processes with independent overlays place a burst on M workers.
+    The deleted lexicographic ranking herded 3-12x more (docs/decisions.md)."""
 
-    @classmethod
-    def setUpClass(cls):
-        cls.results = {
-            (scenario.name, name): [simulate(policy, scenario, seed) for seed in SEEDS]
-            for scenario in SCENARIOS for name, policy in POLICIES
-        }
-        if os.environ.get("PLACEMENT_SIMULATION_REPORT"):
-            reference = {
-                (scenario.name, "shared-routes"): [
-                    simulate(LexicographicRanking, scenario, seed, shared_overlay=True)
-                    for seed in SEEDS
-                ]
-                for scenario in SCENARIOS
-            }
-            print(simulation_report(cls.results | reference))
-
-    def compare(self, scenario):
-        return (summarize(self.results[(scenario.name, "lexicographic")]),
-                summarize(self.results[(scenario.name, "power-of-3")]))
-
-    def test_power_of_k_herds_less_than_the_lexicographic_minimum(self):
+    def test_power_of_k_places_every_create_without_herding(self):
         for scenario in SCENARIOS:
             with self.subTest(scenario=scenario.name):
-                old, new = self.compare(scenario)
-                self.assertEqual(new["unplaced"], old["unplaced"])
-                self.assertLess(2 * new["overshoot"], old["overshoot"])
-                self.assertLess(2 * new["excess_p99"], old["excess_p99"])
-
-    def test_power_of_k_overbooks_no_more_than_the_lexicographic_minimum(self):
-        for scenario in SCENARIOS:
-            with self.subTest(scenario=scenario.name):
-                old, new = self.compare(scenario)
-                self.assertLessEqual(2 * new["rejections"], old["rejections"])
-                self.assertLessEqual(new["max_node_rejections"], old["max_node_rejections"])
+                result = summarize([simulate(power_of_k, scenario, seed) for seed in SEEDS])
+                self.assertEqual(result["unplaced"], 0)
+                self.assertLess(result["overshoot"], 2 * scenario.target)
                 if scenario.slots * scenario.nodes >= 2 * scenario.creates:
-                    self.assertEqual(new["rejections"], 0)
+                    self.assertEqual(result["rejections"], 0)
 
     def test_simulation_is_deterministic(self):
         self.assertEqual(
             simulate(power_of_k, SCENARIOS[0], 0), simulate(power_of_k, SCENARIOS[0], 0),
         )
-
-
-def simulation_report(results) -> str:
-    lines = [
-        f"{'scenario':<15} {'policy':<14} {'overshoot':>9} {'p99':>5} {'p50':>5} "
-        f"{'rejects':>7} {'max/node':>8}  accepted per node (seed 0, sorted)"
-    ]
-    for (scenario, policy), runs in results.items():
-        summary = summarize(runs)
-        lines.append(
-            f"{scenario:<15} {policy:<14} {summary['overshoot']:>9} "
-            f"{summary['excess_p99']:>5} {median(run['excess_p50'] for run in runs):>5} "
-            f"{summary['rejections']:>7} {summary['max_node_rejections']:>8}  "
-            f"{sorted(runs[0]['counts'])}"
-        )
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":

@@ -475,8 +475,6 @@ class PlacementConcurrencyTests(unittest.TestCase):
                          32)
         self.assertEqual(placement_queue.create_concurrency(Mock(create_target_concurrency_per_node=32, max_nodes=10),
                                                             6), 54)
-        self.assertEqual(placement_queue.placement_kinds("ranked"), ("create", "wake", "group"))
-        self.assertEqual(placement_queue.placement_kinds("power_of_k"), ("wake",))
 
 
 async def _chunks(body):

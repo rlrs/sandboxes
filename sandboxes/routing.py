@@ -1112,13 +1112,14 @@ class RoutingStore:
         return rows
 
     def placement_routes_readonly(self) -> list[SandboxRoute]:
-        """Fresh fleet routes for create ranking, reusing decodes of unchanged rows.
+        """Fresh fleet routes for placement, reusing decodes of unchanged rows.
 
-        Every create ranks the whole fleet, and decoding each route's JSON and
-        validating its identity costs several times the query itself. A row
-        whose complete column values are identical to the previous scan yields
-        the same immutable route object. Callers must treat the returned
-        routes' ``spec`` and ``storage_snapshot`` mappings as read-only.
+        Choosing a wake or migration destination, and the image-warmup check,
+        read the whole fleet; decoding each route's JSON and validating its
+        identity costs several times the query itself. A row whose complete
+        column values are identical to the previous scan yields the same
+        immutable route object. Callers must treat the returned routes'
+        ``spec`` and ``storage_snapshot`` mappings as read-only.
         """
         previous = self._placement_route_memo
         current: dict[str, tuple[tuple[Any, ...], SandboxRoute]] = {}
@@ -1210,8 +1211,8 @@ class RoutingStore:
         """One node's routes for placement accounting; read-only, like
         placement_routes_readonly, whose memo of unchanged rows it shares.
 
-        Each create or wake admission re-reads its candidate node; decoding
-        every route's JSON again was most of the placement worker's CPU.
+        Each wake admission re-reads its candidate node; decoding every
+        route's JSON again was most of the placement worker's CPU.
         """
         cleaned_url = node_url.strip().rstrip("/")
         previous = self._placement_route_memo

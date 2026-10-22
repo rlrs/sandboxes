@@ -23,7 +23,6 @@ from sandboxes.models import ResourceQuantity
 from sandboxes.shared_control.placement_queue import (
     PlacementQueue,
     PlacementQueueWorker,
-    placement_kinds,
 )
 from sandboxes.shared_control.routing_repository import PostgresRoutingStore
 
@@ -52,6 +51,7 @@ class PlacementQueueHTTPTests(TestCase):
         self.release = Event()
         self.woken = Event()
         self.execution_finished = Event()
+        self.claim_finished = Event()
         self.create_calls = []
         self.wake_calls = []
         self.reject_first_node = False
@@ -142,17 +142,25 @@ class PlacementQueueHTTPTests(TestCase):
             return response.status, json.loads(response.read())
 
     @contextmanager
-    def pipeline(self, *, create_concurrency=1, create_placement="ranked"):
+    def pipeline(self, *, create_claim_budget=1):
         with _running_server(self.node) as node_url:
             public = _gateway_server(
                 self.root, routing_file=self.routing_file, queue_placement=True,
-                create_placement=create_placement,
+                create_claim_budget=create_claim_budget,
             )
             self.public_queue = public.RequestHandlerClass.placement_queue.client
-            self.public_claims = public.RequestHandlerClass.placement_claims
+            self.public_claims = claims = public.RequestHandlerClass.placement_claims
+            claimed = claims.execute
+
+            async def observed_claim(session, command):
+                try:
+                    return await claimed(session, command)
+                finally:
+                    self.claim_finished.set()
+
+            claims.execute = observed_claim
             private = _gateway_server(
                 self.root, routing_file=self.routing_file, placement_worker=True,
-                create_placement=create_placement,
             )
             with (
                 _running_server(public) as public_url,
@@ -181,8 +189,7 @@ class PlacementQueueHTTPTests(TestCase):
                     PlacementQueue(DSN, "test-deployment", schema=self.schema),
                     origin=private_url,
                     token="test-gateway-secret",
-                    create_concurrency=create_concurrency,
-                    kinds=placement_kinds(create_placement),
+                    kinds=("wake",),
                 )
                 execute = worker.execute
 
@@ -259,19 +266,9 @@ class PlacementQueueHTTPTests(TestCase):
             self.assertEqual(command["state"], "done")
             self.assertEqual(command["generation"], route.generation)
 
-    def test_ranked_creates_stay_with_the_placement_process_loopback(self):
-        # C4.3 phase 2 changes nothing in ranked mode: API processes claim
-        # nothing, and the placement process replays every kind to itself.
-        self.release.set()
-        with self.pipeline() as public:
-            self.assertIsNone(self.public_claims)
-            self.assertEqual(list(self.queue_worker.budgets), ["create", "wake", "group"])
-            self.assertEqual(self.request(public + "/v1/sandboxes", self.spec("ranked-one"))[0], 201)
-            self.assertTrue(self.execution_finished.is_set())
-
     def test_power_of_k_creates_run_in_the_api_process_and_wakes_stay(self):
         self.release.set()
-        with self.pipeline(create_placement="power_of_k") as public:
+        with self.pipeline() as public:
             self.assertEqual(list(self.queue_worker.budgets), ["wake"])
             self.assertEqual(list(self.public_claims.budgets), ["create", "group"])
             self.assertEqual(self.request(public + "/v1/sandboxes", self.spec("in-process"))[0], 201)
@@ -288,7 +285,7 @@ class PlacementQueueHTTPTests(TestCase):
     def test_a_group_is_one_durable_command_an_api_process_runs(self):
         self.release.set()
         template = {key: value for key, value in self.spec("x").items() if key != "id"}
-        with self.pipeline(create_placement="power_of_k") as public:
+        with self.pipeline() as public:
             status, body = self.request(
                 public + "/v1/sandboxes:batch", {"group_id": "q", "count": 3, "spec": template})
             self.assertFalse(self.execution_finished.is_set())
@@ -559,6 +556,8 @@ class PlacementQueueHTTPTests(TestCase):
                     vcpu=16, memory_mb=16384, disk_mb=65536
                 ),
             )
+            # Busier, so the closed first worker is tried first.
+            heartbeat = replace(heartbeat, runtime_metrics=replace(heartbeat.runtime_metrics, cpu_percent=90.0))
             self.assertEqual(
                 post_heartbeat(public + "/v1/nodes/heartbeat", heartbeat).status, 200
             )
@@ -599,7 +598,7 @@ class PlacementQueueHTTPTests(TestCase):
         from urllib.error import HTTPError
 
         with (
-            self.pipeline(create_concurrency=0) as public,
+            self.pipeline(create_claim_budget=0) as public,
             ThreadPoolExecutor(1) as requests,
         ):
             result = requests.submit(
@@ -609,7 +608,7 @@ class PlacementQueueHTTPTests(TestCase):
             self.assertIsNone(command["generation"])
             self.assertEqual(command["state"], "queued")
             self.delete(public, "delete-queued")
-            self.queue_worker.budgets["create"] = 1
+            self.public_claims.budgets["create"] = 1
             self.release.set()
             with self.assertRaises(HTTPError) as cancelled:
                 result.result(5)
@@ -643,7 +642,7 @@ class PlacementQueueHTTPTests(TestCase):
             self.assertIn(cancelled.exception.code, (409, 410))
             cancelled.exception.close()
             self.assertTrue(
-                self.execution_finished.wait(5),
+                self.claim_finished.wait(5),
                 "cancelled in-flight create did not finish",
             )
             self.assertIsNone(self.routing.get_sandbox("delete-bound"))

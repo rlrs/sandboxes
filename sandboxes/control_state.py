@@ -185,8 +185,8 @@ class ControlStateStore:
         """Load every heartbeat.
 
         ``shared=True`` returns the validated cached objects without copying
-        each inventory entry. Placement ranking reads the whole fleet per
-        create; such callers must not mutate labels or snapshot descriptors.
+        each inventory entry. Create placement reads the whole fleet per
+        attempt; such callers must not mutate labels or snapshot descriptors.
         """
         # One SELECT is a coherent SQLite snapshot. Return the connection before
         # decoding inventories, and avoid a GIL handoff for each worker row plus

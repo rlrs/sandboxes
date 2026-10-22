@@ -1212,7 +1212,6 @@ def cmd_serve_control_plane(args: argparse.Namespace) -> int:
         create_target_concurrency_per_node=(
             config.policy.create_target_concurrency_per_node
         ),
-        create_placement=config.gateway_create_placement,
         max_http_request_threads=max(64, config.gateway_max_http_request_threads // processes),
         max_sandbox_resources=config.sandbox.resources,
         wake_consolidation_policy=config.policy,
@@ -1234,13 +1233,9 @@ def cmd_serve_control_plane(args: argparse.Namespace) -> int:
         routing=server.RequestHandlerClass.routing_store
         placement_store=PlacementQueue(routing.pool.conninfo,config.deployment_id,schema=routing.schema)
         placement_stop=asyncio.Event()
-        from .shared_control.placement_queue import create_concurrency,placement_kinds
-        # The switch is read here and by every API process at start; deploy
-        # restarts both units, so ranked and power_of_k never place together.
+        # API processes claim creates and groups themselves; this one, wakes.
         worker=PlacementQueueWorker(placement_store,origin=f'http://127.0.0.1:{port}',
-            token=server.RequestHandlerClass.gateway_bearer_token,
-            create_concurrency=create_concurrency(config.policy),
-            kinds=placement_kinds(config.gateway_create_placement))
+            token=server.RequestHandlerClass.gateway_bearer_token,kinds=("wake",))
         placement_task=node_http_pool.submit(worker.run(placement_stop))
     try:
         server.serve_forever()

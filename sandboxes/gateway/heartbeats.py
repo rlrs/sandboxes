@@ -21,7 +21,6 @@ from ..routing import (
     RoutingStore, SandboxRoute, SandboxRouteConflictError, route_with_inventory_snapshot,
 )
 from ..worker_receipts import _record_generation
-from .image_resolution import RegistryLayerMetadataCache
 from .job_reads import parked_job_record
 from .registry_refs import (
     RegistryImageReferenceUnavailable, RegistryReferences, _portable_snapshot_for_route,
@@ -161,7 +160,6 @@ class HeartbeatIngest:
     def __init__(
         self, *, store: ControlStateStore, routing_store: RoutingStore,
         metrics_store: MetricsStore, deployment_id: str, registry_refs: RegistryReferences,
-        layer_cache: RegistryLayerMetadataCache | None,
         reaper: RebootReaper | None = None,
     ) -> None:
         self.store = store
@@ -169,7 +167,6 @@ class HeartbeatIngest:
         self.metrics_store = metrics_store
         self.deployment_id = deployment_id
         self.registry_refs = registry_refs
-        self.layer_cache = layer_cache
         # None only for handlers built without worker access (tests).
         self.reaper = reaper
         self._pull_guard = Lock()
@@ -302,8 +299,6 @@ class HeartbeatIngest:
 
     def _apply(self, heartbeat: NodeHeartbeat, *, first: bool) -> None:
         record_node_heartbeat(self.metrics_store, heartbeat, first=first)
-        if self.layer_cache is not None:
-            self.layer_cache.hydrate_async(heartbeat.cached_images)
         # Authenticated boot identity, unlike provider readiness, proves
         # that a previous guest process namespace no longer exists. Replay
         # retirement after every heartbeat so a routing-store failure cannot

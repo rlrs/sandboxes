@@ -61,7 +61,8 @@ flowchart LR
   authenticates callers, allocates generations, records operation intent,
   forwards traffic to the owning node, and returns retry-aware JSON errors.
   Several API processes (`gateway_processes`) can share one port.
-- `ucloud-sandbox-placement`: executes durable create and wake commands.
+- `ucloud-sandbox-placement`: executes durable wake commands; API processes
+  claim and run queued creates and groups.
 - `ucloud-sandbox-relay`: the model relay (below).
 - `ucloud-sandbox-autoscaler`: the only process allowed to create or stop VMs.
 - `ucloud-sandbox-registry`: OCI registry for built images and checkpoints.
@@ -98,11 +99,11 @@ cache for builds. See [images.md](images.md).
    reference.
 2. The create becomes a durable command in the placement queue. Disconnecting
    does not cancel it, and queued creates count as autoscaler demand.
-3. In one routing transaction the placement service allocates the next
-   generation, picks a node ([Placement](#placement)), writes the route
-   intent (`creating`, operation ID, spec hash, node and boot epoch) and binds
-   the command to that generation, so a replay cannot recreate a deleted
-   incarnation.
+3. An API process claims the command, picks a node
+   ([Placement](#placement)) and, in one routing transaction, allocates the
+   next generation, writes the route intent (`creating`, operation ID, spec
+   hash, node and boot epoch) and binds the command to that generation, so a
+   replay cannot recreate a deleted incarnation.
 4. Outside any transaction, the node admits the create, registers it with its
    generation fence and disk claim, prepares storage, rootfs and network, and
    starts `runsc`.
@@ -394,17 +395,17 @@ quarantined from placement but keeps its routes until continuity is proven.
 
 ### Placement
 
-`gateway_create_placement` chooses how a create picks its node:
-
-- **`ranked` (default)** scans fresh nodes, ranks them by live pressure plus
-  in-flight creates, preferring nodes that already hold the image while they
-  are below a load of 0.6, and reserves capacity in a transaction fenced by
-  the worker revision.
-- **`power_of_k`** samples three eligible nodes per API process, scores them
-  by load minus image residency, and lets the node's admission decide.
-  Earlier candidates get a one-second admission wait; a definite rejection
-  retargets to the next as a fresh generation. Group creates
-  (`POST /v1/sandboxes:batch`) require it.
+Power-of-k: each API process samples three eligible nodes from its heartbeat
+view, scores them by load (live pressure plus in-flight creates, its own
+counted at once) minus image residency, and lets the node's admission decide;
+soft-drained nodes are a last resort. Earlier candidates get a one-second
+admission wait. A definite rejection retargets the intent, as a fresh
+generation, to the next candidate that still fits once this process's newer
+in-flight creates are counted. When every candidate rejects, the demand is
+queued and the client gets a retryable 503. Group creates
+(`POST /v1/sandboxes:batch`) also consider every node whose heartbeat holds
+the image, scored as resident, and pack: they fill the best node up to a
+per-node budget before the next.
 
 Wakes stay on their own node when it fits; otherwise the gateway migrates a
 published snapshot to a fitting node. Checkpoint import requires an identical

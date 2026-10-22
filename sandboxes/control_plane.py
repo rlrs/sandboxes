@@ -84,9 +84,7 @@ from .storage_native_migration import (
 from .gateway import node_rpc
 from .gateway.auth import _is_sdk_api_request, _token_matches
 from .gateway.create import (
-    SANDBOX_CREATE_PROXY_TIMEOUT_SECONDS, _image_check_rejection_reason, _is_duplicate_sandbox_response,
-    _node_create_definitively_rejected, _node_create_may_still_be_running,
-    _node_create_rejection_reason,
+    SANDBOX_CREATE_PROXY_TIMEOUT_SECONDS, _is_duplicate_sandbox_response, _node_create_rejection_reason,
 )
 from .gateway.fleet import _heartbeat_has_image, _node_metadata, _requested_image_cache_keys
 from .gateway.groups import GROUP_PATH, group_id_from_path, parse_group_request
@@ -106,8 +104,7 @@ from .gateway.node_rpc import (
     _proxy_response_too_large, _read_bounded_proxy_body, _structured_proxy_error,
 )
 from .gateway.placement import (
-    GatewaySchedulingBusyError, _has_resource_values, _node_can_fit, _node_can_fit_available,
-    _sandbox_required_capabilities,
+    _has_resource_values, _node_can_fit, _node_can_fit_available, _sandbox_required_capabilities,
 )
 from .gateway.registry_refs import (
     RegistryImageReferenceUnavailable, _managed_registry_build_tag, _managed_registry_worker_reference,
@@ -481,7 +478,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
     sandbox_builds = None
     image_recipes = None
     image_recipe_contexts = None
-    create_placement = "ranked"
 
     @traced_http_request
     def do_GET(self) -> None:
@@ -2560,12 +2556,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
-        if self.create_placement != "power_of_k":
-            self._write_json({
-                "error": "group create requires gateway_create_placement power_of_k",
-                "error_code": "sandbox_group_create_unavailable", "retryable": False,
-            }, status=HTTPStatus.NOT_IMPLEMENTED)
-            return
         if getattr(self, "placement_queue", None) is not None:
             # As a create: the one placement process places it, durably.
             self._defer_placement("group", group.group_id, GROUP_PATH, body)
@@ -2625,7 +2615,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             payload = {}
         return status, payload if isinstance(payload, dict) else {}
 
-    def _create_sandbox_on_node_locked(  # noqa: C901
+    def _create_sandbox_on_node_locked(
         self,
         spec: SandboxSpec,
         *,
@@ -2733,389 +2723,10 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 self._write_image_warmup_pending(active_warmup)
                 return
 
-            if self.create_placement == "power_of_k":
-                self.services.creates.create(
-                    self, spec, root, excluded_job_ids=excluded_job_ids,
-                    last_failure_reason=last_failure_reason,
-                )
-                return
-            layer_cache = self.services.placement.layer_cache
-            if layer_cache is not None:
-                with self.telemetry.span(
-                    "gateway.sandbox_resolve_layers",
-                    attributes={"container.image.name": spec.image},
-                ) as span:
-                    # Layer overlap only improves placement scoring; it is not
-                    # part of image identity or admission correctness.  A cold
-                    # metadata lookup can take the full registry timeout, so
-                    # never put it in the create critical path.  This request
-                    # uses any already-cached manifest while a later request
-                    # benefits from the asynchronous hydration.
-                    manifest = layer_cache.get(spec.image)
-                    if manifest is None:
-                        layer_cache.hydrate_async((spec.image,))
-                    span.set_attribute("available", manifest is not None)
-                    if manifest is not None:
-                        span.set_attribute("layer_count", len(manifest.layers))
-                        span.set_attribute("compressed_bytes", manifest.total_size)
-
-            with self.telemetry.span(
-                "gateway.sandbox_select_node",
-                attributes={"container.image.name": spec.image},
-            ) as span:
-                pending_before = None
-                try:
-                    placement = self.services.placement.select_and_reserve(
-                        spec.id,
-                        spec.requested_resources(),
-                        image=spec.image,
-                        spec=spec.to_dict(),
-                        spec_hash=sandbox_spec_fingerprint(spec),
-                        excluded_job_ids=excluded_job_ids,
-                        lock_timeout=self.admission_wait_seconds,
-                    )
-                except GatewaySchedulingBusyError:
-                    root.status = "error"
-                    root.set_attribute("outcome", "placement_busy")
-                    self._write_json(
-                        {
-                            "error": (
-                                "gateway is busy reserving sandbox placement; "
-                                "retry shortly"
-                            ),
-                            "error_code": "gateway_placement_busy",
-                            "retryable": True,
-                        },
-                        status=HTTPStatus.SERVICE_UNAVAILABLE,
-                        headers={
-                            "Retry-After": str(SANDBOX_CREATE_BUSY_RETRY_AFTER_SECONDS),
-                            "X-UCloud-Sandbox-Retryable": "true",
-                        },
-                    )
-                    return
-                except SandboxRouteConflictError:
-                    root.status = "error"
-                    root.set_attribute("outcome", "concurrent_spec_conflict")
-                    self._write_json(
-                        {
-                            "error": (
-                                f"sandbox already exists with different spec: {spec.id}"
-                            )
-                        },
-                        status=HTTPStatus.CONFLICT,
-                    )
-                    return
-                heartbeat = placement[0] if placement is not None else None
-                route = placement[1] if placement is not None else None
-                pending_before = placement[2] if placement is not None else None
-                span.set_attribute(
-                    "selected_node_id", heartbeat.node_id if heartbeat else ""
-                )
-                span.set_attribute(
-                    "selected_job_id", heartbeat.job_id if heartbeat else ""
-                )
-            if heartbeat is None:
-                _pending, demand = self.routing_store.upsert_pending_with_demand(
-                    spec.id,
-                    spec.requested_resources(),
-                    failure_reason=last_failure_reason,
-                )
-                root.status = "error"
-                root.set_attribute("outcome", "queued_no_ready_node")
-                root.set_attribute(
-                    "pending_resources", demand.pending_resources.to_dict()
-                )
-                self._write_no_ready_node(demand, last_failure_reason or "no_ready_node")
-                return
-
-            assert route is not None
-            if route.node_url.rstrip("/") != (heartbeat.node_url or "").rstrip("/"):
-                root.set_attribute("outcome", "concurrent_route_won")
-                self._retry_sandbox_create_on_assigned_node(route, spec)
-                return
-            try:
-                self.services.registry_refs.ensure_route_reference(route, touch=True)
-            except RegistryImageReferenceUnavailable:
-                # No node pull/create has been dispatched yet, so remove
-                # the provisional route, retain the accepted demand, and
-                # fail closed.  A retry allocates a new route incarnation.
-                removed = self.routing_store.delete_sandbox_if_current(
-                    spec.id,
-                    generation=route.generation,
-                    create_operation_id=route.create_operation_id,
-                )
-                if removed is not None:
-                    self.services.registry_refs.release_route_reference(removed)
-                self._persist_failed_sandbox_demand(
-                    spec,
-                    route,
-                    failure_reason="registry_lease_unavailable",
-                )
-                raise
-            root.set_attribute("reserved_route", True)
-            with self.telemetry.span(
-                "gateway.sandbox_ensure_image",
-                attributes={
-                    "node.id": heartbeat.node_id,
-                    "container.image.name": spec.image,
-                },
-            ) as span:
-                initial_cache_hit = _heartbeat_has_image(
-                    heartbeat,
-                    spec.image,
-                    require_digest=self.services.registry_refs.requires_digest_identity(
-                        spec.image
-                    ),
-                )
-                image_response = self._ensure_image_for_create(heartbeat, spec.image, spec.environment_root)
-                span.set_attribute("cache_hit", image_response is None)
-                span.set_attribute("initial_cache_hit", initial_cache_hit)
-                span.set_attribute(
-                    "waited_for_peer_pull",
-                    not initial_cache_hit and image_response is None,
-                )
-                span.set_attribute("pulled", image_response is not None)
-                if image_response is not None:
-                    span.set_attribute("status_code", int(image_response.status))
-                    pull_payload = image_response.json()
-                    pull_timings = pull_payload.get("timings")
-                    if isinstance(pull_timings, dict):
-                        span.add_event("node.timings", pull_timings)
-                    if image_response.status >= 400:
-                        span.status = "error"
-                        span.set_attribute(
-                            "error_code",
-                            str(pull_payload.get("error_code") or ""),
-                        )
-            if (
-                image_response is not None
-                and image_response.json().get("error_code") == "image_warmup_pending"
-            ):
-                # Retain the assigned generation while its pull continues.
-                # Retrying must never move an ambiguous create to another node.
-                root.set_attribute("outcome", "image_warmup_pending")
-                self._send_proxied_response(image_response)
-                return
-            if image_response is not None and image_response.status >= 400:
-                rejection_reason = _image_check_rejection_reason(image_response)
-                removed = self.routing_store.delete_sandbox_if_current(
-                    spec.id,
-                    generation=route.generation,
-                    create_operation_id=route.create_operation_id,
-                )
-                if removed is not None:
-                    self.services.registry_refs.release_route_reference(removed)
-                    self._persist_failed_sandbox_demand(
-                        spec,
-                        removed,
-                        failure_reason=(rejection_reason or f"image_pull_http_{image_response.status}"),
-                    )
-                if rejection_reason is not None:
-                    # No create has been dispatched: a draining node's image
-                    # admission rejection is safe to place elsewhere. Preserve
-                    # retryable demand when the next worker is still starting.
-                    if removed is None:
-                        self._write_create_in_progress_response(spec.id)
-                        return
-                    next_excluded = tuple(dict.fromkeys((*excluded_job_ids, route.job_id)))
-                    if self.services.placement.alternate_available(spec, excluded_job_ids=next_excluded):
-                        root.set_attribute("outcome", "reselect_after_image_admission_rejection")
-                        self._create_sandbox_on_node_locked(
-                            spec, excluded_job_ids=next_excluded,
-                            last_failure_reason=rejection_reason, image_resolved=True,
-                        )
-                    else:
-                        self._send_proxied_response(image_response)
-                    return
-                root.status = "error"
-                root.set_attribute("outcome", "image_pull_failed")
-                self._write_image_pull_failed(image_response)
-                return
-
-            refreshed_heartbeat = self._heartbeat_for_route(
-                job_id=route.job_id,
+            self.services.creates.create(
+                self, spec, root, excluded_job_ids=excluded_job_ids,
+                last_failure_reason=last_failure_reason,
             )
-            refreshed_available = (
-                _node_available_resources(
-                    refreshed_heartbeat,
-                    self.services.placement.routes_for_node(refreshed_heartbeat),
-                )
-                if refreshed_heartbeat is not None
-                else ResourceQuantity()
-            )
-            refreshed_available = replace(
-                refreshed_available,
-                # This request already owns its durable route reservation.
-                disk_mb=refreshed_available.disk_mb + requested.disk_mb,
-            )
-            pressure_changed = not bool(
-                refreshed_heartbeat is not None
-                and refreshed_heartbeat.node_url
-                and refreshed_heartbeat.is_fresh(utc_now(), self.services.fleet.heartbeat_ttl_seconds)
-                and not refreshed_heartbeat.draining
-                and refreshed_heartbeat.admission_open
-                and _node_can_fit_available(
-                    refreshed_heartbeat,
-                    requested,
-                    refreshed_available,
-                    check_cpu=False,
-                )
-            )
-            if pressure_changed:
-                failure_reason = "node_actual_pressure_changed"
-                removed = self.routing_store.delete_sandbox_if_current(
-                    spec.id,
-                    generation=route.generation,
-                    create_operation_id=route.create_operation_id,
-                )
-                if removed is None:
-                    root.status = "error"
-                    root.set_attribute("outcome", "route_changed_during_reselect")
-                    self._write_create_in_progress_response(spec.id)
-                    return
-                self.services.registry_refs.release_route_reference(removed)
-                _pending, demand = self.routing_store.upsert_pending_with_demand(
-                    spec.id,
-                    requested,
-                    generation=route.generation,
-                    operation_id=route.create_operation_id,
-                    spec_hash=route.spec_hash,
-                    failure_reason=failure_reason,
-                )
-                next_excluded = tuple(dict.fromkeys((*excluded_job_ids, route.job_id)))
-                if self.services.placement.alternate_available(
-                    spec,
-                    excluded_job_ids=next_excluded,
-                ):
-                    root.set_attribute("outcome", "reselect_after_pressure_change")
-                    root.set_attribute("rejected_job_id", route.job_id)
-                    self._create_sandbox_on_node_locked(
-                        spec,
-                        excluded_job_ids=next_excluded,
-                        last_failure_reason=failure_reason,
-                        image_resolved=True,
-                    )
-                    return
-                root.status = "error"
-                root.set_attribute("outcome", failure_reason)
-                self._write_json(
-                    {
-                        "error": (
-                            "selected node became busy while preparing the image; "
-                            "retry shortly"
-                        ),
-                        "error_code": failure_reason,
-                        "retryable": True,
-                        "pending_resources": demand.pending_resources.to_dict(),
-                    },
-                    status=HTTPStatus.SERVICE_UNAVAILABLE,
-                    headers={
-                        "Retry-After": "1",
-                        "X-UCloud-Sandbox-Retryable": "true",
-                    },
-                )
-                return
-            assert refreshed_heartbeat is not None
-            heartbeat = refreshed_heartbeat
-
-            with self.telemetry.span(
-                "gateway.sandbox_proxy_create",
-                attributes={"node.id": heartbeat.node_id},
-            ) as span:
-                response = self._proxy_request(
-                    heartbeat.node_url or "",
-                    "/v1/sandboxes",
-                    method="POST",
-                    body=_sandbox_create_request_body(spec, route),
-                    timeout_seconds=SANDBOX_CREATE_PROXY_TIMEOUT_SECONDS,
-                )
-                span.set_attribute("status_code", int(response.status))
-                response_payload = response.json()
-                node_timings = response_payload.get("timings")
-                if isinstance(node_timings, dict):
-                    span.add_event("node.timings", node_timings)
-            if _is_duplicate_sandbox_response(response, spec.id):
-                if self._send_existing_sandbox_response(
-                    route,
-                    spec,
-                    status=HTTPStatus.CREATED,
-                    pending=pending_before,
-                ):
-                    root.set_attribute("outcome", "recovered_duplicate")
-                    return
-            if 200 <= response.status < 300:
-                record = response_payload.get("sandbox")
-                if isinstance(record, dict) and _sandbox_record_matches_route(
-                    record, route, spec
-                ):
-                    route = _route_with_sandbox_record(route, record)
-                else:
-                    root.status = "error"
-                    root.set_attribute("outcome", "invalid_create_confirmation")
-                    self._write_invalid_create_confirmation()
-                    return
-                confirmed=self._confirm_sandbox_observation(route)
-                if confirmed is None:
-                    return
-                route=confirmed
-                record_sandbox_scheduled(
-                    self.metrics_store,
-                    sandbox_id=spec.id,
-                    route=route,
-                    resources=spec.requested_resources(),
-                    pending=pending_before,
-                )
-                self.services.registry_refs.record_image_used(spec.image)
-                root.set_attribute("outcome", "scheduled")
-                root.set_attribute("node_id", heartbeat.node_id)
-            else:
-                rejection_reason = _node_create_rejection_reason(response)
-                if rejection_reason is not None:
-                    removed = self.routing_store.delete_sandbox_if_current(
-                        spec.id,
-                        generation=route.generation,
-                        create_operation_id=route.create_operation_id,
-                    )
-                    if removed is not None:
-                        self.services.registry_refs.release_route_reference(removed)
-                        self._persist_failed_sandbox_demand(
-                            spec,
-                            route,
-                            failure_reason=rejection_reason,
-                        )
-                    next_excluded = tuple(
-                        dict.fromkeys((*excluded_job_ids, route.job_id))
-                    )
-                    if removed is not None and self.services.placement.alternate_available(
-                        spec,
-                        excluded_job_ids=next_excluded,
-                    ):
-                        root.set_attribute("outcome", "reselect_after_node_rejection")
-                        root.set_attribute("rejection_reason", rejection_reason)
-                        root.set_attribute("rejected_job_id", route.job_id)
-                        self._create_sandbox_on_node_locked(
-                            spec,
-                            excluded_job_ids=next_excluded,
-                            last_failure_reason=rejection_reason,
-                            image_resolved=True,
-                        )
-                        return
-                root.status = "error"
-                root.set_attribute("outcome", "node_create_failed")
-                root.set_attribute("status_code", int(response.status))
-                if _node_create_may_still_be_running(
-                    response
-                ) and not _node_create_definitively_rejected(response):
-                    root.set_attribute("kept_durable_route", True)
-                elif rejection_reason is None:
-                    removed = self.routing_store.delete_sandbox_if_current(
-                        spec.id,
-                        generation=route.generation,
-                        create_operation_id=route.create_operation_id,
-                    )
-                    if removed is not None:
-                        self.services.registry_refs.release_route_reference(removed)
-            self._send_proxied_response(response)
 
     def _write_image_warmup_pending(self, warmup: Any) -> None:
         self._write_json(
@@ -3378,17 +2989,13 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                     failure_reason=rejection_reason,
                 )
                 excluded_job_ids = (route.job_id,)
-                if self.create_placement == "power_of_k" or self.services.placement.alternate_available(
+                self._create_sandbox_on_node_locked(
                     spec,
                     excluded_job_ids=excluded_job_ids,
-                ):
-                    self._create_sandbox_on_node_locked(
-                        spec,
-                        excluded_job_ids=excluded_job_ids,
-                        last_failure_reason=rejection_reason,
-                        image_resolved=True,
-                    )
-                    return
+                    last_failure_reason=rejection_reason,
+                    image_resolved=True,
+                )
+                return
         # Ambiguous failures retain the identity fence for another identical
         # replay. A closed admission gate is synchronous and definitive, so its
         # route was removed above and the request can be placed elsewhere.
@@ -6191,7 +5798,6 @@ def build_server(
     base_regeneration: object | None = None,
     sandbox_builds: dict[str, Any] | None = None,
     import_external_images: bool = False,
-    create_placement: str = "ranked",
     registry_disk_monitor: RegistryDiskMonitor | None = None,
     max_concurrent_sandbox_creates: int = DEFAULT_MAX_CONCURRENT_SANDBOX_CREATES,
     create_target_concurrency_per_node: int = (
@@ -6208,7 +5814,7 @@ def build_server(
 ) -> HighBacklogThreadingHTTPServer:
     """One gateway process; ``process_count`` replicas share budgets and port.
 
-    Queued and in power_of_k, it runs ``create_claim_budget`` queued creates at
+    With a placement queue, it runs ``create_claim_budget`` queued creates at
     once (default: its ``create_concurrency`` share under the scale policy).
     """
     credentials = {
@@ -6381,9 +5987,6 @@ def build_server(
         delete_on_worker=_worker_delete(node_control_bearer_token, resolved_telemetry),
         api_processes=max(1, int(process_count)),
     )
-    if create_placement not in {"ranked", "power_of_k"}:
-        raise ValueError("create placement must be ranked or power_of_k")
-    BoundHandler.create_placement = create_placement
     BoundHandler.max_concurrent_sandbox_creates = max(
         0,
         int(max_concurrent_sandbox_creates),
@@ -6465,7 +6068,7 @@ def build_server(
             (host, port), BoundHandler, max_request_threads=max_http_request_threads,
         )
         loopback[1] = server.server_address[1]
-        if placement_queue is not None and create_placement == "power_of_k":
+        if placement_queue is not None:
             # Creates leave the loopback: every API process claims queued
             # creates and groups; the placement process claims wakes only.
             # Closing the queue's loop cancels the claim loop.
