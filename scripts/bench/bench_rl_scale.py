@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""RL-scale client benchmark for plan W0/C0.1 (docs/roadmap.md).
+"""RL-scale client benchmark (docs/roadmap.md).
 
 Each live scenario drives a gateway through the public Python SDK and writes one
 report with schema ``ucloud-rl-scale-bench/v1``. Every metric of the plan's
 table is present in every report: the scenario's own metric carries
 p50/p95/p99/max/n summaries, metrics the run did not exercise are ``not_run``,
 node-side metrics (bytes fetched, idle PSS/USS, page sharing) are ``null`` with
-the probe that measures them, and fork is an ``unsupported`` placeholder.
+the probe that measures them, and fork and pause/resume (clients never park
+or wake, docs/api.md) are ``unsupported`` placeholders.
 ``merge`` combines single-scenario reports into one baseline report.
 
 Every sandbox uses a unique run prefix, is tracked before its create request,
@@ -104,13 +105,17 @@ EXTERNAL_METRICS = {
     "idle_pss_uss": {
         "unit": "bytes",
         "source": (
-            "runtime/gvisor/spike_rl_scale.py --probe s2 (Sentry "
+            "spike_rl_scale.py --probe s2, removed; see git show "
+            "d6d39733:runtime/gvisor/spike_rl_scale.py (Sentry "
             "/proc/<pid>/smaps_rollup PSS and USS per sandbox)"
         ),
     },
     "page_sharing_ratio": {
         "unit": "ratio",
-        "source": "runtime/gvisor/spike_rl_scale.py --probe s2 (plan C0.3)",
+        "source": (
+            "spike_rl_scale.py --probe s2, removed; see git show "
+            "d6d39733:runtime/gvisor/spike_rl_scale.py"
+        ),
     },
 }
 FORK_REASON = "fork from a template (plan C3.3) is not implemented"
@@ -121,12 +126,6 @@ SECTION_STATUSES = frozenset({"measured", "failed", "not_run", "unsupported", "e
 REPORT_STATUSES = frozenset({"running", "ok", "failed", "interrupted"})
 SUMMARY_KEYS = ("n", "p50", "p95", "p99", "max")
 TRANSIENT_STATUSES = frozenset({409, 429, 502, 503, 504})
-# Client-level SDK methods that would expose park/wake. SDK 0.4.x has none:
-# the gateway routes need the operator control token (docs/api.md).
-PARK_WAKE_METHOD_PAIRS = (
-    ("park_sandbox", "wake_sandbox"),
-    ("pause_sandbox", "resume_sandbox"),
-)
 # Sandbox IDs are <run-id>-<scenario>-<index>; keep them valid node components.
 RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,63}")
 PRINT_LOCK = threading.Lock()
@@ -717,13 +716,6 @@ def density_section(samples: Sequence[dict[str, Any]], *, bin_width: int,
         "steps": list(steps),
         "samples": list(samples),
     }
-
-
-def sdk_park_wake_methods(client: object) -> tuple[str, str] | None:
-    for park, wake in PARK_WAKE_METHOD_PAIRS:
-        if callable(getattr(client, park, None)) and callable(getattr(client, wake, None)):
-            return park, wake
-    return None
 
 
 def load_selection(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -1533,10 +1525,9 @@ def build_parser() -> argparse.ArgumentParser:
                          help="keep ramping after the first violating bin")
 
     park = commands.add_parser("park", parents=[live], help="pause/park and resume/wake latency",
-                               description="Uses SDK park/wake methods if the SDK exposes "
-                                           "them; otherwise records the metric as unsupported.")
+                               description="Records the metric as unsupported: clients "
+                                           "never park or wake (docs/api.md).")
     park.add_argument("--image", required=True)
-    park.add_argument("--cycles", type=_positive_int, default=5)
 
     rollout = commands.add_parser(
         "rollout", parents=[live], help="realistic RL rollout start (plan C9.2)",
@@ -1963,8 +1954,7 @@ class LiveRun:
         return row
 
     def create_ready(self, reference: str, scenario: str, *, ready: bool = True,
-                     t0: float | None = None, delete_after: bool = False,
-                     parkable: bool = False) -> dict[str, Any]:
+                     t0: float | None = None, delete_after: bool = False) -> dict[str, Any]:
         sandbox_id = self.new_id(scenario)
         with self.lock:
             self.owned[sandbox_id] = "requested"
@@ -1975,7 +1965,7 @@ class LiveRun:
             row["queued_seconds"] = started - t0
         try:
             handle = self.client.create_sandbox(
-                self.spec(sandbox_id, reference, parkable=parkable),
+                self.spec(sandbox_id, reference),
                 request_timeout_seconds=self.args.create_timeout_seconds,
             )
             created = time.perf_counter()
@@ -2264,52 +2254,11 @@ def scenario_density(run: LiveRun, *, persist: Callable[[], None]) -> None:
 
 
 def scenario_park(run: LiveRun) -> None:
-    methods = sdk_park_wake_methods(run.client)
-    if methods is None:
-        run.report["metrics"]["pause_resume"] = unsupported_section(
-            f"ucloud_sandboxes_sdk {getattr(run.sdk, '__version__', '?')} exposes no "
-            "park/wake (pause/resume) method; the gateway park/wake routes require the "
-            "operator control token (docs/api.md) and are exercised by "
-            "scripts/bench/live_park_resume_benchmark.py",
-            sdk_methods_checked=[list(pair) for pair in PARK_WAKE_METHOD_PAIRS],
-            bytes_written=None, bytes_written_source=PAUSE_BYTES_SOURCE)
-        return
-    park_name, wake_name = methods
-    image = run.args.images[0]
-    cycles: list[dict[str, Any]] = []
-    created = None
-    try:
-        created = run.create_ready(image, "park", parkable=True)
-        if not created["ok"]:
-            raise RuntimeError(created.get("error") or "parkable sandbox create failed")
-        sandbox_id = created["sandbox_id"]
-        for cycle in range(run.args.cycles):
-            if run.stop.is_set():
-                break
-            started = time.perf_counter()
-            getattr(run.client, park_name)(sandbox_id)
-            parked = time.perf_counter()
-            getattr(run.client, wake_name)(sandbox_id)
-            woken = time.perf_counter()
-            tool = run.run_command(sandbox_id, run.args.first_command_argv)
-            if not tool["ok"]:
-                raise RuntimeError(tool["error"])
-            cycles.append({"cycle": cycle, "pause_seconds": parked - started,
-                           "resume_seconds": woken - parked,
-                           "resume_to_first_command_seconds": woken - parked + tool["seconds"]})
-    finally:
-        ok = bool(cycles)
-        run.report["metrics"]["pause_resume"] = {
-            "status": "measured" if ok else "failed",
-            "unit": "seconds",
-            "sdk_methods": [park_name, wake_name],
-            "pause": latency_summary(row["pause_seconds"] for row in cycles),
-            "resume": latency_summary(row["resume_seconds"] for row in cycles),
-            "resume_to_first_command": latency_summary(
-                row["resume_to_first_command_seconds"] for row in cycles),
-            "bytes_written": None, "bytes_written_source": PAUSE_BYTES_SOURCE,
-            "sandbox": created, "samples": cycles,
-        }
+    run.report["metrics"]["pause_resume"] = unsupported_section(
+        "clients do not park or wake (docs/api.md); the gateway park/wake routes "
+        "require the operator control token and are exercised by "
+        "scripts/bench/live_park_resume_benchmark.py",
+        bytes_written=None, bytes_written_source=PAUSE_BYTES_SOURCE)
 
 
 def think_sleep(run: LiveRun, row: dict[str, Any], turn: int, seconds: float) -> None:
@@ -2881,7 +2830,7 @@ def run_live(args: argparse.Namespace, *, sdk: Any = None, client: Any = None,
         health = client.health()
         report["conditions"] = build_conditions(args, sdk, url, health)
         persist()
-        if not (args.scenario == "park" and sdk_park_wake_methods(client) is None):
+        if args.scenario != "park":
             run.require_idle_fleet()
         runner = {"cold": scenario_cold, "warm": scenario_warm, "burst": scenario_burst,
                   "rate": scenario_rate, "park": scenario_park,

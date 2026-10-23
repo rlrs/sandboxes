@@ -135,8 +135,7 @@ qualifies the storage-native Warden lifecycle, wake bursts and density against
 this runtime. The one-off benchmarks, qualifiers and RL-scale spike probe that
 used to sit here (park/wake, disk-backed memory, crash recovery, fsync, node API,
 the ACL/umask compatibility matrix, EROFS, spikes S1, S2, S4 and S6-S8) are in
-`git show d6d39733:runtime/gvisor/`; `scripts/bench/bench_rl_scale.py` still names
-`spike_rl_scale.py --probe s2` as the source of page sharing and PSS/USS.
+`git show d6d39733:runtime/gvisor/`.
 
 ## Ownership invariants
 
