@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta
 from http import HTTPStatus
@@ -4938,9 +4938,21 @@ def _execute_bootstrap_phase(
     metrics_store: MetricsStore | None,
     telemetry: Telemetry,
 ) -> tuple[dict[str, VmBootstrapRecord], list[dict[str, Any]]]:
-    """Execute the VM-init phase while keeping reconcile planning declarative."""
+    """Execute the VM-init phase while keeping reconcile planning declarative.
 
-    if coordinator is not None:
+    Without a long-lived coordinator (``autoscaler --once``), this cycle's
+    attempts run on a coordinator of their own and are waited for, so the
+    results report each attempt's outcome rather than ``attempting``.
+    """
+
+    owned = coordinator is None
+    if coordinator is None:
+        coordinator = _VmBootstrapCoordinator(
+            max(1, config.autoscaler_max_init_per_cycle),
+            metrics_store,
+            telemetry=telemetry,
+        )
+    try:
         results = list(completed_results)
         for intent in intents:
             if not intent.runnable or not intent.access.command:
@@ -4955,61 +4967,24 @@ def _execute_bootstrap_phase(
             )
             results.append(scheduled)
         control_state.save_bootstrap_records(records)
+        if owned:
+            coordinator.shutdown(wait=True)
+            records, finished = coordinator.collect_completed(
+                records,
+                control_state,
+                active_job_ids={intent.job_id for intent in intents},
+            )
+            by_job_id = {item["jobId"]: item for item in finished}
+            results = [
+                by_job_id.get(item["jobId"], item)
+                if item.get("status") == "attempting"
+                else item
+                for item in results
+            ]
         return records, results
-
-    if not intents:
-        control_state.save_bootstrap_records(records)
-        return records, list(completed_results)
-
-    ordered_results: list[dict[str, Any] | None] = [None] * len(intents)
-    runnable: list[tuple[int, VmBootstrapIntent, int, datetime, float]] = []
-    for index, intent in enumerate(intents):
-        if not intent.runnable or not intent.access.command:
-            ordered_results[index] = _skipped_bootstrap_result(intent)
-            continue
-        assert_provider_fence()
-        started_at = utc_now()
-        started_perf = time.perf_counter()
-        records = mark_bootstrap_attempt(records, intent)
-        control_state.save_bootstrap_records(records)
-        attempt_record = records.get(intent.job_id)
-        attempt_count = (
-            attempt_record.attempts
-            if attempt_record is not None
-            else intent.previous_attempts + 1
-        )
-        runnable.append((index, intent, attempt_count, started_at, started_perf))
-
-    if runnable:
-        records = _run_bootstrap_attempts(
-            runnable,
-            ordered_results,
-            records=records,
-            config=config,
-            control_state=control_state,
-            assert_provider_fence=assert_provider_fence,
-            metrics_store=metrics_store,
-            telemetry=telemetry,
-        )
-
-    results: list[dict[str, Any]] = []
-    for index, item in enumerate(ordered_results):
-        if item is None:
-            intent = intents[index]
-            error = "VM init attempt did not produce a result"
-            records = mark_bootstrap_failure(records, intent, error)
-            control_state.save_bootstrap_records(records)
-            item = {
-                "jobId": intent.job_id,
-                "nodeId": intent.node_id,
-                "role": intent.role,
-                "returncode": None,
-                "status": "failed",
-                "error": error,
-                "durationMs": 0,
-            }
-        results.append(item)
-    return records, results
+    finally:
+        if owned:
+            coordinator.shutdown(wait=True)
 
 
 def _skipped_bootstrap_result(intent: VmBootstrapIntent) -> dict[str, Any]:
@@ -5020,85 +4995,6 @@ def _skipped_bootstrap_result(intent: VmBootstrapIntent) -> dict[str, Any]:
         "skipped": True,
         "reason": intent.reason,
     }
-
-
-def _run_bootstrap_attempts(
-    runnable: list[tuple[int, VmBootstrapIntent, int, datetime, float]],
-    ordered_results: list[dict[str, Any] | None],
-    *,
-    records: dict[str, VmBootstrapRecord],
-    config: DeploymentConfig,
-    control_state: ControlStateStore,
-    assert_provider_fence: Callable[[], None],
-    metrics_store: MetricsStore | None,
-    telemetry: Telemetry,
-) -> dict[str, VmBootstrapRecord]:
-    futures: dict[
-        Future[_VmBootstrapAttemptResult],
-        tuple[int, VmBootstrapIntent, int, datetime, float],
-    ] = {}
-    with ThreadPoolExecutor(
-        max_workers=min(len(runnable), max(1, config.autoscaler_max_init_per_cycle)),
-        thread_name_prefix="vm-bootstrap",
-    ) as executor:
-        for prepared in runnable:
-            _index, intent, attempt_count, _started_at, started_perf = prepared
-            try:
-                assert_provider_fence()
-                future = executor.submit(
-                    _execute_vm_bootstrap_attempt,
-                    intent,
-                    config,
-                    attempt_count=attempt_count,
-                    assert_provider_fence=assert_provider_fence,
-                    attempt_started_perf=started_perf,
-                    telemetry=telemetry,
-                    trace_context=telemetry.current_trace_headers(),
-                )
-            except Exception as exc:
-                future = Future()
-                future.set_result(
-                    _failed_vm_bootstrap_attempt(intent, started_perf, str(exc))
-                )
-            futures[future] = prepared
-
-        for future in as_completed(futures):
-            index, intent, attempt_count, started_at, started_perf = futures[future]
-            try:
-                attempt_result = future.result()
-            except Exception as exc:
-                attempt_result = _failed_vm_bootstrap_attempt(
-                    intent,
-                    started_perf,
-                    str(exc),
-                )
-            if attempt_result.status == "succeeded":
-                records = mark_bootstrap_success(records, intent)
-            else:
-                records = mark_bootstrap_failure(
-                    records,
-                    intent,
-                    attempt_result.error,
-                    retry_delay_seconds=attempt_result.retry_delay_seconds,
-                )
-            control_state.save_bootstrap_records(records)
-            ordered_results[index] = attempt_result.result
-            record_vm_init_attempt_result(
-                metrics_store,
-                intent,
-                status=attempt_result.status,
-                attempts=attempt_count,
-                started_at=started_at,
-                attempt_started_perf=started_perf,
-                stage_duration_ms=attempt_result.stage_duration_ms,
-                run_duration_ms=attempt_result.run_duration_ms,
-                returncode=attempt_result.returncode,
-                error=attempt_result.error,
-                retry_delay_seconds=attempt_result.retry_delay_seconds,
-                init_phases_ms=attempt_result.init_phases_ms,
-                init_total_ms=attempt_result.init_total_ms,
-            )
-    return records
 
 
 def record_submitted_vm_metrics(
