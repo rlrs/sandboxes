@@ -481,6 +481,35 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
                 if action == "drain":
                     self.service.delete("sandbox", generation=7)
 
+    def test_restore_saturation_rejects_before_work_and_retry_succeeds(self):
+        self.service.admission_wait_seconds = .05
+        self.parked()
+
+        def implicit():
+            sandbox = self.provisioner.registry.get("sandbox").to_direct_sandbox()
+            self.service.ensure_running_with_timings(sandbox)
+
+        wakes = {
+            "explicit": lambda: self.service.wake("sandbox", generation=7, operation_id="wake:test"),
+            "implicit": implicit,
+        }
+        for path, wake in wakes.items():
+            with self.subTest(path=path):
+                parked = self.provisioner.registry.get("sandbox")
+                with self.held_slots(self.service, "restore"):
+                    with self.assertRaises(SandboxRestoreBusyError):
+                        wake()
+                # Rejected before any restore work: the checkpoint is untouched.
+                self.assertEqual(self.provisioner.registry.get("sandbox"), parked)
+                self.assertEqual(self.service.get("sandbox").state, "parked")
+                wake()
+                self.assertEqual(self.service.get("sandbox").state, "running")
+                # The completed restore released its slot.
+                self.assertEqual(self.slots_available(self.service, "restore"),
+                                 self.slots_capacity(self.service, "restore"))
+                self.assert_clean()
+                self.service.park("sandbox", operation_id=f"park:{path}")
+
     def test_delete_interrupts_memory_wait_after_slot_acquired(self):
         self.parked()
         self.configure_memory()

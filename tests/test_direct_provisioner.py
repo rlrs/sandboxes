@@ -2,6 +2,7 @@ import hashlib
 import json
 import shutil
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -15,7 +16,7 @@ from urllib import error, request
 from sandboxes.capabilities import HIBERNATE_LOCAL_CAPABILITY
 from sandboxes.direct_oci import DirectOciConfigBuilder
 from sandboxes.direct_provisioner import DirectSandboxProvisioner
-from sandboxes.direct_registry import DirectSandboxRegistry
+from sandboxes.direct_registry import DirectRegistryError, DirectSandboxRegistry
 from sandboxes.direct_service import DirectExecResult, DirectSandboxService
 from sandboxes.direct_warden import DirectSandbox, DirectWardenError
 from sandboxes.hibernation import (
@@ -1400,6 +1401,66 @@ class DirectProvisionerTests(unittest.TestCase):
                     service.get(created.spec.id).state,
                     HibernationState.RUNNING.value,
                 )
+
+    def test_wake_route_answers_restore_saturation_with_its_retry_contract(self) -> None:
+        with TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            provisioner, _, _, _, warden = self.make(root)
+            service = DirectSandboxService(
+                provisioner, process_runner=FakeProcessRunner(), max_concurrent_restores=1,
+            )
+            service.admission_wait_seconds = 0.05
+            for sandbox_id in ("sandbox", "busy"):
+                self.create(service, replace(self.spec(), id=sandbox_id))
+                service.park(sandbox_id, operation_id=f"park:{sandbox_id}")
+            resume, entered, release = warden.resume, Event(), Event()
+
+            def held_resume(*args, **kwargs):
+                entered.set()
+                self.assertTrue(release.wait(5))
+                return resume(*args, **kwargs)
+
+            def wake(base):
+                return request.Request(
+                    f"{base}/v1/sandboxes/sandbox/wake",
+                    data=json.dumps({"generation": 7, "operation_id": "wake:test"}).encode(),
+                    headers={"Content-Type": "application/json"}, method="POST",
+                )
+
+            with self.running_server(root, service) as base:
+                # A wake of another sandbox holds the node's only restore slot.
+                with patch.object(warden, "resume", side_effect=held_resume), \
+                        ThreadPoolExecutor(max_workers=1) as pool:
+                    busy = pool.submit(service.wake, "busy", generation=7, operation_id="wake:busy")
+                    try:
+                        self.assertTrue(entered.wait(5))
+                        with self.assertRaises(error.HTTPError) as rejected:
+                            request.urlopen(wake(base), timeout=5)
+                    finally:
+                        release.set()
+                    self.assertEqual(busy.result(5).state, HibernationState.RUNNING.value)
+                with rejected.exception as response:
+                    self.assertEqual(response.code, 503)
+                    self.assertEqual(response.headers["Retry-After"], "1")
+                    body = json.load(response)
+                self.assertEqual(body["error_code"], "node_restore_busy")
+                self.assertTrue(body["retryable"])
+                # Answered without a live inspection, which could block behind
+                # the very work that made the node busy: no parked record.
+                self.assertNotIn("sandbox", body)
+                self.assertEqual(service.get("sandbox").state, HibernationState.PARKED.value)
+                with request.urlopen(wake(base), timeout=5) as response:
+                    self.assertEqual(json.load(response)["sandbox"]["state"], HibernationState.RUNNING.value)
+
+    def test_delete_of_a_replaced_generation_leaves_the_replacement(self) -> None:
+        with TemporaryDirectory() as raw:
+            provisioner, registry, *_ = self.make(Path(raw).resolve())
+            service = DirectSandboxService(provisioner, process_runner=FakeProcessRunner())
+            self.create(service, self.spec(), generation=8)
+            current = registry.get("sandbox")
+            with self.assertRaises(DirectRegistryError):
+                provisioner.delete("sandbox", generation=7)
+            self.assertEqual(registry.get("sandbox"), current)
 
 
 if __name__ == "__main__":

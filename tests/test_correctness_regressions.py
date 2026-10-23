@@ -1,7 +1,6 @@
 """Cross-component regressions for lifecycle, persistence and storage boundaries."""
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -18,10 +17,6 @@ from tests import test_direct_provisioner as direct_fixtures
 from tests import test_storage_native_daemon as storage_fixtures
 from tests import test_storage_native_s3 as s3_fixtures
 from tests import test_storage_native_s3_gc as gc_fixtures
-from sandboxes.direct_registry import (
-    DirectRegistryConflictError,
-    DirectRegistryError,
-)
 from sandboxes.direct_service import DirectProcessRunner, DirectSandboxService
 from sandboxes.direct_warden import DirectWardenError
 from sandboxes.images import (
@@ -31,16 +26,13 @@ from sandboxes.images import (
     ImageStore,
     MaterializedBuildContext,
 )
-from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
+from sandboxes.models import utc_now
 from sandboxes.node_runtime import DirectNodeRuntime
 from sandboxes.node_agent import NodeAgentHandler
 from sandboxes.models import SandboxInventoryEntry
 from sandboxes.sandbox import (
     CommandResult,
-    SandboxAdmissionClosedError,
-    SandboxCapacityUnavailableError,
     SandboxFileTooLargeError,
-    SandboxRestoreBusyError,
 )
 from sandboxes.storage_native_daemon import (
     StorageNativeNodeClient,
@@ -56,133 +48,6 @@ from sandboxes.telemetry import Telemetry
 from tests.support import reopen_routing_store, routing_store_for
 
 TEST_TIER = "contract"
-
-
-class LifecycleBoundaryTests(unittest.TestCase):
-    def test_delayed_delete_cannot_destroy_replacement_generation(self):
-        with TemporaryDirectory() as directory:
-            fixture = direct_fixtures.DirectProvisionerTests()
-            provisioner, registry, *_ = fixture.make(Path(directory).resolve())
-            service = DirectSandboxService(provisioner)
-            fixture.create(service, fixture.spec())
-            entered, resume = threading.Event(), threading.Event()
-            original = service._lock
-
-            @contextmanager
-            def delayed_lock(sandbox_id, generation):
-                if threading.current_thread().name.startswith("stale-delete"):
-                    entered.set()
-                    self.assertTrue(resume.wait(5))
-                with original(sandbox_id, generation):
-                    yield
-
-            with patch.object(service, "_lock", side_effect=delayed_lock):
-                with ThreadPoolExecutor(
-                    max_workers=1, thread_name_prefix="stale-delete"
-                ) as pool:
-                    stale = pool.submit(service.delete, "sandbox", generation=7)
-                    try:
-                        self.assertTrue(entered.wait(5))
-                        service.delete("sandbox", generation=7)
-                        fixture.create(service, fixture.spec(), generation=8)
-                    finally:
-                        resume.set()
-                    with self.assertRaises((DirectWardenError, DirectRegistryError)):
-                        stale.result(timeout=5)
-            self.assertEqual(registry.get("sandbox").sandbox_generation, 8)
-
-    def test_delete_transaction_fences_generation_even_when_revision_matches(self):
-        with TemporaryDirectory() as directory:
-            fixture = direct_fixtures.DirectProvisionerTests()
-            provisioner, registry, *_ = fixture.make(Path(directory).resolve())
-            service = DirectSandboxService(provisioner)
-            fixture.create(service, fixture.spec(), generation=8)
-            current = registry.get("sandbox")
-            with self.assertRaises(DirectRegistryConflictError):
-                registry.begin_delete(
-                    "sandbox", expected_revision=current.revision, expected_generation=7
-                )
-            self.assertEqual(registry.get("sandbox"), current)
-
-    def test_explicit_wake_checks_drain_and_live_pressure(self):
-        for closed, cpu, memory, error in (
-            (True, 0, 8192, SandboxAdmissionClosedError),
-            (False, 99, 8192, None),
-            (False, 0, 10, SandboxCapacityUnavailableError),
-        ):
-            with (
-                self.subTest(closed=closed, cpu=cpu, memory=memory),
-                TemporaryDirectory() as directory,
-            ):
-                fixture = direct_fixtures.DirectProvisionerTests()
-                provisioner, *_ = fixture.make(Path(directory).resolve())
-                service = DirectSandboxService(provisioner)
-                # Pressure never clears here; a short bound keeps the bounded wait.
-                service.admission_wait_seconds = .05
-                fixture.create(service, fixture.spec())
-                service.park("sandbox", operation_id="park:test")
-                service.configure_active_capacity(
-                    ResourceQuantity(vcpu=4, memory_mb=8192),
-                    runtime_metrics_provider=lambda: NodeRuntimeMetrics(
-                        collected_at=utc_now(),
-                        cpu_percent=cpu,
-                        cpu_count=4,
-                        memory_total_mb=8192,
-                        memory_available_mb=memory,
-                    ),
-                )
-                runtime = DirectNodeRuntime(service)
-                if closed:
-                    service.close_admission()
-                if error is None:
-                    # CPU utilization is advisory: the existing restore permit
-                    # and guest cgroup govern execution, while RAM and drain
-                    # remain admission constraints.
-                    runtime.wake("sandbox", generation=7, operation_id="wake:test")
-                else:
-                    with self.assertRaises(error):
-                        runtime.wake("sandbox", generation=7, operation_id="wake:test")
-                sandbox = provisioner.registry.get("sandbox").to_direct_sandbox()
-                self.assertEqual(
-                    service.warden.inspect(sandbox).state.value,
-                    "running" if error is None else "parked",
-                )
-
-    def test_restore_saturation_rejects_before_work_and_retry_succeeds(self):
-        for implicit in (False, True):
-            with self.subTest(implicit=implicit), TemporaryDirectory() as directory:
-                fixture = direct_fixtures.DirectProvisionerTests()
-                provisioner, *_ = fixture.make(Path(directory).resolve())
-                service = DirectSandboxService(provisioner, max_concurrent_restores=1)
-                service.admission_wait_seconds = .01
-                fixture.create(service, fixture.spec())
-                service.park("sandbox", operation_id="park:test")
-                sandbox = provisioner.registry.get("sandbox").to_direct_sandbox()
-
-                def wake():
-                    if implicit:
-                        service.ensure_running_with_timings(sandbox)
-                    else:
-                        service.wake("sandbox", generation=7, operation_id="wake:test")
-
-                service._restore_slots.acquire()
-                try:
-                    with (
-                        patch.object(service.warden, "resume") as resume,
-                        patch.object(service.provisioner, "ensure_network") as network,
-                    ):
-                        with self.assertRaises(SandboxRestoreBusyError):
-                            wake()
-                        resume.assert_not_called()
-                        network.assert_not_called()
-                    self.assertEqual(service.warden.inspect(sandbox).state.value, "parked")
-                finally:
-                    service._restore_slots.release()
-                wake()
-                self.assertEqual(service.warden.inspect(sandbox).state.value, "running")
-                # Completed restores must release their slot, too.
-                self.assertTrue(service._restore_slots.acquire(blocking=False))
-                service._restore_slots.release()
 
 
 class ProcessDeadlineTests(unittest.TestCase):
