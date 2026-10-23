@@ -1121,7 +1121,7 @@ def _counts_as_pool_node(
     oldest_pending_seconds: int,
 ) -> bool:
     del policy, now, oldest_pending_seconds
-    if node.job.is_final or node.job.is_lost or node.permanently_lost:
+    if node.job.is_final or node.job.is_lost:
         return False
     # Capacity weighting and hard provider limits are separate concerns. A stale
     # provisioning job may contribute no projected resources, but it is still a

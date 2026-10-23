@@ -557,7 +557,6 @@ class MetricsTests(unittest.TestCase):
                     "canceledDrainJobIds": ["canceled-1"],
                     "drainReadyStopJobIds": ["ready-1"],
                     "unreachableReadyStopJobIds": ["unreachable-1"],
-                    "destructive_stop_job_ids": ["destructive-1"],
                     "definitelyTerminatedJobIds": ["terminated-1"],
                     "drainResults": [
                         {

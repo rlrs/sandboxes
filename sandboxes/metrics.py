@@ -811,7 +811,6 @@ def _autoscaler_execution_summary(result: dict[str, Any]) -> dict[str, Any]:
             "unreachable_ready_job_ids": _string_list(
                 result.get("unreachableReadyStopJobIds")
             ),
-            "destructive_job_ids": _string_list(result.get("destructive_stop_job_ids")),
             "terminated_job_ids": _string_list(
                 result.get("definitelyTerminatedJobIds")
             ),

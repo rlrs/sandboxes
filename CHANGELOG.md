@@ -10,6 +10,13 @@
   retryable 502 (`worker RPC reconnect replay refused`) although the worker never
   received it. Such requests now get a connection that closes after its one
   response. No request is resent.
+- **The autoscaler no longer has a destructive node-loss path.** No provider
+  could declare one since UCloud's loss dispositions were removed, so the
+  `reconcile`/`autoscaler` output drops its always-empty node-loss fields
+  (`destructive_node_loss_job_ids`, `destructive_stop_job_ids`,
+  `lost_sandbox_ids`, `fencedNodeLossHeartbeats`, `persistedNodeLossDemand`,
+  per-node `permanentlyLost`) and the metrics scale-down event drops
+  `destructive_job_ids`.
 
 ## 0.10.0 - 2026-10-22 (gateway; workers; store node)
 

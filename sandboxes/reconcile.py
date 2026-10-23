@@ -117,7 +117,7 @@ def requested_builder_nodes(
         max(0, node.heartbeat.active_image_builds)
         for node in builder_nodes
         if node.heartbeat is not None and node.heartbeat_fresh
-        and not node.job.is_final and not node.job.is_lost and not node.permanently_lost
+        and not node.job.is_final and not node.job.is_lost
     )
     return max(ceil((active + max(0, pending_builds)) / DEFAULT_MAX_ACTIVE_IMAGE_BUILDS), max(0, prepared_builders))
 
@@ -147,7 +147,7 @@ def evaluate_builder_scale(
     pool_nodes = [
         node
         for node in builder_nodes
-        if not node.job.is_final and not node.job.is_lost and not node.permanently_lost
+        if not node.job.is_final and not node.job.is_lost
     ]
     ready_nodes = [node for node in pool_nodes if node.is_schedulable]
     provisioning_nodes = [node for node in pool_nodes if node.is_provisioning]

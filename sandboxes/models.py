@@ -855,7 +855,6 @@ class SandboxNode:
     active_sandboxes: int
     heartbeat_fresh: bool
     agent_version_compatible: bool = True
-    permanently_lost: bool = False
 
     @property
     def job_id(self) -> str:
@@ -867,9 +866,7 @@ class SandboxNode:
 
     @property
     def is_ready(self) -> bool:
-        return bool(
-            not self.permanently_lost and self.job.is_running and self.heartbeat_fresh
-        )
+        return bool(self.job.is_running and self.heartbeat_fresh)
 
     @property
     def is_schedulable(self) -> bool:
@@ -885,22 +882,18 @@ class SandboxNode:
     @property
     def is_provisioning(self) -> bool:
         return bool(
-            not self.permanently_lost
-            and (
-                self.job.is_provisioning
-                or (
-                    self.job.is_running
-                    and self.heartbeat is None
-                    and not self.heartbeat_fresh
-                )
+            self.job.is_provisioning
+            or (
+                self.job.is_running
+                and self.heartbeat is None
+                and not self.heartbeat_fresh
             )
         )
 
     @property
     def is_unreachable(self) -> bool:
         return bool(
-            not self.permanently_lost
-            and self.job.is_running
+            self.job.is_running
             and self.heartbeat is not None
             and not self.heartbeat_fresh
         )

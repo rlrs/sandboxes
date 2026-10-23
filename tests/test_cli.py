@@ -15,7 +15,6 @@ from sandboxes import cli
 from sandboxes.agent import build_heartbeat
 from sandboxes.autoscaler_state import (
     AutoscalerStateStore,
-    ProviderOperation,
 )
 from sandboxes.cli import (
     find_ucloud_ssh_key,
@@ -26,9 +25,7 @@ from sandboxes.control_state import ControlStateStore
 from sandboxes.deployment import package_version
 from sandboxes.managed_registry import RegistryTag, RegistryUsageStore
 from sandboxes.models import (
-    InstancePhase,
     NodeHeartbeat,
-    ProviderInstance,
     ResourceQuantity,
     SandboxDemand,
     SandboxInventoryEntry,
@@ -38,7 +35,6 @@ from sandboxes.models import (
 from sandboxes.routing import (
     SandboxRoute,
 )
-from sandboxes.providers import DestructiveInstanceLoss
 from sandboxes.providers.ucloud.api import UCloudError
 from sandboxes.providers.ucloud.config import UCloudSettings
 from sandboxes.providers.hetzner import (
@@ -498,7 +494,7 @@ class CliTests(unittest.TestCase):
             )
 
             with patch.object(cli, "UCloudClient", HistoryClient):
-                result = cli.run_reconcile_cycle(
+                cli.run_reconcile_cycle(
                     config,
                     args,
                     demand=SandboxDemand(),
@@ -510,11 +506,6 @@ class CliTests(unittest.TestCase):
             retrieve_calls,
             [("project-1", "replaced-job", True)],
         )
-        self.assertEqual(
-            result["destructive_node_loss_job_ids"],
-            [],
-        )
-        self.assertEqual(result["lost_sandbox_ids"], [])
 
     @allow_fixture_mutations
     def test_hetzner_off_instance_preserves_owned_route(self) -> None:
@@ -537,22 +528,6 @@ class CliTests(unittest.TestCase):
                     node_url="http://sandbox-node-off:8090",
                     state="running",
                 )
-            )
-            provider_state = AutoscalerStateStore(root / "autoscaler-state.sqlite")
-            invalid_stop = provider_state.prepare_operation(
-                intent_key="sandbox:42:invalid-destructive-loss",
-                kind="stop",
-                deployment_id="prod-a",
-                role="sandbox",
-                request={
-                    "type": "bulk",
-                    "items": [{"id": "42"}],
-                    "destructiveNodeLoss": True,
-                    "lossReason": "post_start_suspension",
-                    "routeCount": 1,
-                    "lastKnownActiveSandboxes": 1,
-                },
-                target_job_ids=("42",),
             )
             config_file = write_ucloud_config(root, deployment_id="prod-a")
             output = io.StringIO()
@@ -577,15 +552,10 @@ class CliTests(unittest.TestCase):
                     )
             payload = json.loads(output.getvalue())
             route = routing_store_for(self, route_file).get_sandbox("preserved")
-            invalid_after = provider_state.get_operation(invalid_stop.operation_id)
 
         self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["destructive_node_loss_job_ids"], [])
         self.assertEqual(payload["removedRoutes"], [])
         self.assertIsNotNone(route)
-        self.assertIsNotNone(invalid_after)
-        assert invalid_after is not None
-        self.assertEqual(invalid_after.state, "failed")
         # Powered off is unavailable: accounted, visible and alerting.
         self.assertEqual(payload["quarantined_job_ids"], ["42"])
         self.assertEqual(payload["decision"]["unreachableNodes"], 1)
@@ -641,124 +611,6 @@ class CliTests(unittest.TestCase):
             # Refreshed, or retired along with the deleted server.
             self.assertEqual(fresh is not None and fresh.is_fresh(utc_now(), 120),
                              not stopped and probe is not None)
-
-    def test_external_provider_loss_evidence_is_serialized_generically(self) -> None:
-        prototype = DestructiveInstanceLoss(
-            reason="irrecoverable_guest_loss",
-            evidence_kind="external_guest_generation",
-            required_evidence_fields=(
-                "guestGeneration",
-                "lossObserved",
-                "recoverable",
-                "reference",
-            ),
-            evidence=(("lossObserved", True),),
-        )
-        disposition = replace(
-            prototype,
-            evidence=(
-                ("guestGeneration", 0),
-                ("lossObserved", True),
-                ("recoverable", False),
-                ("reference", "generation-0"),
-            ),
-        )
-        provider = SimpleNamespace(
-            kind="external",
-            destructive_instance_losses=(prototype,),
-            destructive_instance_loss=lambda _instance: disposition,
-        )
-        lost_instance = ProviderInstance(
-            id="external-lost",
-            name="external-lost",
-            application_name="sandbox-node",
-            application_version="1",
-            product_id="external",
-            product_category="compute",
-            state="gone",
-            phase=InstancePhase.LOST,
-        )
-
-        observed = cli._provider_destructive_instance_loss(  # type: ignore[arg-type]
-            provider,
-            lost_instance,
-        )
-        assert observed is not None
-        self.assertEqual(
-            cli._destructive_loss_request_fields(  # type: ignore[arg-type]
-                provider,
-                observed,
-            ),
-            {
-                "providerKind": "external",
-                "lossEvidenceKind": "external_guest_generation",
-                "lossEvidence": {
-                    "guestGeneration": 0,
-                    "lossObserved": True,
-                    "recoverable": False,
-                    "reference": "generation-0",
-                },
-            },
-        )
-        for invalid_reference in (None, " "):
-            provider.destructive_instance_loss = lambda _instance: replace(
-                disposition,
-                evidence=(
-                    ("guestGeneration", 0),
-                    ("lossObserved", True),
-                    ("recoverable", False),
-                    ("reference", invalid_reference),
-                ),
-            )
-            self.assertIsNone(
-                cli._provider_destructive_instance_loss(  # type: ignore[arg-type]
-                    provider,
-                    lost_instance,
-                )
-            )
-
-    def test_ucloud_fixed_loss_proof_requires_exact_boolean_type(self) -> None:
-        for invalid in (1, "false"):
-            with self.subTest(invalid=invalid):
-                operation = ProviderOperation(
-                    operation_id="operation-1",
-                    intent_key="sandbox:job-1:destructive-power-cycle",
-                    kind="stop",
-                    deployment_id="prod-a",
-                    role="sandbox",
-                    state="prepared",
-                    request={
-                        "destructiveNodeLoss": True,
-                        "lossReason": "post_start_suspension",
-                        "providerKind": "ucloud",
-                        "lossEvidenceKind": "post_start_suspension",
-                        "lossEvidence": {
-                            "postStartSuspensionObserved": invalid,
-                        },
-                    },
-                    response={},
-                    target_job_ids=("job-1",),
-                    created_at=utc_now(),
-                    updated_at=utc_now(),
-                )
-
-                self.assertIsNone(
-                    cli._provider_destructive_loss_disposition(
-                        SimpleNamespace(kind="ucloud", destructive_instance_losses=()),
-                        operation,
-                    )
-                )
-        numeric_prototype = DestructiveInstanceLoss(
-            reason="numeric_proof",
-            evidence_kind="numeric_proof",
-            required_evidence_fields=("sequence",),
-            evidence=(("sequence", 1),),
-        )
-        self.assertFalse(
-            numeric_prototype.matches(
-                replace(numeric_prototype, evidence=(("sequence", True),))
-            )
-        )
 
     def test_read_public_ssh_key_file_validates_single_openssh_key(self) -> None:
         with temporary_root() as root:
@@ -1419,7 +1271,6 @@ class CliTests(unittest.TestCase):
                             route_reservations={"owned": (route,)},
                             sandbox_routes=(route,),
                         )
-                        self.assertEqual(result["destructive_node_loss_job_ids"], [])
                         self.assertEqual(result["definitelyTerminatedJobIds"], [])
                         self.assertEqual(state.list_operations(kind="stop"), [])
                     client.return_value.terminate_jobs.assert_not_called()
