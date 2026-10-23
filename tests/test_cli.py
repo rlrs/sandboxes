@@ -612,6 +612,43 @@ class CliTests(unittest.TestCase):
             self.assertEqual(fresh is not None and fresh.is_fresh(utc_now(), 120),
                              not stopped and probe is not None)
 
+    @requires_postgres
+    @allow_fixture_mutations
+    def test_autoscaler_once_reports_each_vm_init_outcome(self) -> None:
+        # One cycle runs its init attempts to the end: the printed result and
+        # the stored record say how the attempt went, never "attempting".
+        client = SimpleNamespace(create_server=None, delete_server=None)
+        with temporary_root() as root:
+            postgres_routing_file(self, root / "routes.sqlite")
+            # Just booted: inside the eviction lease, so it is initialised.
+            server = {**hetzner_server("running"), "created": utc_now().isoformat()}
+            jobs_file = write_jobs(root, server)
+            output = io.StringIO()
+            with (
+                patch.object(cli, "compute_provider_from_args",
+                             return_value=hetzner_provider(client)),
+                patch.object(cli, "stage_vm_init_package_over_ssh",
+                             side_effect=OSError("ssh refused")),
+                redirect_stdout(output),
+            ):
+                exit_code = cli.main([
+                    "autoscaler", "--config", str(write_ucloud_config(
+                        root, deployment_id="prod-a")),
+                    "--jobs-file", str(jobs_file), "--execute", "--once",
+                    "--output", "json",
+                ])
+            payload = json.loads(output.getvalue())
+            record = ControlStateStore(
+                root / "control-state.sqlite"
+            ).load_bootstrap_records()["42"]
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            [(item["jobId"], item["status"]) for item in payload["bootstrapResults"]],
+            [("42", "failed")],
+        )
+        self.assertEqual((record.status, record.attempts), ("failed", 1))
+
     def test_read_public_ssh_key_file_validates_single_openssh_key(self) -> None:
         with temporary_root() as root:
             key_file = root / "gateway-init.pub"
