@@ -7,7 +7,6 @@ from typing import Any, Callable, Sequence
 
 from ...models import ProviderInstance
 from ...providers.base import (
-    DestructiveInstanceLoss,
     InstanceBootstrapAccess,
     InstanceCreateIntent,
     ProviderError,
@@ -46,7 +45,6 @@ class UCloudProvider:
     # Recover capacity through authenticated guest continuity, never deletion.
     requires_continuity_history = True
     requires_guest_continuity = True
-    destructive_instance_losses: tuple[DestructiveInstanceLoss, ...] = ()
     _active_job_states = ("IN_QUEUE", "RUNNING", "SUSPENDED")
 
     def __init__(
@@ -228,14 +226,6 @@ class UCloudProvider:
         return not private_network_ids or bool(
             private_network_ids.intersection(instance.private_network_ids)
         )
-
-    def destructive_instance_loss(
-        self,
-        instance: ProviderInstance,
-    ) -> DestructiveInstanceLoss | None:
-        # Neither provider readiness nor heartbeat silence proves guest loss.
-        # Removing the old dispositions also invalidates their journal proofs.
-        return None
 
     def render_create_request(
         self,

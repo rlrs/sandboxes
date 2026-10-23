@@ -74,7 +74,7 @@
   "test_import": 4
  },
  "test_cli.py": {
-  "private": 16,
+  "private": 12,
   "private_patch": 13
  },
  "test_cold_offload.py": {

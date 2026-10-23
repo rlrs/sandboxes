@@ -276,7 +276,6 @@ class HetznerProviderTests(unittest.TestCase):
         for status in ("off", "stopping"):
             off = compute.decode_instance(server_payload(status=status))
             self.assertEqual(off.phase, InstancePhase.UNAVAILABLE, status)
-            self.assertIsNone(compute.destructive_instance_loss(off))
         access = compute.bootstrap_access(running_without_network)
         self.assertFalse(access.runnable)
         self.assertTrue(access.refresh_recommended)
