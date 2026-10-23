@@ -33,25 +33,18 @@ from .image_import import (
     import_image_id,
 )
 from .placement_accounting import (
-    PlacementReservation as PlacementReservation,
-    PlacementRecord as PlacementRecord,
-    PlacementRouteIndex as PlacementRouteIndex,
-    _node_available_resources as _node_available_resources,
-    _node_has_storage_device_capacity as _node_has_storage_device_capacity,
-    _node_reserved_storage_device_slots as _node_reserved_storage_device_slots,
-    _node_reserved_route_resources as _node_reserved_route_resources,
-    _placement_route_index as _placement_route_index,
-    _route_targets_node as _route_targets_node,
-    _placement_identity as _placement_identity,
+    _node_available_resources,
+    _node_has_storage_device_capacity,
+    _placement_route_index,
+    _route_targets_node,
 )
 
 from .worker_receipts import (
-    _record_generation as _record_generation,
-    _route_with_sandbox_record as _route_with_sandbox_record,
-    _sandbox_create_request_body as _sandbox_create_request_body,
-    _sandbox_inventory_from_record as _sandbox_inventory_from_record,
-    _sandbox_record_matches_route as _sandbox_record_matches_route,
-    _sandbox_record_matches_spec as _sandbox_record_matches_spec,
+    _record_generation,
+    _route_with_sandbox_record,
+    _sandbox_create_request_body,
+    _sandbox_inventory_from_record,
+    _sandbox_record_matches_route,
 )
 
 from .admission import FairCapacity
@@ -4978,22 +4971,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 if retryable else None
             ),
         )
-
-    def _write_registry_disk_pressure(self, action: str) -> bool:
-        """Refuse a registry write before dispatch; True when refused."""
-
-        pressure = self.services.images.disk_refusal()
-        if pressure is None:
-            return False
-        self._write_json(
-            registry_disk_pressure_payload(pressure, action=action),
-            status=HTTPStatus.SERVICE_UNAVAILABLE,
-            headers={
-                "Retry-After": str(REGISTRY_DISK_RETRY_AFTER_SECONDS),
-                "X-UCloud-Sandbox-Retryable": "true",
-            },
-        )
-        return True
 
     def _write_image_resolution_error(self, payload: dict[str, Any]) -> None:
         transient = payload.get("error_code") in TRANSIENT_IMAGE_RESOLUTION_ERROR_CODES

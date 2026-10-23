@@ -56,6 +56,8 @@ under [Open decisions](#open-decisions).
 - **Cluster create rate:** target ≥ 300 creates/s; ~30/s measured at production's worker cap.
 - **Cold start:** ready p50 ~2 min from zero; add image-gated scale-up (`policy.py`, `node_agent.py`).
 - **Finish power-of-k:** move wakes to node-gated admission and delete the placement service.
+- **Routing errors by type:** catch `RoutingUnavailable` instead of `sqlite3.DatabaseError`
+  (`control_plane.py`, `gateway/heartbeats.py`), then drop that base class (kept for 0.10.x).
 - **Stateless exec ingress:** drop `upsert_exec` and `exec_sessions` once no old worker can join;
   add route tokens for events and files.
 - **Split the single gateway host:** first move heartbeats, quarantine, host locks, build

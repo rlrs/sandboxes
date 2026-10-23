@@ -2,7 +2,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import sqlite3
 from threading import Event
 import unittest
 from unittest.mock import patch
@@ -12,6 +11,7 @@ from tests.test_control_plane import _gateway_server, _sandbox_route, build_hear
 from tests import test_wake_capacity as capacity_fixtures
 from sandboxes import control_plane
 from sandboxes.models import ResourceQuantity
+from sandboxes.routing import RoutingUnavailable
 
 TEST_TIER = "contract"
 
@@ -102,12 +102,12 @@ class WakeBatchTests(unittest.TestCase):
                     END $$""")
                 conn.execute("""CREATE TRIGGER reject_second BEFORE UPDATE ON sandboxes
                     FOR EACH ROW EXECUTE FUNCTION reject_second()""")
-            with self.assertRaises(sqlite3.DatabaseError):
+            with self.assertRaises(RoutingUnavailable):
                 store.reserve_sandbox_wakes([(r, 'wake:' + r.sandbox_id) for r in routes])
             self.assertEqual([store.get_sandbox(r.sandbox_id).state for r in routes],
                              ["parked", "parked"])
             batcher = control_plane._LocalWakeBatcher()
-            with self.assertRaises(sqlite3.DatabaseError):
+            with self.assertRaises(RoutingUnavailable):
                 batcher.reserve(handler, routes[1])
             with store._transaction() as conn:
                 conn.execute("DROP TRIGGER reject_second ON sandboxes")

@@ -1,10 +1,10 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import sqlite3
 import unittest
 from unittest.mock import patch
 from tests.test_control_plane import _sandbox_route
 from tests.support import routing_store_for
+from sandboxes.routing import RoutingUnavailable
 
 TEST_TIER = "contract"
 
@@ -26,7 +26,7 @@ class RoutingPoolTests(unittest.TestCase):
             self.assertEqual(store.sandbox_routes_readonly()[0].spec['nested'], [True, None, 3.5])
             with store._transaction() as conn:
                 conn.execute("UPDATE sandboxes SET spec_json='[]' WHERE sandbox_id='a'")
-            with self.assertRaises(sqlite3.DatabaseError):
+            with self.assertRaises(RoutingUnavailable):
                 store.sandbox_routes_readonly()
 
     def test_lifecycle_update_preserves_spec_generation_and_storage_dependency(self):
@@ -183,7 +183,7 @@ class RoutingPoolTests(unittest.TestCase):
                 conn.execute("CREATE TRIGGER fail_program BEFORE INSERT ON program_requests FOR EACH ROW EXECUTE FUNCTION fail_program()")
             args = dict(node_epoch='boot', activity_epoch=11,
                         program_transition=dict(request_id='request', rollout_id='rollout', state='acting'))
-            with self.assertRaises(sqlite3.DatabaseError):
+            with self.assertRaises(RoutingUnavailable):
                 store.confirm_sandbox_wake(route, **args)
             self.assertEqual(store.get_sandbox('live'), route)
             self.assertIsNone(store.program_request_readonly('request'))

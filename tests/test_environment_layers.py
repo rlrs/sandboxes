@@ -52,6 +52,11 @@ def diff_id(name):
     return content_digest(name.encode())
 
 
+
+def layer_tag(component: LayerEnvironmentComponent) -> str:
+    """The registry tag a published layer component is indexed under."""
+    return "layer-" + layer_group_key(component.format, component.parent, component.source_layers)
+
 class Keys:
     def __init__(self):
         self.key = Ed25519PrivateKey.generate()
@@ -77,7 +82,7 @@ class LayerComponentSchemaTests(unittest.TestCase):
         image = image_file(self.root / (hashlib.sha256(repr((layers, fill)).encode()).hexdigest() + ".erofs"), fill)
         component = sign_layer_component(image, source_layers=layers, parent=parent,
                                          layer_format=FORMAT, signing_key=self.keys.key)
-        return component, self.registry.publish(image, component, tag="layer-" + component.group_key)
+        return component, self.registry.publish(image, component, tag=layer_tag(component))
 
     def test_v1_and_v2_round_trip_with_schema_bound_signatures(self):
         whole = sign_component(image_file(self.root / "whole.erofs", b"w"), source_image=digest("1"),
@@ -90,7 +95,6 @@ class LayerComponentSchemaTests(unittest.TestCase):
         self.assertEqual(self.registry.load(layer_digest), layer)
         self.assertIsInstance(EnvironmentComponent.from_dict(layer.to_dict()), LayerEnvironmentComponent)
         self.assertEqual(EnvironmentComponent.from_dict(whole.to_dict()), whole)
-        self.assertEqual(layer.group_key, layer_group_key(FORMAT, None, [diff_id("a"), diff_id("b")]))
         for changed in (replace(layer, source_layers=(diff_id("a"),)),
                         replace(layer, parent=diff_id("z")),
                         replace(layer, format=FORMAT | {"compression": ""})):
@@ -115,7 +119,7 @@ class LayerComponentSchemaTests(unittest.TestCase):
                 image = image_file(self.root / f"layout-{layout}.erofs", b"m")
                 signed = sign_layer_component(image, source_layers=layers, parent=None,
                                               layer_format=FORMAT | {"layout": layout}, signing_key=self.keys.key)
-                published = self.registry.publish(image, signed, tag="layer-" + signed.group_key)
+                published = self.registry.publish(image, signed, tag=layer_tag(signed))
                 self.assertEqual(self.registry.load(published).format["layout"], layout)
                 self.assertEqual(EnvironmentComponent.from_dict(signed.to_dict()).authenticate(self.keys.trusted),
                                  signed)
@@ -575,7 +579,7 @@ class LayerPublicationTests(unittest.TestCase):
     def test_partial_cache_miss_pulls_and_builds_only_the_missing_group(self):
         self.registry_config()
         _, base, _ = self.publish("base")
-        self.client.tags.pop("layer-" + base[-1].group_key)
+        self.client.tags.pop(layer_tag(base[-1]))
         self.views.clear()
         with patch.object(self.store, "_checked", wraps=self.store._checked) as pull, \
              publication_metrics() as metrics:
@@ -595,7 +599,7 @@ class LayerPublicationTests(unittest.TestCase):
             annotated = self.builder.publish_image("registry.example/ucloud-managed/base:base", allowlist=("*",))
         requested = [call.args for call in reads.call_args_list]
         for component, digest in zip(components, environment.components):
-            tag = "layer-" + component.group_key
+            tag = layer_tag(component)
             # Preflight and refresh each read the tag once. Their already-read
             # document is authenticated without another immutable-manifest GET.
             self.assertEqual(requested.count(("environments", tag)), 2)
@@ -603,7 +607,7 @@ class LayerPublicationTests(unittest.TestCase):
             # verifies exact source binding before signing the environment.
             self.assertEqual(requested.count(("environments", digest)), 1)
         self.assertEqual([tag for tag in self.client.puts if tag.startswith("layer-")],
-                         ["layer-" + component.group_key for component in components])
+                         [layer_tag(component) for component in components])
         _, result = load_image_environment(self.registry, "ucloud-managed/base", annotated)
         self.assertEqual(result, environment)
 
@@ -611,7 +615,7 @@ class LayerPublicationTests(unittest.TestCase):
         self.registry_config()
         _, components, _ = self.publish("base")
         component = components[0]
-        tag = "layer-" + component.group_key
+        tag = layer_tag(component)
         self.client.puts.clear()
         for layers, parent, layer_format in (
                 ([diff_id("foreign")], component.parent, component.format),
@@ -701,7 +705,7 @@ class LayerPublicationTests(unittest.TestCase):
         self.assertEqual(len(self.views), 1)
         # Reuse re-puts each index tag, restarting its retention grace.
         self.assertEqual([tag for tag in self.client.puts if tag.startswith("layer-")],
-                         ["layer-" + component.group_key for component in task])
+                         [layer_tag(component) for component in task])
         self.assertEqual(task_environment.environment.rootfs_fingerprint(HOST_EROFS_ABI),
                          EnvironmentManifest.from_dict(task_environment.environment.to_dict())
                          .rootfs_fingerprint(HOST_EROFS_ABI))

@@ -46,6 +46,7 @@ from sandboxes.routing import (
     sandbox_owner_loss_disposition,
     sandbox_demand_from_routing_state,
 )
+from sandboxes.routing import RoutingUnavailable
 
 TEST_TIER = "contract"
 
@@ -2420,7 +2421,7 @@ class RoutingAuthorityInitTests(unittest.TestCase):
         config_file = self.root / "deployment.json"
         config_file.write_text(json.dumps(config))
         command = ["serve-control-plane", "--check-placement-enabled", "--config", str(config_file)]
-        with self.assertRaisesRegex(sqlite3.DatabaseError, "migrate --routing-file"):
+        with self.assertRaisesRegex(RoutingUnavailable, "migrate --routing-file"):
             cli.main(command)
         postgres_routing_file(self, self.root / "state" / "routes.sqlite")
         self.assertEqual(cli.main(command), 0)
@@ -2431,12 +2432,15 @@ class RoutingAuthorityInitTests(unittest.TestCase):
         empty.touch()
         sqlite_file = self.root / "sqlite.sqlite"
         sqlite3.connect(sqlite_file).execute("CREATE TABLE t (x)").connection.close()
-        for path in (missing, empty, sqlite_file):
+        for path in (missing, empty):
             with self.subTest(path=path.name), self.assertRaisesRegex(
-                sqlite3.DatabaseError, "migrate --routing-file"
+                RoutingUnavailable, "migrate --routing-file"
             ):
                 open_routing_store(path)
         self.assertFalse(missing.exists())
+        # A pre-PostgreSQL routes database is not a descriptor.
+        with self.assertRaises(RoutingUnavailable):
+            open_routing_store(sqlite_file)
 
 
 if __name__ == "__main__":

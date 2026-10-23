@@ -19,7 +19,6 @@ import os
 from pathlib import Path
 import random
 import re
-import sqlite3
 from threading import Lock
 import time
 
@@ -29,7 +28,7 @@ from psycopg.errors import DeadlockDetected, SerializationFailure
 from psycopg_pool import ConnectionPool
 
 from .database import process_pool_share
-from ..routing import ROUTING_DESCRIPTOR_FORMAT, RoutingStore, PlacementCommandRejected
+from ..routing import ROUTING_DESCRIPTOR_FORMAT, PlacementCommandRejected, RoutingStore, RoutingUnavailable
 from ..models import utc_now
 from uuid import UUID, uuid4
 from ..telemetry import Telemetry
@@ -106,7 +105,7 @@ def _transactional(method, isolation=None):
                 # These SQLSTATEs prove rollback. Connection/COMMIT failures do
                 # not, and must propagate without replaying a mutation.
                 if time.monotonic() >= deadline:
-                    raise sqlite3.DatabaseError(
+                    raise RoutingUnavailable(
                         "routing transaction could not acquire a stable snapshot"
                     ) from None
                 time.sleep(random.uniform(0, delay))
@@ -114,7 +113,7 @@ def _transactional(method, isolation=None):
             except psycopg.Error as exc:
                 # Preserve the current domain's availability exception contract.
                 # Never expose DSNs or driver diagnostics to API clients.
-                raise sqlite3.DatabaseError(
+                raise RoutingUnavailable(
                     "PostgreSQL routing operation failed"
                 ) from exc
 
@@ -221,7 +220,7 @@ class PostgresRoutingStore(RoutingStore):
 
     def validate_authority(self):
         if os.getpid() != self._pid:
-            raise sqlite3.DatabaseError("reopen PostgreSQL routing store after fork")
+            raise RoutingUnavailable("reopen PostgreSQL routing store after fork")
         if self._authority_identity is not None:
             # A replaced descriptor means an operator cutover, which requires
             # stopped services. Re-stat at most once a second: a stat before
@@ -231,7 +230,7 @@ class PostgresRoutingStore(RoutingStore):
                 return
             info = self.path.stat()
             if (info.st_dev, info.st_ino) != self._authority_identity:
-                raise sqlite3.DatabaseError(
+                raise RoutingUnavailable(
                     "routing authority descriptor was replaced; restart required"
                 )
             self._authority_checked_at = now
@@ -613,7 +612,7 @@ class PostgresRoutingStore(RoutingStore):
             with self.pool.connection() as conn:
                 return _Connection(conn).execute(query, parameters).fetchone()
         except psycopg.Error as exc:
-            raise sqlite3.DatabaseError("PostgreSQL routing read failed") from exc
+            raise RoutingUnavailable("PostgreSQL routing read failed") from exc
 
     @contextmanager
     def _read(self):
@@ -627,7 +626,7 @@ class PostgresRoutingStore(RoutingStore):
             with self.pool.connection() as conn:
                 yield _Connection(conn)
         except psycopg.Error as exc:
-            raise sqlite3.DatabaseError("PostgreSQL routing read failed") from exc
+            raise RoutingUnavailable("PostgreSQL routing read failed") from exc
 
     @contextmanager
     def _connect(self):
@@ -644,7 +643,7 @@ class PostgresRoutingStore(RoutingStore):
                 # all other multi-query domain reads rely on it.
                 yield _Connection(conn)
         except psycopg.Error as exc:
-            raise sqlite3.DatabaseError("PostgreSQL routing read failed") from exc
+            raise RoutingUnavailable("PostgreSQL routing read failed") from exc
 
     @contextmanager
     def _local_worker_turn(self, span):

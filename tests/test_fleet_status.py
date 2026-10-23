@@ -6,7 +6,6 @@ from dataclasses import replace
 from datetime import timedelta
 import json
 from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 from threading import Event, RLock
 import unittest
@@ -23,6 +22,7 @@ from sandboxes.fleet_reader import FleetResponseRenderer, FleetSnapshotReader, s
 from sandboxes.models import ResourceQuantity, SandboxInventoryEntry, utc_now
 from sandboxes.registry import heartbeat_to_dict
 from sandboxes.routing import SandboxRoute
+from sandboxes.routing import RoutingUnavailable
 
 TEST_TIER = "contract"
 
@@ -123,7 +123,7 @@ class StatusProjectionContracts:
         self.assertFalse(self.read()["sandboxes"][0]["node"]["attached"])
         with self.routes._transaction() as db:
             db.execute("UPDATE sandboxes SET storage_snapshot_json='{}' WHERE sandbox_id=?", ("agent",))
-        with self.assertRaises(sqlite3.DatabaseError):
+        with self.assertRaises(RoutingUnavailable):
             self.read()
 
 

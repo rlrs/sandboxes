@@ -28,7 +28,7 @@ def postgres_transaction_observer(telemetry):
     )
 
     def observe(sample):
-        for phase in ("pool_wait", "transaction", "commit", "lock_query"):
+        for phase in ("pool_wait", "transaction", "commit"):
             duration.record(getattr(sample, phase + "_seconds"), {
                 "operation": sample.operation, "phase": phase,
                 "status": "ok" if sample.succeeded else "error",
@@ -85,7 +85,6 @@ class PostgresDatabase:
         self.schema = schema
         self.timeout = positive_seconds(timeout_seconds)
         self.observe = observe
-        self._lock_times: ContextVar[list[float] | None] = ContextVar("shared_control_lock_times", default=None)
         self._commit_callbacks: ContextVar[list | None] = ContextVar("shared_control_commit_callbacks", default=None)
         self.pool = AsyncConnectionPool(
             dsn, open=False, min_size=1, max_size=max_connections,
@@ -167,8 +166,6 @@ class PostgresDatabase:
         started = time.monotonic()
         acquired = body_done = ended = None
         succeeded = False
-        lock_times: list[float] = []
-        token = self._lock_times.set(lock_times)
         callbacks = []
         callback_token = self._commit_callbacks.set(callbacks)
         try:
@@ -213,7 +210,6 @@ class PostgresDatabase:
                 ) from exc
             raise
         finally:
-            self._lock_times.reset(token)
             self._commit_callbacks.reset(callback_token)
             if self.observe is not None:
                 now = time.monotonic()
@@ -222,7 +218,6 @@ class PostgresDatabase:
                     (body_done or ended or now) - (acquired or now),
                     (ended or now) - body_done if body_done is not None else 0,
                     succeeded,
-                    sum(lock_times),
                 )
                 try:
                     self.observe(sample)
@@ -257,7 +252,7 @@ class PostgresDatabase:
                 now = time.monotonic()
                 sample = TransactionSample(
                     operation, (acquired or now) - started,
-                    (ended or now) - (acquired or now), 0, succeeded, 0,
+                    (ended or now) - (acquired or now), 0, succeeded,
                 )
                 try:
                     self.observe(sample)
@@ -269,14 +264,3 @@ class PostgresDatabase:
         if callbacks is None:
             raise RuntimeError("post-commit callback requires a transaction")
         callbacks.append(callback)
-
-    async def _lock_query(self, conn, query, params):
-        started = time.monotonic()
-        try:
-            return await conn.execute(query, params)
-        finally:
-            times = self._lock_times.get()
-            if times is not None:
-                # Includes query execution and round-trip, not only server lock
-                # wait. Correlate with pg_stat_activity for that distinction.
-                times.append(time.monotonic() - started)

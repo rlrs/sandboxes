@@ -18,7 +18,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from tests.test_control_plane import _gateway_server, _running_server, build_heartbeat
-from sandboxes.agent import post_heartbeat
+from tests.support import post_heartbeat
 from sandboxes.models import ResourceQuantity
 from sandboxes.shared_control.placement_queue import (
     PlacementQueue,

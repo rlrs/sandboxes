@@ -22,6 +22,7 @@ from tests import test_direct_provisioner as fixtures
 from tests import test_vm_init as vm_init_fixtures
 from tests.test_pause_tier import _PausingWarden
 from tests.test_rust_create_handoff import _UnixConnection
+from tests.support import wait_until
 from sandboxes import noded_client
 from sandboxes.admission_backend import LocalAdmission, NodedAdmission
 from sandboxes.cli import build_parser, vm_init_options_to_dict
@@ -205,6 +206,12 @@ class NodedClientTests(unittest.TestCase):
         self.assertEqual((sessions, client.noded_session), (["session-2"], "session-2"))
 
 
+def hello_from(link: NodedLink, session: str | None = None) -> dict:
+    """The link's hello answer once it has one (from ``session``, if given)."""
+    return wait_until(lambda: (hello := link.hello) is not None
+                      and (session is None or hello["noded_session"] == session) and hello)
+
+
 class NodedLinkTests(unittest.TestCase):
     def setUp(self) -> None:
         directory = TemporaryDirectory()
@@ -215,10 +222,10 @@ class NodedLinkTests(unittest.TestCase):
 
     def test_hello_waits_for_noded_and_follows_its_restarts(self) -> None:
         self.link.start()
-        self.assertIsNone(self.link.wait_hello(0.1))  # noded is not up: the agent starts anyway.
+        self.assertIsNone(self.link.hello)  # noded is not up: the agent starts anyway.
         noded = FakeNoded(self.socket)
         self.addCleanup(noded.close)
-        hello = self.link.wait_hello(5)
+        hello = hello_from(self.link)
         self.assertEqual(hello["noded_session"], "session-1")
         self.assertEqual(len(noded.hellos()), 1)
         self.link.observe_session("session-1")  # The session it already met.
@@ -227,13 +234,13 @@ class NodedLinkTests(unittest.TestCase):
         self.assertEqual(len(noded.hellos()), 1)
         noded.session = "session-2"  # noded restarted; its next request to the agent says so.
         self.link.observe_session("session-2")
-        self.assertEqual(self.link.wait_hello(5, session="session-2")["noded_session"], "session-2")
+        self.assertEqual(hello_from(self.link, "session-2")["noded_session"], "session-2")
         time.sleep(0.05)
         self.assertEqual(len(noded.hellos()), 2)
         # An answer under a new session says hello again too.
         noded.session = "session-3"
         self.link.client.ping()
-        self.assertEqual(self.link.wait_hello(5, session="session-3")["noded_session"], "session-3")
+        self.assertEqual(hello_from(self.link, "session-3")["noded_session"], "session-3")
         time.sleep(0.05)
         self.assertEqual(len(noded.hellos()), 3)
         agent_sessions = {headers["X-UCloud-Agent-Session"] for headers in noded.hellos()}
@@ -243,7 +250,7 @@ class NodedLinkTests(unittest.TestCase):
         self.link.start()
         self.link.stop()
         self.assertFalse(self.link._thread.is_alive())
-        self.assertIsNone(self.link.wait_hello(0.01))
+        self.assertIsNone(self.link.hello)
 
 
 def _service(root: Path, **kwargs) -> DirectSandboxService:
@@ -327,7 +334,7 @@ class RustAdmissionAgentTests(unittest.TestCase):
         self.assertIsInstance(self.service.admission, NodedAdmission)
         self.assertIs(self.service.admission.link, link)
         self.assertIsNone(server.RequestHandlerClass.manager._demand_publisher)
-        self.assertEqual(link.wait_hello(5)["noded_session"], "session-1")
+        self.assertEqual(hello_from(link)["noded_session"], "session-1")
         # Phase 3b: the agent reads noded's resident samples instead of sampling.
         self.assertIsInstance(self.service._resident_memory, PublishedResidentMemory)
         self.assertEqual(self.service._resident_memory.path, self.root / "noded" / "resident.json")
@@ -347,7 +354,7 @@ class RustAdmissionAgentTests(unittest.TestCase):
         self.assertEqual(len(noded.hellos()), 1)
         noded.session = "session-2"  # A restarted noded calls the agent under its new session.
         call("session-2")
-        self.assertEqual(link.wait_hello(5, session="session-2")["noded_session"], "session-2")
+        self.assertEqual(hello_from(link, "session-2")["noded_session"], "session-2")
         server.shutdown()
         server.server_close()
         self.assertFalse(link._thread.is_alive())

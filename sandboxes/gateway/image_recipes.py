@@ -373,10 +373,6 @@ class ImageRecipeStore:
         with self._db() as db:
             db.execute("UPDATE recipe_images SET oci = ? WHERE image_id = ?", (oci, image_id))
 
-    def pinned_image_ids(self):
-        with self._db(write=False) as db:
-            return {row[0] for row in db.execute("SELECT DISTINCT image_id FROM recipes WHERE retention = 'pinned'")}
-
     def building_names(self, limit=500):
         """One name per image whose row says its build is running."""
         with self._db(write=False) as db:

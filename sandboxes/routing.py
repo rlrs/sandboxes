@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import sqlite3
 from threading import Lock
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping, Protocol
 from uuid import uuid4
 
 from .models import (
@@ -40,6 +40,20 @@ _UNINITIALISED = (
 )
 
 
+class RoutingUnavailable(sqlite3.DatabaseError):
+    """The routing authority cannot answer now; the gateway answers 503, retryable.
+
+    It subclasses sqlite3.DatabaseError, the contract before routing moved to
+    PostgreSQL, for one release so handlers that still catch that keep working.
+    """
+
+
+class RoutingConnection(Protocol):
+    """A routing transaction's connection; queries use qmark parameters."""
+
+    def execute(self, query: str, parameters: Any = ()) -> Any: ...
+
+
 def open_routing_store(path: Path):
     """Resolve the deployment's PostgreSQL routing authority, failing closed.
 
@@ -50,14 +64,13 @@ def open_routing_store(path: Path):
     """
     path = Path(path)
     try:
-        with path.open('rb') as stream:
-            prefix = stream.read(16)
+        raw = path.read_bytes()
     except FileNotFoundError:
-        raise sqlite3.DatabaseError(_UNINITIALISED) from None
-    if prefix == b'SQLite format 3\x00' or not prefix:
-        raise sqlite3.DatabaseError(_UNINITIALISED)
+        raise RoutingUnavailable(_UNINITIALISED) from None
+    if not raw:
+        raise RoutingUnavailable(_UNINITIALISED)
     try:
-        descriptor = json.loads(path.read_text())
+        descriptor = json.loads(raw)
         if descriptor.get('format') != ROUTING_DESCRIPTOR_FORMAT:
             raise ValueError('unrecognized routing authority')
         from .shared_control.routing_repository import PostgresRoutingStore
@@ -80,7 +93,7 @@ def open_routing_store(path: Path):
             _POSTGRES_ROUTING_STORES[key] = store
             return store
     except Exception as exc:
-        raise sqlite3.DatabaseError('routing authority is unavailable or invalid') from exc
+        raise RoutingUnavailable('routing authority is unavailable or invalid') from exc
 
 
 def close_routing_store(path: Path) -> None:
@@ -1650,7 +1663,7 @@ class RoutingStore:
 
     def _claim_prepared_capacity_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         route: SandboxRoute,
     ) -> PreparedCapacityDemand | None:
         route_image = str(route.spec.get("image") or "").strip()
@@ -2806,7 +2819,7 @@ class RoutingStore:
 
     def _detach_owner_lost_route_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         route: SandboxRoute,
         *,
         updated_at: str,
@@ -2830,7 +2843,7 @@ class RoutingStore:
 
     @staticmethod
     def _record_exec_losses_unlocked(
-        conn: sqlite3.Connection, route: SandboxRoute
+        conn: RoutingConnection, route: SandboxRoute
     ) -> None:
         # Exec sessions belong to the worker process, even when a portable
         # sandbox snapshot survives. Never redirect or replay an accepted exec.
@@ -2847,7 +2860,7 @@ class RoutingStore:
 
     def _delete_sandbox_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         route: SandboxRoute | str,
         *,
         terminal_error: str = "",
@@ -2922,7 +2935,7 @@ class RoutingStore:
 
     @staticmethod
     def _terminalize_program_requests_unlocked(
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         sandbox_id: str,
         *,
         generation: int | None = None,
@@ -3526,7 +3539,7 @@ class RoutingStore:
 
     def _prune_expired_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         now: datetime,
     ) -> None:
         pending_cutoff = (
@@ -3566,7 +3579,7 @@ class RoutingStore:
 
     def _sandbox_demand_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         now: datetime,
     ) -> SandboxDemand:
         pending = [
@@ -3664,7 +3677,7 @@ class RoutingStore:
 
     def _load_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         *,
         include_exec_sessions: bool = True,
     ) -> RoutingState:
@@ -3789,7 +3802,7 @@ class RoutingStore:
 
     def _sandbox_routes_for_node_url_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         node_url: str,
         *,
         excluded_ids: Iterable[str] = (),
@@ -3821,7 +3834,7 @@ class RoutingStore:
 
     def _get_sandbox_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         sandbox_id: str,
     ) -> SandboxRoute | None:
         row = conn.execute(
@@ -3832,7 +3845,7 @@ class RoutingStore:
 
     def _get_exec_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         session_id: str,
     ) -> ExecRoute | None:
         row = conn.execute(_EXEC_ROUTE_BY_ID_SQL, (session_id,)).fetchone()
@@ -3840,7 +3853,7 @@ class RoutingStore:
 
     def _get_sandbox_migration_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         migration_id: str,
     ) -> SandboxMigration | None:
         row = conn.execute(
@@ -3862,7 +3875,7 @@ class RoutingStore:
 
     def _get_pending_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         sandbox_id: str,
     ) -> PendingSandboxDemand | None:
         row = conn.execute(
@@ -3878,7 +3891,7 @@ class RoutingStore:
 
     def _upsert_pending_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         sandbox_id: str,
         resources: ResourceQuantity,
         *,
@@ -3914,7 +3927,7 @@ class RoutingStore:
 
     def _get_image_build_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         image_id: str,
     ) -> PendingImageBuildDemand | None:
         row = conn.execute(
@@ -3929,7 +3942,7 @@ class RoutingStore:
 
     def _get_prepared_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         prepare_id: str,
     ) -> PreparedCapacityDemand | None:
         row = conn.execute(
@@ -3945,7 +3958,7 @@ class RoutingStore:
 
     def _get_prepared_builder_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         prepare_id: str,
     ) -> PreparedBuilderDemand | None:
         row = conn.execute(
@@ -3960,7 +3973,7 @@ class RoutingStore:
 
     def _get_image_warmup_unlocked(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         warmup_id: str,
     ) -> PendingImageWarmup | None:
         row = conn.execute(
@@ -3995,7 +4008,7 @@ class RoutingStore:
                 (route.sandbox_id, route.generation, _object_json(route.storage_snapshot)),
             )
 
-    def _write_sandbox(self, conn: sqlite3.Connection, route: SandboxRoute) -> None:
+    def _write_sandbox(self, conn: RoutingConnection, route: SandboxRoute) -> None:
         conn.execute(
             """
             INSERT INTO sandboxes (
@@ -4081,7 +4094,7 @@ class RoutingStore:
             (route.sandbox_id, route.generation),
         )
 
-    def _write_exec(self, conn: sqlite3.Connection, route: ExecRoute) -> None:
+    def _write_exec(self, conn: RoutingConnection, route: ExecRoute) -> None:
         conn.execute(
             """
             INSERT INTO exec_sessions (
@@ -4110,7 +4123,7 @@ class RoutingStore:
 
     def _write_sandbox_migration(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         migration: SandboxMigration,
     ) -> None:
         conn.execute(
@@ -4176,7 +4189,7 @@ class RoutingStore:
 
     def _write_pending(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         item: PendingSandboxDemand,
     ) -> None:
         conn.execute(
@@ -4211,7 +4224,7 @@ class RoutingStore:
 
     def _write_image_build(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         item: PendingImageBuildDemand,
     ) -> None:
         conn.execute(
@@ -4237,7 +4250,7 @@ class RoutingStore:
 
     def _write_prepared(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         item: PreparedCapacityDemand,
     ) -> None:
         conn.execute(
@@ -4268,7 +4281,7 @@ class RoutingStore:
 
     def _write_prepared_builder(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         item: PreparedBuilderDemand,
     ) -> None:
         conn.execute(
@@ -4294,7 +4307,7 @@ class RoutingStore:
 
     def _write_image_warmup(
         self,
-        conn: sqlite3.Connection,
+        conn: RoutingConnection,
         item: PendingImageWarmup,
     ) -> None:
         conn.execute(
@@ -4488,7 +4501,7 @@ def _object_json(raw: dict[str, Any]) -> str:
     return json.dumps(raw, sort_keys=True, separators=(",", ":"))
 
 
-def _sandbox_route_from_row(row: sqlite3.Row) -> SandboxRoute:
+def _sandbox_route_from_row(row: Mapping[str, Any]) -> SandboxRoute:
     try:
         values = dict(row)
         values["resources"] = ResourceQuantity.from_dict(
@@ -4508,10 +4521,10 @@ def _sandbox_route_from_row(row: sqlite3.Row) -> SandboxRoute:
         TypeError,
         ValueError,
     ) as exc:
-        raise sqlite3.DatabaseError("invalid sandbox route row") from exc
+        raise RoutingUnavailable("invalid sandbox route row") from exc
 
 
-def _program_request_from_row(row: sqlite3.Row) -> ProgramRequestState:
+def _program_request_from_row(row: Mapping[str, Any]) -> ProgramRequestState:
     state = str(row["state"])
     if state not in _PROGRAM_STATE_RANK:
         state = "terminal"
@@ -4532,7 +4545,7 @@ def _program_request_from_row(row: sqlite3.Row) -> ProgramRequestState:
     )
 
 
-def _exec_route_from_row(row: sqlite3.Row) -> ExecRoute:
+def _exec_route_from_row(row: Mapping[str, Any]) -> ExecRoute:
     return ExecRoute(
         session_id=str(row["session_id"]),
         sandbox_id=str(row["sandbox_id"]),
@@ -4544,7 +4557,7 @@ def _exec_route_from_row(row: sqlite3.Row) -> ExecRoute:
     )
 
 
-def _sandbox_migration_from_row(row: sqlite3.Row) -> SandboxMigration:
+def _sandbox_migration_from_row(row: Mapping[str, Any]) -> SandboxMigration:
     return SandboxMigration(
         migration_id=str(row["migration_id"]),
         sandbox_id=str(row["sandbox_id"]),
@@ -4568,7 +4581,7 @@ def _sandbox_migration_from_row(row: sqlite3.Row) -> SandboxMigration:
     )
 
 
-def _pending_from_row(row: sqlite3.Row) -> PendingSandboxDemand:
+def _pending_from_row(row: Mapping[str, Any]) -> PendingSandboxDemand:
     return PendingSandboxDemand(
         sandbox_id=str(row["sandbox_id"]),
         resources=_resources_from_json(row["resources_json"]),
@@ -4582,7 +4595,7 @@ def _pending_from_row(row: sqlite3.Row) -> PendingSandboxDemand:
     )
 
 
-def _image_build_from_row(row: sqlite3.Row) -> PendingImageBuildDemand:
+def _image_build_from_row(row: Mapping[str, Any]) -> PendingImageBuildDemand:
     return PendingImageBuildDemand(
         image_id=str(row["image_id"]),
         tag=str(row["tag"]),
@@ -4592,7 +4605,7 @@ def _image_build_from_row(row: sqlite3.Row) -> PendingImageBuildDemand:
     )
 
 
-def _prepared_from_row(row: sqlite3.Row) -> PreparedCapacityDemand:
+def _prepared_from_row(row: Mapping[str, Any]) -> PreparedCapacityDemand:
     return PreparedCapacityDemand(
         prepare_id=str(row["prepare_id"]),
         resources=_resources_from_json(row["resources_json"]),
@@ -4604,7 +4617,7 @@ def _prepared_from_row(row: sqlite3.Row) -> PreparedCapacityDemand:
     )
 
 
-def _prepared_builder_from_row(row: sqlite3.Row) -> PreparedBuilderDemand:
+def _prepared_builder_from_row(row: Mapping[str, Any]) -> PreparedBuilderDemand:
     return PreparedBuilderDemand(
         prepare_id=str(row["prepare_id"]),
         count=max(1, int(row["count"])),
@@ -4614,7 +4627,7 @@ def _prepared_builder_from_row(row: sqlite3.Row) -> PreparedBuilderDemand:
     )
 
 
-def _image_warmup_from_row(row: sqlite3.Row) -> PendingImageWarmup:
+def _image_warmup_from_row(row: Mapping[str, Any]) -> PendingImageWarmup:
     try:
         warmed_raw = json.loads(str(row["warmed_node_ids_json"] or "[]"))
     except json.JSONDecodeError:

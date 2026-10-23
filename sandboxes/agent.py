@@ -152,10 +152,6 @@ def build_heartbeat(
     )
 
 
-def post_heartbeat(url: str, heartbeat: NodeHeartbeat) -> HeartbeatPostResult:
-    return post_heartbeat_with_headers(url, heartbeat, {})
-
-
 def post_heartbeat_with_headers(
     url: str,
     heartbeat: NodeHeartbeat,

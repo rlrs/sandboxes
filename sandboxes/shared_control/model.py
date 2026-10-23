@@ -37,4 +37,3 @@ class TransactionSample:
     transaction_seconds: float
     commit_seconds: float
     succeeded: bool
-    lock_query_seconds: float = 0

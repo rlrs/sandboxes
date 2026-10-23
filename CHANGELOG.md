@@ -21,6 +21,8 @@
   `lost_sandbox_ids`, `fencedNodeLossHeartbeats`, `persistedNodeLossDemand`,
   per-node `permanentlyLost`) and the metrics scale-down event drops
   `destructive_job_ids`.
+- `ucloud.platform.postgres.duration` no longer records a `lock_query` phase. No
+  query was timed into it, so it was always 0.
 
 ## 0.10.0 - 2026-10-22 (gateway; workers; store node)
 
