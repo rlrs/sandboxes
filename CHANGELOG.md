@@ -6,6 +6,11 @@
   bundles; register names with `build_image_index.py register`. The unused
   `preflight_environment.py`, `build_environment_canary.sh` and
   `guest_conformance_probe.py` are gone.
+- **ucloud-noded listens with a backlog of 4096, as the Python agent did.**
+  `TcpListener::bind` gave it 128, so a burst of more connects than that, while
+  the accept loop was busy, had SYNs dropped: those clients waited 1, 3, 7 s for
+  retransmits and could pass the gateway's 5 s connect timeout. The held
+  job-read test hit this in CI (2995 of 3000 reads held at its deadline).
 - **Buffered worker RPCs never reuse a connection the gateway asked to close**
   (RFC 9112 9.6). aiohttp pooled such a connection unless the answer also said
   `Connection: close`. ucloud-noded and the Python agent always say so, so

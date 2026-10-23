@@ -40,6 +40,8 @@ pub mod oci;
 pub mod rootfs;
 
 use std::future::Future;
+use std::io;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -52,7 +54,7 @@ use hyper::header::{self, HeaderMap, HeaderValue};
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::server::graceful::GracefulShutdown;
-use tokio::net::{TcpListener, UnixStream};
+use tokio::net::{TcpListener, TcpSocket, UnixStream};
 use tokio::sync::{Mutex, Semaphore};
 
 pub type Body = BoxBody<Bytes, hyper::Error>;
@@ -267,6 +269,22 @@ pub fn start_fronts(upstream: &std::path::Path, token: &str, exec: bool, pause: 
         node: Some(node),
         internal,
     })
+}
+
+/// The front door's listen backlog, the Python agent's
+/// (`DEFAULT_HTTP_REQUEST_QUEUE_SIZE`). A burst of connects the accept loop has
+/// not reached yet waits here; past it the kernel drops SYNs and each client
+/// retries 1, 3, 7 s later. Linux caps it at `net.core.somaxconn`.
+pub const LISTEN_BACKLOG: u32 = 4096;
+
+/// Bind the front door's port. `TcpListener::bind` listens with a backlog of
+/// 128, fewer than one gateway process's pools hold to a node (128 control
+/// connections and 256 event polls), all reconnecting after a restart.
+pub fn listen(address: SocketAddr) -> io::Result<TcpListener> {
+    let socket = if address.is_ipv4() { TcpSocket::new_v4()? } else { TcpSocket::new_v6()? };
+    socket.set_reuseaddr(true)?;
+    socket.bind(address)?;
+    socket.listen(LISTEN_BACKLOG)
 }
 
 /// Serve until `shutdown` resolves, then let in-flight requests finish within

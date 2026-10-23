@@ -8,7 +8,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use tokio::net::TcpListener;
 use tokio::signal::unix::{SignalKind, signal};
 
 fn usage(message: &str) -> ExitCode {
@@ -168,7 +167,7 @@ fn main() -> ExitCode {
     }
     let Some(runtime) = runtime() else { return ExitCode::FAILURE };
     runtime.block_on(async move {
-        let listener = match TcpListener::bind(listen).await {
+        let listener = match ucloud_noded::listen(listen) {
             Ok(listener) => listener,
             Err(error) => {
                 eprintln!("ucloud-noded: cannot listen on {listen}: {error}");
