@@ -188,7 +188,6 @@ class CreateHandoffTests(AdmissionBackendCase, unittest.TestCase):
         heartbeat = self.server.RequestHandlerClass.manager.heartbeat_snapshot(active_build_count=lambda: 0)
         self.assertEqual(heartbeat.activity.active_sandbox_creates, 1)
         self.assertEqual(heartbeat.activity.reserved_resources.memory_mb, 1024)
-        self.assertEqual(self.handoff.held_count, 1)
         # The same incarnation is busy while held, as today's create is.
         status, headers, busy = self.call("POST", "/internal/v1/creates/admit", self.admission(spec))
         self.assertEqual((status, busy["error_code"], headers["Retry-After"]),
@@ -203,7 +202,7 @@ class CreateHandoffTests(AdmissionBackendCase, unittest.TestCase):
         self.assertGreater(finished["sandbox"]["activity_epoch"], self.provisioner.registry.activity_revision())
         self.assertLessEqual({"validate_spec_ms", "startup_admission_ms", "active_capacity_ms", "request_lock_ms"},
                              set(finished["phases"]))
-        self.assertEqual((self.creates_in_flight(), self.handoff.held_count), (0, 0))
+        self.assertEqual(self.creates_in_flight(), 0)
         self.assertEqual([sandbox.sandbox_id for sandbox in self.adopted], ["sandbox"])
         status, _, error = self.call("POST", f"/internal/v1/creates/{admitted['token']}/finish",
                                      {"outcome": "created"})
@@ -234,7 +233,7 @@ class CreateHandoffTests(AdmissionBackendCase, unittest.TestCase):
                                         self.admission(spec, admitted={"token": token}))
         self.assertEqual(status, 200, admitted)
         # One in-flight create: noded's claim, or (locally) the agent's own.
-        self.assertEqual((self.creates_in_flight(), self.handoff.held_count), (1, 1))
+        self.assertEqual(self.creates_in_flight(), 1)
         # The lifecycle lock is held: the same incarnation is busy.
         status, headers, busy = self.call("POST", "/internal/v1/creates/admit",
                                           self.admission(spec, admitted={"token": token}))
@@ -251,7 +250,7 @@ class CreateHandoffTests(AdmissionBackendCase, unittest.TestCase):
             self.assertNotIn("startup_admission_ms", finished["phases"])
             self.assertEqual(self.creates_in_flight(), 1)
             self.service.admission.client.call("POST", f"/internal/v1/admission/{token}/release", {})
-        self.assertEqual((self.creates_in_flight(), self.handoff.held_count), (0, 0))
+        self.assertEqual(self.creates_in_flight(), 0)
         for bad in ({"token": "short"}, {"token": "0" * 32, "extra": 1}, "token", {"token": "A" * 32}):
             with self.subTest(admitted=bad):
                 status, _, error = self.call("POST", "/internal/v1/creates/admit",

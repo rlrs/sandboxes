@@ -255,10 +255,6 @@ class LayerEnvironmentComponent:
             raise ValueError("unqualified immutable environment format/provenance")
         _require_range_index(self)
 
-    @property
-    def group_key(self):
-        return layer_group_key(self.format, self.parent, self.source_layers)
-
     def unsigned(self):
         return {"schema": self.schema, "filesystem": self.filesystem,
                 "source_kind": self.source_kind, "source_layers": list(self.source_layers),

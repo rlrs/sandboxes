@@ -18,9 +18,8 @@ from tests.test_control_plane import (
     _running_server,
     _temporary_root,
     build_heartbeat,
-    post_heartbeat,
 )
-from tests.support import routing_store_for
+from tests.support import post_heartbeat, routing_store_for
 
 TEST_TIER = "contract"
 

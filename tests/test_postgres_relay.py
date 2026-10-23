@@ -379,19 +379,14 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
             await conn.execute("UPDATE relay_requests SET completed_at=completed_at-3600 WHERE deployment_id=%s AND request_id=%s", (state.deployment, request.request_id))
         await state.maintain()
         self.assertEqual((await state.stats())["delivery_pending"], 1)
-        peer = await self.new_state(result_notifier=hold_wake,
-                                    completed_request_retention_seconds=0.001)
-        await peer.release_completed_response(request.request_id)
-        self.assertEqual((await peer.wait_for_response(request, timeout_seconds=1)).body, b"answer")
-        await peer.maintain()
-        # Explicit delivery release cannot delete an unfinished lifecycle obligation.
-        self.assertGreater((await peer.stats())["reserved_storage_bytes"], 0)
+        self.assertGreater((await state.stats())["reserved_storage_bytes"], 0)
+        # The delivered wake releases the response; only then is it reclaimed.
         wake.set()
+        self.assertEqual((await state.wait_for_response(request, timeout_seconds=2)).body, b"answer")
         async def reclaimed():
-            while (await peer.stats())["reserved_storage_bytes"]:
-                await peer.maintain()
-                await asyncio.sleep(0.01)
-        await asyncio.wait_for(reclaimed(), 2)
+            await state.maintain()
+            return not (await state.stats())["reserved_storage_bytes"]
+        await wait_until_async(reclaimed, timeout=2)
 
     async def test_live_migration_creates_only_relay_tables_and_status_is_read_only(self):
         from pathlib import Path

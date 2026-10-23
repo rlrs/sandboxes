@@ -301,17 +301,6 @@ class NodedLink:
             self._seen, self._wanted = session, True
             self._guard.notify_all()
 
-    def wait_hello(self, timeout: float, *, session: str | None = None) -> dict[str, Any] | None:
-        """The hello answer once there is one (from ``session``, if given)."""
-        deadline = time.monotonic() + timeout
-        with self._guard:
-            while self._hello is None or (session is not None and self._hello["noded_session"] != session):
-                remaining = deadline - time.monotonic()
-                if remaining <= 0 or self._stopped:
-                    return None
-                self._guard.wait(remaining)
-            return self._hello
-
     def hello_now(self, *, timeout: float | None = None) -> dict[str, Any]:
         """Say hello now, reasserting the held claims; a NodedError if noded refuses or is down."""
         with self._saying:

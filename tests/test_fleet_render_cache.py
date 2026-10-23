@@ -1,7 +1,6 @@
 from dataclasses import asdict, replace
 from datetime import timedelta
 import json
-import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +9,7 @@ from sandboxes.control_plane import _route_only_sandbox_record
 from sandboxes.fleet_reader import FleetResponseRenderer
 from sandboxes.models import utc_now
 from sandboxes.routing import _sandbox_route_from_row
+from sandboxes.routing import RoutingUnavailable
 
 
 def rows(routes):
@@ -100,7 +100,7 @@ class FleetRenderCacheTests(unittest.TestCase):
         self.render(renderer)
         changed = rows([self.route])
         changed[0]["spec_hash"] = "invalid"
-        with self.assertRaises(sqlite3.DatabaseError):
+        with self.assertRaises(RoutingUnavailable):
             renderer.render(changed, {self.heartbeat.node_id: self.heartbeat}, 120)
 
     def test_budget_only_limits_retention_not_results(self):

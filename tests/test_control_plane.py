@@ -21,7 +21,6 @@ from unittest.mock import Mock, patch
 
 from sandboxes.agent import (
     build_heartbeat as _agent_build_heartbeat,
-    post_heartbeat,
     post_heartbeat_with_headers,
 )
 from sandboxes import control_plane
@@ -79,7 +78,7 @@ from sandboxes.storage_native_registry import (
     PublishedStorageLayer,
     StorageSnapshotPublication,
 )
-from tests.support import postgres_routing_file, requires_postgres, routing_store_for
+from tests.support import post_heartbeat, postgres_routing_file, requires_postgres, routing_store_for
 
 TEST_TIER = "contract"
 

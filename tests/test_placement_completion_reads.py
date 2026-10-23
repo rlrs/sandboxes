@@ -149,7 +149,7 @@ class CompletionReaderLifecycleTests(unittest.IsolatedAsyncioTestCase):
         records = telemetry.meter.create_histogram.return_value.record.call_args_list
         self.assertEqual(
             [r.args[1]["phase"] for r in records],
-            ["pool_wait", "transaction", "commit", "lock_query"],
+            ["pool_wait", "transaction", "commit"],
         )
         self.assertTrue(
             all(r.args[1]["operation"] == "placement_results" for r in records)

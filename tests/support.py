@@ -136,6 +136,13 @@ def wait_until(condition: Callable[[], _T], timeout: float = 10.0, message: str 
         delay = min(delay * 2, 0.05)
 
 
+def post_heartbeat(url: str, heartbeat: Any) -> Any:
+    """POST one heartbeat with no extra headers; the answer, as the node sees it."""
+    from sandboxes.agent import post_heartbeat_with_headers
+
+    return post_heartbeat_with_headers(url, heartbeat, {})
+
+
 async def wait_until_async(
     condition: Callable[[], Awaitable[_T]], timeout: float = 10.0, message: str = ""
 ) -> _T:

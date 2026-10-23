@@ -9,7 +9,7 @@ import unittest
 from tests import test_control_plane as fixtures
 from tests import test_direct_provisioner as direct_fixtures
 from tests.gateway_support import gateway_services
-from sandboxes import control_plane
+from sandboxes import control_plane, placement_accounting
 from sandboxes.control_state import ControlStateStore
 from sandboxes.registry import heartbeat_to_dict
 from sandboxes.direct_service import DirectSandboxService
@@ -84,15 +84,15 @@ class WakeCapacityTests(unittest.TestCase):
             state="parked", resources=route.resources,
         )
         heartbeat = replace(self.heartbeat(), inventory=(entry,))
-        self.assertFalse(control_plane._node_has_storage_device_capacity(heartbeat, [route]))
-        self.assertEqual(control_plane._node_reserved_storage_device_slots(heartbeat, [route, route]), 1)
+        self.assertFalse(placement_accounting._node_has_storage_device_capacity(heartbeat, [route]))
+        self.assertEqual(placement_accounting._node_reserved_storage_device_slots(heartbeat, [route, route]), 1)
         running = replace(route, state="running")
-        self.assertFalse(control_plane._node_has_storage_device_capacity(heartbeat, [running]))
-        self.assertEqual(control_plane._node_reserved_storage_device_slots(heartbeat, [running]), 1)
-        self.assertTrue(control_plane._node_has_storage_device_capacity(heartbeat, [replace(route, state="parked")]))
+        self.assertFalse(placement_accounting._node_has_storage_device_capacity(heartbeat, [running]))
+        self.assertEqual(placement_accounting._node_reserved_storage_device_slots(heartbeat, [running]), 1)
+        self.assertTrue(placement_accounting._node_has_storage_device_capacity(heartbeat, [replace(route, state="parked")]))
         observed = replace(heartbeat, inventory=(replace(entry, state="restoring"),))
-        self.assertEqual(control_plane._node_reserved_storage_device_slots(observed, [route]), 0)
-        self.assertFalse(control_plane._node_has_storage_device_capacity(self.heartbeat(active=64), []))
+        self.assertEqual(placement_accounting._node_reserved_storage_device_slots(observed, [route]), 0)
+        self.assertFalse(placement_accounting._node_has_storage_device_capacity(self.heartbeat(active=64), []))
 
     def test_full_owner_requests_snapshot_publication(self):
         with TemporaryDirectory() as directory:
@@ -290,7 +290,7 @@ class WakeCapacityTests(unittest.TestCase):
             destination = replace(source_node, node_id="destination", job_id="dest-job", node_url="http://dest:8090")
             handler.services.fleet.ready_sandbox_heartbeats = lambda **_kwargs: [source_node, destination]
             # Parked owners themselves need no new device until a wake is reserved.
-            self.assertTrue(control_plane._node_has_storage_device_capacity(source_node, [source]))
+            self.assertTrue(placement_accounting._node_has_storage_device_capacity(source_node, [source]))
             self.assertIsNotNone(handler._select_migration_destination(another, requested_node_id=""))
             handler.routing_store.begin_sandbox_migration(
                 source, migration_id="capacity-migration", destination_node_id="destination",

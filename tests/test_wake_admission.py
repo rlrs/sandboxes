@@ -4,7 +4,6 @@ from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import sqlite3
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +11,7 @@ from tests.test_control_plane import _sandbox_route
 from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
 from sandboxes.routing import wake_pending_demand_id
 from sandboxes.wake_admission import WakeAdmission
+from sandboxes.routing import RoutingUnavailable
 from tests.support import routing_store_for
 
 TEST_TIER = "contract"
@@ -201,7 +201,7 @@ class WakeAdmissionTests(unittest.TestCase):
                 END $$""")
             connection.execute("""CREATE TRIGGER fail_batch BEFORE UPDATE ON sandboxes
                 FOR EACH ROW EXECUTE FUNCTION fail_batch()""")
-        with self.assertRaises(sqlite3.DatabaseError):
+        with self.assertRaises(RoutingUnavailable):
             self.admission.reserve_batch(self.routes)
         self.assertEqual(
             [

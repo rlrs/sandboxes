@@ -182,11 +182,6 @@ class CreateHandoff:
         for item in held:
             self._deliver(item, None)
 
-    @property
-    def held_count(self) -> int:
-        with self._guard:
-            return len(self._held)
-
     def _take(self, token: str) -> _Held:
         with self._guard:
             held = self._held.pop(token, None)

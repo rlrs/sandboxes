@@ -554,7 +554,7 @@
   "clock": 4,
   "private": 76,
   "private_patch": 11,
-  "sleep": 20
+  "sleep": 19
  },
  "test_postgres_routing_snapshot.py": {
   "private": 1,

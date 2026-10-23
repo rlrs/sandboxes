@@ -1121,13 +1121,6 @@ class PostgresRelayState:
         )
         await self._notify(conn, "r:" + request_id)
 
-    async def release_completed_response(self, request_id):
-        async with self.store.transaction("relay_release") as conn:
-            row = await self._request_lock(conn, request_id)
-            if row["state"] != "completed":
-                raise web.HTTPConflict(text="response is not committed")
-            await self._release(conn, request_id)
-
     async def cancel_request(self, *, request_id, response, reason="canceled"):
         async with self.store.transaction("relay_cancel") as conn:
             row = await self._request_lock(conn, request_id)

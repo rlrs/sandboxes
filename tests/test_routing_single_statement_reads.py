@@ -2,12 +2,12 @@
 
 import os
 from pathlib import Path
-import sqlite3
 from tempfile import TemporaryDirectory
 import unittest
 from uuid import uuid4
 
 from tests.test_routing import sandbox_route
+from sandboxes.routing import RoutingUnavailable
 
 TEST_TIER = "contract"
 
@@ -54,10 +54,10 @@ class SingleStatementRoutingTests(unittest.TestCase):
         # Replacement is detected by the next once-a-second recheck.
         self.store.get_sandbox("single")
         self.store._authority_checked_at = float("-inf")
-        with self.assertRaisesRegex(sqlite3.DatabaseError, "descriptor was replaced"):
+        with self.assertRaisesRegex(RoutingUnavailable, "descriptor was replaced"):
             self.store.get_sandbox("single")
 
     def test_query_failure_is_mapped_and_does_not_poison_pool(self):
-        with self.assertRaisesRegex(sqlite3.DatabaseError, "routing read failed"):
+        with self.assertRaisesRegex(RoutingUnavailable, "routing read failed"):
             self.store._fetchone_readonly("SELECT * FROM nonexistent_read_table")
         self.assertEqual(self.store.get_sandbox("single"), self.route)
