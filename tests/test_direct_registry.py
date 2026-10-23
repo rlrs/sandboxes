@@ -558,6 +558,17 @@ class DirectRegistryTests(unittest.TestCase):
                     migration_sha256="f" * 64,
                 )
 
+    def test_delete_transaction_fences_generation_even_when_revision_matches(self) -> None:
+        with TemporaryDirectory() as raw:
+            root = Path(raw).resolve()
+            registry = DirectSandboxRegistry(root / "registry.sqlite3")
+            current = self.owned_registration(registry, root, "sandbox", 8)
+            with self.assertRaises(DirectRegistryConflictError):
+                registry.begin_delete(
+                    "sandbox", expected_revision=current.revision, expected_generation=7
+                )
+            self.assertEqual(registry.get("sandbox"), current)
+
     def test_concurrent_first_reads_initialize_once(self) -> None:
         with TemporaryDirectory() as raw:
             path = (Path(raw) / "registry.sqlite3").resolve()

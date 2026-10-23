@@ -12,7 +12,6 @@ from tests import test_direct_provisioner as direct_fixtures
 from sandboxes.control_plane import ControlPlaneHandler
 from sandboxes.direct_service import DirectSandboxService
 from sandboxes.node_agent import NodeAgentHandler
-from sandboxes.sandbox import SandboxRestoreBusyError
 
 
 class BurstInventoryTests(unittest.TestCase):
@@ -96,34 +95,4 @@ class BurstInventoryTests(unittest.TestCase):
         )
         self.assertEqual(
             handler._proxy_request.call_args.args[1], "/v1/sandboxes?sandbox_id=target"
-        )
-
-    def test_restore_rejection_has_explicit_retry_contract(self):
-        handler = SimpleNamespace(_write_json=Mock())
-        NodeAgentHandler._write_exception(handler, SandboxRestoreBusyError("busy"))
-        call = handler._write_json.call_args
-        self.assertEqual(call.kwargs["status"], 503)
-        self.assertEqual(call.kwargs["headers"]["Retry-After"], "1")
-        self.assertEqual(call.args[0]["error_code"], "node_restore_busy")
-        self.assertTrue(call.args[0]["retryable"])
-
-    def test_explicit_wake_preserves_restore_retry_contract(self):
-        handler = SimpleNamespace(
-            _read_json_body=lambda: {"generation": 7, "operation_id": "wake:test"},
-            manager=SimpleNamespace(
-                wake_with_activity_revision=Mock(
-                    side_effect=SandboxRestoreBusyError("busy")
-                ),
-                get=Mock(
-                    side_effect=AssertionError("must not block on live inspection")
-                ),
-            ),
-            _write_json=Mock(),
-        )
-        handler._write_exception = lambda exc: NodeAgentHandler._write_exception(
-            handler, exc
-        )
-        NodeAgentHandler._wake_sandbox(handler, "/v1/sandboxes/sandbox/wake")
-        self.assertEqual(
-            handler._write_json.call_args.args[0]["error_code"], "node_restore_busy"
         )

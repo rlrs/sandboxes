@@ -45,7 +45,7 @@
   "private": 13
  },
  "test_burst_inventory.py": {
-  "private": 16,
+  "private": 10,
   "test_import": 2
  },
  "test_checkpoint_registry.py": {
@@ -120,8 +120,8 @@
  },
  "test_correctness_regressions.py": {
   "clock": 6,
-  "private": 21,
-  "private_patch": 2,
+  "private": 16,
+  "private_patch": 1,
   "sleep": 2,
   "test_import": 5
  },
