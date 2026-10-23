@@ -93,10 +93,11 @@ class AsyncNodeHttpPool:
         async def initialize():
             clients = []
             # RFC 9112 9.6: a client that sends "close" never reuses that
-            # connection. aiohttp pools it unless the response also says close,
-            # and ucloud-noded closes it without saying so. Reused, it would
-            # carry the next RPC to a closing socket, which fails without
-            # reaching the worker and cannot be resent. Never pool it.
+            # connection. aiohttp pools it unless the response also says close.
+            # ucloud-noded and the Python agent always do, but from a worker
+            # that closes it silently the next RPC would reach a closing
+            # socket, fail without reaching the worker, and could not be
+            # resent. Never pool it.
             lanes = [(limit, False) for limit in self._limits]
             lanes.append((self._limits[0], True))
             try:
