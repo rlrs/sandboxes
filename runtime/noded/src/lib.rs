@@ -244,12 +244,8 @@ pub fn start_fronts(upstream: &std::path::Path, token: &str, exec: bool, pause: 
     tokio::spawn(pipeline.clone().load(agent.clone(), move |config| {
         // The pause tier is the daemon's only with --rust-pause and the agent's say-so.
         let mut config = config;
-        if let Some(block) = config.pause.as_mut() {
-            block.rust_pause_enabled &= pause;
-        }
-        if let Some(block) = config.admission.as_mut() {
-            block.rust_admission_enabled &= admission;
-        }
+        config.pause.rust_pause_enabled &= pause;
+        config.admission.rust_admission_enabled &= admission;
         let opened = Arc::new(node_pipeline::NodePipeline::open(config, pipeline_agent.clone())?);
         let _ = cell.set(opened.clone());
         Ok(opened as Arc<dyn create::Pipeline>)

@@ -18,7 +18,7 @@ use crate::pause_policy::PressureSampler;
 use crate::guest;
 use crate::image::{EnvironmentBackendClient, ImageError, ImageLease, ImageStore, MountProbe};
 use crate::memory_backing::{ActiveMode, MemoryBackingConfig, MemoryBackingError, MemoryBackingRef, MemoryBackingStore, XfsMemoryQuota};
-use crate::network::{self, NetworkError, NetworkManager, TcpEgress};
+use crate::network::{NetworkError, NetworkManager, TcpEgress};
 use crate::oci::{self, NetworkMode, OciBuilder, OciError};
 use crate::pause::{PauseConfig, PauseTier};
 use crate::pipeline::{CreateConfig, spec_supported};
@@ -183,14 +183,13 @@ impl NodePipeline {
                             .map_err(|_| format!("egress address {} is not IPv4", allowed.ip))
                     })
                     .collect::<Result<Vec<_>, String>>()?;
-                let pool_size = config.network_pool_size.unwrap_or(network::DEFAULT_POOL_SIZE);
                 let manager = NetworkManager::new(
                     config.state_root.join("network-slots.json"),
                     PathBuf::from("/run/netns"),
                     egress,
                     config.relays_configured,
                 )
-                .with_pool_size(pool_size)
+                .with_pool_size(config.network_pool_size)
                 .map_err(|error| format!("network: {error}"))?;
                 Some(Arc::new(manager))
             }
@@ -219,7 +218,7 @@ impl NodePipeline {
             stop_timeout: Duration::from_secs(30),
         };
         // Phase 3a: the daemon owns the pause tier only when the agent says so.
-        let pause = config.pause.as_ref().filter(|pause| pause.rust_pause_enabled).map(|_| {
+        let pause = config.pause.rust_pause_enabled.then(|| {
             let modes = memory.clone().map(|memory| memory as Arc<dyn crate::pause::ModeSource>);
             Arc::new(PauseTier::new(PauseConfig::new(warden_config.clone(), true), modes))
         });
@@ -227,36 +226,36 @@ impl NodePipeline {
         let registry = Arc::new(registry);
         // Step 3c.2: with --rust-admission and the agent's say-so, the node's
         // own admission service (the agent does not call it until 3c.3).
-        let admission = match config.admission.as_ref().filter(|block| block.rust_admission_enabled) {
+        let block = &config.admission;
+        let wanted = block.rust_admission_enabled.then(|| ServiceConfig::from_block(block, config.application_memory_root.is_some()));
+        let admission = match wanted {
             None => None,
-            Some(block) => match ServiceConfig::from_block(block, config.application_memory_root.is_some()) {
-                Err(error) => {
-                    eprintln!("ucloud-noded: node admission is off: {error}");
-                    None
-                }
-                Ok(service_config) => {
-                    let ram_configured = config.application_memory_root.is_some();
-                    let observations = Arc::new(NodeObservations::new(memory.clone(), ram_configured));
-                    let clock: Arc<dyn crate::pause_policy::Clock> = Arc::new(crate::pause_policy::SystemClock::new());
-                    let pressure =
-                        PressureSampler::new(PathBuf::from("/proc"), config.application_memory_root.clone(), clock.clone());
-                    let drain = registry.load_drain().map_err(|error| format!("registry drain: {error}"))?;
-                    let sources = Sources {
-                        store: registry.clone(),
-                        owners: registry.clone(),
-                        metrics: Arc::new(CachedMetrics::new(Arc::new(pressure))),
-                        observations: observations.clone(),
-                        clock,
-                    };
-                    Some((AdmissionService::open(service_config, drain.admission_open, sources)?, observations))
-                }
-            },
+            Some(Err(error)) => {
+                eprintln!("ucloud-noded: node admission is off: {error}");
+                None
+            }
+            Some(Ok(service_config)) => {
+                let ram_configured = config.application_memory_root.is_some();
+                let observations = Arc::new(NodeObservations::new(memory.clone(), ram_configured));
+                let clock: Arc<dyn crate::pause_policy::Clock> = Arc::new(crate::pause_policy::SystemClock::new());
+                let pressure =
+                    PressureSampler::new(PathBuf::from("/proc"), config.application_memory_root.clone(), clock.clone());
+                let drain = registry.load_drain().map_err(|error| format!("registry drain: {error}"))?;
+                let sources = Sources {
+                    store: registry.clone(),
+                    owners: registry.clone(),
+                    metrics: Arc::new(CachedMetrics::new(Arc::new(pressure))),
+                    observations: observations.clone(),
+                    clock,
+                };
+                Some((AdmissionService::open(service_config, drain.admission_open, sources)?, observations))
+            }
         };
         let pause_runtime = pause.as_ref().map(|tier| {
-            let settings = config.pause.as_ref().map(|block| block.settings.clone()).unwrap_or_default();
+            let settings = config.pause.settings.clone();
             // Phase 3b: with --rust-admission and the agent's say-so (the
             // `admission` block), sample managed sandboxes and publish them.
-            let resident_sampling = config.admission.as_ref().is_some_and(|block| block.rust_admission_enabled);
+            let resident_sampling = config.admission.rust_admission_enabled;
             crate::pause_runtime::PauseRuntime::start(crate::pause_runtime::PauseInputs {
                 resident_sampling,
                 admission: admission.as_ref().map(|(service, _)| service.clone()),
