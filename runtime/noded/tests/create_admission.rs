@@ -17,7 +17,7 @@ use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use serde_json::{Map, Value, json};
-use tokio::net::{TcpListener, TcpStream, UnixListener};
+use tokio::net::{TcpStream, UnixListener};
 use ucloud_noded::admission::decide::Metrics;
 use ucloud_noded::admission::ledger::Shape;
 use ucloud_noded::admission::service::{AdmissionService, Holder, MetricsSource, ServiceConfig, Sources};
@@ -159,7 +159,7 @@ async fn start() -> Harness {
     });
     let client = Arc::new(AgentClient::new(socket.clone(), TOKEN, "session-1").unwrap());
     let front = Arc::new(CreateFront::new(client, Arc::new(AdmittingPipeline(service.clone())), TOKEN));
-    let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let tcp = ucloud_noded::listen("127.0.0.1:0".parse().unwrap()).unwrap();
     let address = tcp.local_addr().unwrap();
     let fronts = ucloud_noded::Fronts { create: Some(front), exec: None, jobs: None, node: None, internal: None };
     tokio::spawn(ucloud_noded::serve_with(tcp, ucloud_noded::Config::new(socket), fronts, std::future::pending()));

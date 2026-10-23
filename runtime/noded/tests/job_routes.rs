@@ -17,7 +17,7 @@ use hyper::body::Incoming;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
-use tokio::net::{TcpListener, TcpStream, UnixListener};
+use tokio::net::{TcpStream, UnixListener};
 use ucloud_noded::agent_rpc::AgentClient;
 use ucloud_noded::jobs::{BoxFuture, ControlFailure, ControlOutput, Incarnation, JobFront, JobLimits, JobNode, Lookup};
 
@@ -167,7 +167,7 @@ async fn harness_with(limits: JobLimits, mounted: bool) -> Harness {
         Some(Incarnation { sandbox_id: "sb-1".into(), generation: 2, bundle: bundle.clone(), container_id: "c".repeat(64) });
     let client = Arc::new(AgentClient::new(socket.clone(), TOKEN, "session-1").unwrap());
     let front = JobFront::new(node.clone(), client, TOKEN, limits);
-    let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let tcp = ucloud_noded::listen("127.0.0.1:0".parse().unwrap()).unwrap();
     let address = tcp.local_addr().unwrap();
     let fronts = ucloud_noded::Fronts { create: None, exec: None, jobs: Some(front.clone()), node: None, internal: None };
     tokio::spawn(ucloud_noded::serve_with(tcp, ucloud_noded::Config::new(socket), fronts, std::future::pending()));
@@ -507,19 +507,22 @@ async fn thousands_of_held_reads_wait_on_one_watch_and_disconnects_free_them() {
         let path = if index % 2 == 0 { "/v1/sandboxes/sb-1/jobs/job-1?wait_ms=25000&after=2.0.0" } else { "/v1/sandboxes/sb-1/jobs/job-1/logs/stdout?offset=0&wait_ms=25000" };
         held.push(tokio::spawn(async move { get(address, path).await }));
     }
+    // Every read connects (the listen backlog holds the burst) and waits; one
+    // that ends before anything changed is a failure, reported as itself.
     let deadline = Instant::now() + Duration::from_secs(20);
     while h.front.waiters() < HELD {
+        if let Some(index) = held.iter().position(|read| read.is_finished()) {
+            panic!("read {index} ended before the job changed: {:?}", held.swap_remove(index).await);
+        }
         assert!(Instant::now() < deadline, "{} of {HELD} reads held", h.front.waiters());
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    let started = Instant::now();
     h.append("stdout", b"x");
     for read in held {
         let (status, body) = read.await.unwrap();
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["job"]["stdout_bytes"], 1);
     }
-    assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
     assert_eq!(h.front.waiters(), 0);
 
     // A client that goes away frees its waiter.

@@ -12,7 +12,7 @@ use http_body_util::{BodyExt, Empty, Full, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use tokio::net::{TcpListener, TcpStream, UnixListener};
+use tokio::net::{TcpStream, UnixListener};
 use tokio::sync::{Notify, mpsc, oneshot};
 
 type TestBody = BoxBody<Bytes, Infallible>;
@@ -108,10 +108,14 @@ async fn start_agent() -> Agent {
 }
 
 async fn start_front_door(upstream: PathBuf) -> (SocketAddr, oneshot::Sender<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    start_front_door_with(ucloud_noded::Config::new(upstream)).await
+}
+
+async fn start_front_door_with(config: ucloud_noded::Config) -> (SocketAddr, oneshot::Sender<()>) {
+    let listener = ucloud_noded::listen("127.0.0.1:0".parse().unwrap()).unwrap();
     let address = listener.local_addr().unwrap();
     let (stop, stopped) = oneshot::channel::<()>();
-    tokio::spawn(ucloud_noded::serve(listener, ucloud_noded::Config::new(upstream), async move {
+    tokio::spawn(ucloud_noded::serve(listener, config, async move {
         let _ = stopped.await;
     }));
     (address, stop)
@@ -223,4 +227,41 @@ async fn an_agent_that_dies_mid_request_closes_the_client_connection() {
     let mut sender = client(address).await;
     let outcome = sender.send_request(request("/v1/sandboxes", Empty::new().boxed())).await;
     assert!(outcome.is_err(), "expected a closed connection, got {outcome:?}");
+}
+
+#[tokio::test]
+async fn connects_past_max_connections_wait_in_the_backlog_and_are_served() {
+    // Far more than tokio's default backlog of 128 and within Linux's default
+    // somaxconn (4096). With the accept loop stopped at max_connections, these
+    // complete only if the kernel queues them.
+    const BURST: usize = 1000;
+    let dir = temp_dir();
+    let config = ucloud_noded::Config { max_connections: 1, ..ucloud_noded::Config::new(dir.0.join("absent.sock")) };
+    let (address, _stop) = start_front_door_with(config).await;
+    let mut first = client(address).await;
+    let response = first.send_request(request("/v1/sandboxes", Empty::new().boxed())).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    text(response).await;
+    // The first connection holds the only slot; the rest wait unaccepted. A
+    // dropped SYN would leave a connect pending, so the bound fails a stall
+    // instead of hanging on SYN retries.
+    let queued = tokio::time::timeout(Duration::from_secs(20), async {
+        let mut queued = Vec::with_capacity(BURST);
+        for _ in 0..BURST {
+            queued.push(TcpStream::connect(address).await.unwrap());
+        }
+        queued
+    })
+    .await
+    .expect("connects past the listen backlog stalled");
+    // Freeing the slot lets the daemon work through the queue in order.
+    drop(first);
+    let mut queued = queued.into_iter().rev();
+    let last = queued.next().unwrap();
+    drop(queued);
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(last)).await.unwrap();
+    tokio::spawn(connection);
+    let response = sender.send_request(request("/v1/sandboxes", Empty::new().boxed())).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(text(response).await.contains("\"error_code\":\"node_agent_unavailable\""));
 }
