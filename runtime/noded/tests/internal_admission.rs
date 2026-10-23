@@ -280,7 +280,7 @@ print(json.dumps(dict(config, config_sha256=digest)))
         config[binary] = json!("/usr/libexec/init");
     }
     let config: CreateConfig = serde_json::from_value(config).unwrap();
-    let admission = config.admission.expect("the admission block");
+    let admission = config.admission;
     assert!(admission.rust_admission_enabled);
     assert_eq!((admission.max_concurrent_startups, admission.max_concurrent_restores), (12, 3));
     let capacity = admission.active_capacity.expect("active capacity");

@@ -30,7 +30,6 @@ use crate::fsutil::{FileLock, atomic_write, atomic_write_unsynced_directory};
 use crate::storage::canonical_json;
 
 pub use kernel::{Kernel, NetlinkKernel, interface_present};
-pub use pool::DEFAULT_POOL_SIZE;
 
 pub const STATE_VERSION: u64 = 1;
 pub const MAX_SLOTS: u32 = 32767;

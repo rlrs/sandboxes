@@ -123,7 +123,7 @@ impl ExecFront {
     /// limits are the ones this build implements.
     fn node(&self) -> Option<&Arc<NodePipeline>> {
         let node = self.node.get()?;
-        let exec = node.config().exec.as_ref()?;
+        let exec = &node.config().exec;
         let limits = ExecLimits::default();
         let same = exec.sessions.max_sessions == limits.max_sessions
             && exec.sessions.max_events_per_session == limits.max_events_per_session;
@@ -221,7 +221,7 @@ impl ExecFront {
     }
 
     async fn launch(&self, node: &Arc<NodePipeline>, exec: ExecRequest, mut timings: StartTimings) -> Result<Reply, Decline> {
-        let config = node.config().exec.clone().ok_or(Decline::Forward("no exec configuration"))?;
+        let config = node.config().exec.clone();
         let registry = node.registry().clone();
         let id = exec.sandbox_id.clone();
         // Each check's milliseconds, in the start reply's `timings.manager`.

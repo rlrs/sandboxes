@@ -47,17 +47,13 @@ pub struct CreateConfig {
     pub journal_root: PathBuf,
     pub network: String,
     pub network_mtu: u32,
-    /// Pre-created direct-egress pairs the daemon keeps; absent from agents
-    /// older than the daemon's pool (then `network::DEFAULT_POOL_SIZE`).
-    #[serde(default)]
-    pub network_pool_size: Option<usize>,
+    /// Pre-created direct-egress pairs the daemon keeps.
+    pub network_pool_size: usize,
     pub direct_network_allow_tcp: Vec<AllowTcp>,
     pub dns_named_egress: bool,
     pub relays_configured: bool,
     /// Direct egress's `/etc/hosts`: relay names at their virtual addresses
-    /// (Python `relay_hosts`). Absent from agents older than 0.9.70, which
-    /// leave the image's file.
-    #[serde(default)]
+    /// (Python `relay_hosts`).
     pub relay_hosts: BTreeMap<String, String>,
     pub split_memory_backing: bool,
     pub memory_backing_hard_capacity_bytes: u64,
@@ -70,17 +66,10 @@ pub struct CreateConfig {
     pub environment: Option<EnvironmentConfig>,
     pub runtime_compatibility_sha256: String,
     pub node_epoch: String,
-    /// Phase 2a; absent from agents older than it.
-    #[serde(default)]
-    pub exec: Option<ExecConfig>,
-    /// Phase 3a; absent from agents older than it.
-    #[serde(default)]
-    pub pause: Option<PauseBlock>,
-    /// Step 3c.0; absent from agents older than it.
-    #[serde(default)]
-    pub admission: Option<AdmissionConfig>,
+    pub exec: ExecConfig,
+    pub pause: PauseBlock,
+    pub admission: AdmissionConfig,
     /// The agent's digest of this configuration (`config_sha256`).
-    #[serde(default)]
     pub config_sha256: String,
 }
 
@@ -205,23 +194,23 @@ impl LazyPipeline {
         let mut last_refusal = String::new();
         loop {
             let refusal = match agent.call_json(Method::GET, "/internal/v1/creates/config", None).await {
-                Ok((StatusCode::OK, value)) => {
-                    let digest = value.get("config_sha256").and_then(Value::as_str).unwrap_or_default().to_string();
-                    match serde_json::from_value::<CreateConfig>(value) {
-                        Ok(config) => match config.refusal() {
-                            Some(reason) => format!("creates stay with the agent: {reason}"),
-                            None => match build(config) {
+                Ok((StatusCode::OK, value)) => match serde_json::from_value::<CreateConfig>(value) {
+                    Ok(config) => match config.refusal() {
+                        Some(reason) => format!("creates stay with the agent: {reason}"),
+                        None => {
+                            let digest = config.config_sha256.clone();
+                            match build(config) {
                                 Ok(pipeline) => {
                                     let _ = self.inner.set((pipeline, digest));
                                     eprintln!("ucloud-noded: creating sandboxes");
                                     return;
                                 }
                                 Err(error) => format!("cannot create sandboxes ({error}); creates stay with the agent"),
-                            },
-                        },
-                        Err(error) => format!("the agent's create configuration is unusable ({error})"),
-                    }
-                }
+                            }
+                        }
+                    },
+                    Err(error) => format!("the agent's create configuration is unusable ({error})"),
+                },
                 Ok((status, _)) => format!("create configuration answered {status}"),
                 Err(error) => format!("create configuration unavailable ({error})"),
             };
@@ -273,7 +262,7 @@ mod tests {
 
     /// The admission block as `create_handoff.admission_config` writes it.
     #[test]
-    fn the_admission_block_is_typed_and_optional() {
+    fn the_admission_block_is_typed() {
         let block = json!({
             "rust_admission_enabled": true, "max_concurrent_startups": 32, "max_concurrent_restores": 8,
             "admission_wait_seconds": 30.0, "active_capacity": {"vcpu": 64, "memory_mb": 262144},
@@ -304,28 +293,9 @@ mod tests {
         let mut missing = block.clone();
         missing.as_object_mut().unwrap().remove("retry_seconds");
         assert!(serde_json::from_value::<AdmissionConfig>(missing).is_err());
-        let mut negative = block.clone();
+        let mut negative = block;
         negative["physical_memory_floor_mb"] = json!(-1);
         assert!(serde_json::from_value::<AdmissionConfig>(negative).is_err());
-
-        // Kept with the configuration and its digest; agents older than 3c.0 send neither block nor change.
-        let mut config = json!({
-            "rust_creates_enabled": true, "state_root": "/s", "image_cache_root": "/c", "volume_mount_root": "/v",
-            "storage_native_socket": "/n", "runsc": "/r", "runtime_root": "/rr", "bundle_root": "/b",
-            "journal_root": "/j", "network": "none", "network_mtu": 1420, "direct_network_allow_tcp": [],
-            "dns_named_egress": false, "relays_configured": false, "split_memory_backing": false,
-            "memory_backing_hard_capacity_bytes": 0, "application_memory_root": null,
-            "reflink_memory_restore": false, "workspace_initial_grant_mb": 0, "demonstrated_memory": false,
-            "init_binary": "/i", "managed_init_binary": "/m", "environment": null,
-            "runtime_compatibility_sha256": "a", "node_epoch": "e",
-        });
-        let older: CreateConfig = serde_json::from_value(config.clone()).unwrap();
-        assert_eq!((older.admission, older.config_sha256.as_str()), (None, ""));
-        config["admission"] = block;
-        config["config_sha256"] = json!("d".repeat(64));
-        let current: CreateConfig = serde_json::from_value(config).unwrap();
-        assert_eq!(current.admission, Some(parsed));
-        assert_eq!(current.config_sha256, "d".repeat(64));
     }
 
     #[test]

@@ -26,8 +26,6 @@ use serde_json::{Map, Value, json};
 use super::{MAX_SLOTS, NetworkError, NetworkManager, pool_slots};
 use crate::fsutil::FileLock;
 
-/// One burst of the 32 concurrent creates the create gate measures.
-pub const DEFAULT_POOL_SIZE: usize = 32;
 pub const MAX_POOL_SIZE: usize = 1024;
 /// The refill defers to in-flight ensures for at most this long per pair, so
 /// a sustained create stream still refills slowly instead of never.

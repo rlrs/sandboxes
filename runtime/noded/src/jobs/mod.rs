@@ -814,7 +814,7 @@ impl JobNode for NodeJobs {
     }
 
     fn controls(&self) -> bool {
-        self.node.get().and_then(|node| node.config().exec.as_ref()).is_some_and(|exec| exec.rust_execs_enabled)
+        self.node.get().is_some_and(|node| node.config().exec.rust_execs_enabled)
     }
 
     fn control(&self, incarnation: &Incarnation, request: Vec<u8>, guest_timeout_ms: u64, timeout: Duration)
@@ -822,7 +822,10 @@ impl JobNode for NodeJobs {
         let (cell, incarnation) = (self.node.clone(), incarnation.clone());
         Box::pin(async move {
             let node = cell.get().cloned().ok_or(ControlFailure::Forward("node not configured"))?;
-            let config = node.config().exec.clone().filter(|exec| exec.rust_execs_enabled).ok_or(ControlFailure::Forward("no exec fence"))?;
+            let config = node.config().exec.clone();
+            if !config.rust_execs_enabled {
+                return Err(ControlFailure::Forward("no exec fence"));
+            }
             // The exec start's fences: A held for the exchange keeps pauses
             // and parks out; the warden flock spans it, as in Python.
             let fence = ExecFence::new(&config.warden_locks_dir);

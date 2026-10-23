@@ -83,7 +83,7 @@ impl NodeView for LoadedNode {
     }
 
     fn config_sha256(&self) -> Option<String> {
-        self.0.get().map(|node| node.config().config_sha256.clone()).filter(|digest| !digest.is_empty())
+        self.0.get().map(|node| node.config().config_sha256.clone())
     }
 
     fn admission(&self) -> AdmissionAccess {
