@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Register a training dataset's image recipes with the gateway (docs/images.md).
-
-Two steps, so the dataset checkouts and the gateway's token never meet:
+"""Export a training dataset's image recipes as a bundle (docs/images.md).
 
   export  FAMILY --dataset REPO [--environments REPO] --out BUNDLE [--limit N]
       Where the pinned dataset checkouts are. Writes BUNDLE/manifest.jsonl and one
       build context per task (BUNDLE/contexts/<task>/), plus BUNDLE/excluded.jsonl.
-  register BUNDLE [--retention pinned|cached] [--prebuild N]
-      On the gateway, with the SDK. Registers every manifest row; with --prebuild,
-      builds them, N names in flight at a time, and writes BUNDLE/built.jsonl.
+
+build_image_index.py export reads the bundles (--tmax-bundle,
+--terminal-lego-bundle); its register step adds the names to the gateway's index.
 
 FAMILY is tmax or terminal-lego. A task's name is its task.toml
 [environment].docker_image: exactly what verifiers asks the gateway for.
@@ -346,36 +344,6 @@ def export(args):
     print(json.dumps(meta), flush=True)
 
 
-def register(args):
-    import ucloud_sandboxes_sdk as sdk
-    root = Path(args.bundle)
-    rows = [json.loads(line) for line in (root / "manifest.jsonl").read_text().splitlines()]
-    if args.limit:
-        rows = rows[:args.limit]
-    token = Path(args.token_file).read_text().strip()
-    client = sdk.SandboxClient(args.gateway, api_token=token, timeout_seconds=120)
-    registered = changed = 0
-    for start in range(0, len(rows), args.batch):
-        batch = rows[start:start + args.batch]
-        result = client.register_image_recipes(
-            [sdk.ImageRecipe(row["name"], root / row["context"], retention=args.retention) for row in batch])
-        registered += result["registered"]
-        changed += result["changed"]
-        print(json.dumps({"registered": registered, "changed": changed, "of": len(rows)}), flush=True)
-    if not args.prebuild:
-        return
-    names, statuses = [row["name"] for row in rows], {}
-    with (root / "built.jsonl").open("a") as built:
-        for start in range(0, len(names), args.prebuild):
-            chunk = names[start:start + args.prebuild]
-            final = client.wait_for_images(chunk, timeout_seconds=args.chunk_timeout, poll_interval_seconds=15)
-            for name, status in final.items():
-                statuses[name] = status["state"]
-                built.write(json.dumps({"name": name, **status}) + "\n")
-            print(json.dumps({"built": start + len(chunk), "of": len(names),
-                              "states": dict(Counter(statuses.values()))}), flush=True)
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -387,17 +355,8 @@ def main(argv=None):
     out.add_argument("--revision", default="HEAD", help="the dataset revision to export (the selection's pin)")
     out.add_argument("--limit", type=int, default=0)
     out.add_argument("--lfs-cache", required=True, help="directory of downloaded LFS objects, reused across exports")
-    reg = commands.add_parser("register")
-    reg.add_argument("bundle")
-    reg.add_argument("--gateway", default="http://127.0.0.1:8090")
-    reg.add_argument("--token-file", default="/var/lib/ucloud-sandboxes/state/sandbox-api-token")
-    reg.add_argument("--retention", choices=("pinned", "cached"), default="pinned")
-    reg.add_argument("--batch", type=int, default=500)
-    reg.add_argument("--limit", type=int, default=0)
-    reg.add_argument("--prebuild", type=int, default=0, help="build N names at a time after registering")
-    reg.add_argument("--chunk-timeout", type=float, default=6 * 3600)
     args = parser.parse_args(argv)
-    (export if args.command == "export" else register)(args)
+    export(args)
 
 
 if __name__ == "__main__":
