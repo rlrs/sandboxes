@@ -624,7 +624,9 @@ class LinuxStorageHostOperations:
         self._run("xfs_growfs", "-D", str(size_bytes // block_size), str(target))
 
     def trim(self, target: Path) -> None:
-        # The qualified policy: extents of at least 1 MiB (qualify_xfs_trim.py).
+        # The qualified policy: extents of at least 1 MiB. Qualifier:
+        # `git show b3b951c:runtime/storage_native/qualify_xfs_trim.py`; results:
+        # `git show a04c1ad:docs/benchmarks/write-volume-prod-2026-09-22/README.md`.
         self._run("fstrim", "-m", str(1024**2), str(target))
 
     @staticmethod

@@ -72,29 +72,10 @@ remove the installed binary or provenance file to bypass the guard.
 UCloud and Hetzner use this same storage format and require the same procedure.
 No SDK change is needed for the backend upgrade.
 
-`qualify_backend_upgrade.py` exercises upgrade and sealed-layer rollback over
-HTTP range reads, filesystem metadata, overlayfs, a 256 MiB memory image,
-streamed dense export, old-upper rejection, and a destination cache filesystem
-with only 64 KiB free. Run it only on a disposable Linux ublk VM:
-
-```bash
-sudo python3 qualify_backend_upgrade.py \
-  --old-daemon /path/to/retained-v0.1.2-backend \
-  --new-daemon /path/to/pinned-v0.2.2-backend \
-  --work-root /var/lib/storage-upgrade-qualification \
-  --output /tmp/storage-upgrade.json
-```
-
-The dedicated work directory must already exist. The test formats temporary
-devices and a bounded loop filesystem; it never fills the host root filesystem.
-Its range server runs in a separate process so mmap page faults cannot block
-the HTTP server on Python's GIL. Add `--runsc`, `--conformance-workload` and
-`--noop-workload` (the latter two built statically from `conformance_workload.c`
-and `noop.c` in this directory) to verify real gVisor processes across all three
-migration cases.
-See the qualification report
-(`git show a04c1ad:docs/reviews/agentenv022-upgrade-2026-09-22.md`)
-for measured results and remaining production acceptance checks.
+The upgrade and sealed-layer rollback qualification, including old-upper
+rejection and real gVisor processes, is recorded in
+`git show a04c1ad:docs/reviews/agentenv022-upgrade-2026-09-22.md`, with the
+remaining production acceptance checks.
 
 The device-reuse patch treats the pool high watermark as a steady-state idle
 cache target, not a bound on active devices or recently returned devices.
@@ -153,19 +134,6 @@ count reused outputs; these bytes are excluded from `snapshot_uploaded_bytes`
 for successful publication attempts. As before, that uploaded-byte metric does
 not account for failed attempts.
 
-Force the threshold to one layer to exercise compaction in the real node
-service qualifier:
-
-```bash
-sudo python3 benchmark_node_service.py \
-  --daemon /path/to/uvm-ublk-daemon-<sha256> \
-  --work-root /var/lib/ucloud/storage-native-qualification \
-  --output /tmp/storage-native-compaction.json \
-  --registry-url http://127.0.0.1:18080 --repository snapshots \
-  --compact-after-layers 1 --compact-after-bytes 4294967296 \
-  --enable-pool --pool-low-watermark 2 --pool-high-watermark 4
-```
-
 The Hetzner CPX62 qualification compacted two generations into one 98.7 MB
 layer in 0.868 seconds, then mounted and verified both generations in 59 ms.
 That is a correctness and small-warm-chain measurement, not a cold multi-GiB
@@ -207,61 +175,10 @@ the supplied root.
 Pass `--runsc`, `--conformance-workload`, and `--noop-workload` together to
 run the pinned gVisor workload as part of the same destroy/reconstruct cycle.
 
-Compare steady-state XFS behavior against a same-disk native loopback XFS:
-
-```bash
-sudo python3 benchmark_io.py \
-  --daemon /path/to/uvm-ublk-daemon-<sha256> \
-  --work-root /var/lib/ucloud/storage-native-qualification \
-  --output /tmp/storage-native-io.json
-```
-
-The benchmark alternates target order across rounds and applies a 15% gate to
-sequential write bandwidth, 70/30 random mixed IOPS, and a
-create/stat/rename/delete metadata workload.
-
-## Warm-device churn benchmark
-
-`benchmark_node_service.py` can compare the real journaled XFS lifecycle with
-and without AgentEnv's warm block-device pool:
-
-```bash
-sudo python3 benchmark_node_service.py \
-  --daemon /path/to/uvm-ublk-daemon-<sha256> \
-  --work-root /var/lib/ucloud/storage-native-qualification \
-  --output /tmp/storage-native-unpooled.json \
-  --churn-iterations 100 --parallel-volumes 8 --parallel-rounds 10
-
-sudo python3 benchmark_node_service.py \
-  --daemon /path/to/uvm-ublk-daemon-<sha256> \
-  --work-root /var/lib/ucloud/storage-native-qualification \
-  --output /tmp/storage-native-pooled.json \
-  --churn-iterations 100 --parallel-volumes 8 --parallel-rounds 10 \
-  --enable-pool --pool-low-watermark 2 --pool-high-watermark 16
-```
-
-The benchmark deletes every test volume and fails if any hard reservation
-remains. In the recorded run, the 2/16 pool reduced
-sequential wake-plus-release p50 by about 38%, reduced eight-way release p50 by
-about 65%, and reused a warm device for all 189 measured acquisitions. The
-stock high watermark of 64 eagerly created 64 idle devices and provided no
-eight-way throughput benefit, so production defaults to 16.
-
-## Delta-compaction qualification
-
-On an idle Linux qualification worker with the pinned backend already running:
-
-```bash
-sudo env PYTHONPATH=/path/to/repository python3 benchmark_delta_compaction.py \
-  --backend-socket /run/ucloud-sandboxes/storage-native/backend.sock
-```
-
-This compares full and delta-only native exports for a 128-MiB base and eight
-small deltas. It checks repeated overwrites, explicit zero writes, discards,
-holes, and native restacking of the retained base plus the merged delta. It uses
-temporary local layers and export RPCs only, with no device creation, mount,
-production journal changes, or provider lifecycle operations. Results exclude
-network upload and concurrent application traffic.
+The other one-off benchmarks and qualifiers (I/O against native loopback XFS,
+warm-device churn, delta and tiered compaction, local checkpoint compaction,
+published-local cache, XFS trim, and the v0.1.2 upgrade) are in
+`git show b3b951c:runtime/storage_native/`.
 
 ## Unpublished local checkpoint compaction
 
@@ -287,16 +204,7 @@ Storage-native metrics expose `local_compaction_active`, `local_compaction_waiti
 `local_compaction_discarded_bytes` measures locally written output discarded before
 candidate commit. Counters reset with the service process.
 
-Qualify the local path using an isolated backend process and temporary files:
-
-```bash
-sudo env PYTHONPATH=/path/to/repository python3 qualify_local_compaction.py \
-  --backend /path/to/pinned/uvm-ublk-daemon
-```
-
-This creates no block devices or mounts and leaves production journals unchanged.
-It checks a 29-layer chain, a wake and appended delta during export, and 24 more
-cycles against expected logical contents. See the qualification report
+See the qualification report
 (`git show a04c1ad:docs/reviews/local-checkpoint-compaction-2026-09-21.md`)
 for results and measurement limits.
 
@@ -329,42 +237,15 @@ Native `GetMetrics` exposes `published_local_cache_bytes`,
 The existing `cache_bytes` metric counts unique allocated cached/pinned inodes,
 including these files, rather than their sparse virtual sizes.
 
-```bash
-sudo env PYTHONPATH=/path/to/repository python3 qualify_published_local_cache.py \
-  --backend /path/to/pinned/uvm-ublk-daemon
-```
-
-The qualifier uses an isolated backend and temporary files without creating block
-devices. It compares native restacking of local pins and dense exported layers,
-with the original names removed, cache entries evicted and the remote origin
-unreachable. See the qualification report
+See the qualification report
 (`git show a04c1ad:docs/reviews/published-local-cache-2026-09-21.md`).
 
-## Write-volume qualification
+## Write volume and trim
 
-Run `benchmark_tiered_compaction.py --backend-binary /absolute/path/to/backend`
-with the repository on `PYTHONPATH` on isolated Linux. It starts a private daemon
-without devices and compares repeated native export bytes, verifying logical
-contents after every merge. Use a kernel supported by the native backend (Linux
-5.15 cannot support its required io_uring flags). Docker also requires allowing
-io_uring (for example,
-`--security-opt seccomp=unconfined` on the isolated test container).
-
-Automatic filesystem trim remains disabled. On an idle worker authorized for qualification
-with `/dev/ublk-control`, run as root:
-
-```sh
-PYTHONPATH=. python3 runtime/storage_native/qualify_xfs_trim.py \
-  --backend-binary /absolute/path/to/deployment-backend \
-  --output /tmp/xfs-trim-result.json
-```
-
-The test creates a private daemon and disposable XFS devices. It compares deleted
-file export volume with and without 64 MiB FITRIM windows and verifies retained
-files, zeros, holes and deleted-file absence after full and partial compaction
-and native remount. It never trims an existing sandbox. Passing this is a
-prerequisite for designing/enabling an incremental runtime trim policy; it does
-not qualify concurrent trim latency or production load.
+Before sealing a writable layer, the node runs `fstrim -m 1MiB` on its XFS
+filesystem when the upper's allocated bytes exceed the filesystem's used bytes by
+`--trim-before-seal-bytes` (default 256 MiB; zero disables it). It is best
+effort, and there is no other runtime trim.
 
 The 2026-09-22 production-worker qualification
 (`git show a04c1ad:docs/benchmarks/write-volume-prod-2026-09-22/README.md`)
