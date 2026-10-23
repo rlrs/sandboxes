@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Operator scripts**: `scripts/images/import_image_recipes.py` only exports
+  bundles; register names with `build_image_index.py register`. The unused
+  `preflight_environment.py`, `build_environment_canary.sh` and
+  `guest_conformance_probe.py` are gone.
 - **Buffered worker RPCs never reuse a connection the gateway asked to close**
   (RFC 9112 9.6). aiohttp pooled such a connection unless the answer also said
   `Connection: close`. ucloud-noded and the Python agent always say so, so

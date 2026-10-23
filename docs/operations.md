@@ -409,11 +409,8 @@ Hetzner gateway) and `qualify_hetzner_host.sh` (run by the snapshot script).
 `scripts/release/` builds and verifies bundles and wheels;
 `verify_heartbeat_upgrade.py` decodes retained heartbeat rows with a candidate
 package before a restart. `scripts/images/` holds the image index and
-prepared-image tools ([images.md](images.md)), plus `preflight_environment.py`
-(checks a sandbox spec offline), `build_environment_canary.sh` (publishes a
-tiny signed canary environment) and `guest_conformance_probe.py` (filesystem
-and process probes run inside a guest). `scripts/bench/` holds the live load
-benchmarks the roadmap's admission gates use.
+prepared-image tools ([images.md](images.md)). `scripts/bench/` holds the live
+load benchmarks the roadmap's admission gates use.
 
 ## Adding a provider
 
