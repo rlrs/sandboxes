@@ -4,6 +4,7 @@ import asyncio
 import gzip
 import inspect
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import select
 import socket
 from threading import Event, Thread, current_thread
 import unittest
@@ -50,11 +51,12 @@ class AsyncNodeHttpTests(unittest.TestCase):
         self.pool = AsyncNodeHttpPool(control_connections=1, poll_connections=1)
         self.addCleanup(self.pool.close)
 
-    def call(self, url, *, method="GET", body=None, limit=1024, poll=False, timeout=1):
+    def call(self, url, *, method="GET", body=None, limit=1024, poll=False, timeout=1,
+             headers=None):
         return self.pool.request(
             method,
             url,
-            headers={"Authorization": "Bearer test-token"},
+            headers={"Authorization": "Bearer test-token", **(headers or {})},
             body=body,
             timeout=timeout,
             connect_timeout=timeout,
@@ -251,13 +253,21 @@ class AsyncNodeHttpTests(unittest.TestCase):
             do_PUT = do_GET
             do_DELETE = do_GET
 
+        # Requests that say "Connection: close" take their own connections;
+        # they are fenced the same way.
+        cases = [
+            (method, headers)
+            for method in ("GET", "POST", "PUT", "DELETE")
+            for headers in ({}, {"Connection": "close"})
+        ]
         with server(Handler) as url:
-            for method in ("GET", "POST", "PUT", "DELETE"):
-                with self.subTest(method=method), self.assertRaises(URLError):
+            for method, headers in cases:
+                with self.subTest(method=method, headers=headers), self.assertRaises(URLError):
                     self.call(
-                        url, method=method, body=b"payload" if method != "GET" else None
+                        url, method=method, headers=headers,
+                        body=b"payload" if method != "GET" else None,
                     )
-        self.assertEqual(calls, ["GET", "POST", "PUT", "DELETE"])
+        self.assertEqual(calls, [method for method, _headers in cases])
 
         class Truncated(Node):
             def do_GET(inner):
@@ -271,6 +281,31 @@ class AsyncNodeHttpTests(unittest.TestCase):
         with server(Truncated) as url:
             with self.assertRaises(URLError):
                 self.call(url)
+
+    def test_connection_the_request_closed_is_never_reused(self):
+        # ucloud-noded and the Python agent answer a request that says
+        # "Connection: close" with "Connection: close". This worker closes
+        # silently, and only once the client has closed the connection or
+        # written the next request on it, which it then never reads. Every
+        # request must still reach it.
+        bodies = []
+
+        class Handler(Node):
+            def do_PUT(inner):
+                bodies.append(inner.rfile.read(int(inner.headers["Content-Length"])))
+                inner.reply(status=409 if len(bodies) == 1 else 200)
+                if inner.close_connection:
+                    inner.wfile.flush()
+                    select.select([inner.connection], [], [], 10)
+
+        close = {"Connection": "close"}
+        with server(Handler) as url:
+            for body, headers, status in (
+                (b"1", close, 409), (b"2", close, 200), (b"3", {}, 200),
+            ):
+                with self.call(url, method="PUT", body=body, headers=headers) as response:
+                    self.assertEqual(response.status, status)
+        self.assertEqual(bodies, [b"1", b"2", b"3"])
 
     def test_connection_admission_timeout_is_proven_pre_dispatch(self):
         from urllib3.exceptions import EmptyPoolError

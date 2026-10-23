@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Buffered worker RPCs never reuse a connection the gateway asked to close**
+  (RFC 9112 9.6). aiohttp pooled such a connection unless the answer also said
+  `Connection: close`. ucloud-noded and the Python agent always say so, so
+  production was not affected. A gateway upload test's fake worker closed
+  silently, which let the next RPC reach a closing socket and fail with a
+  retryable 502 (`worker RPC reconnect replay refused`) although the worker never
+  received it. Such requests now get a connection that closes after its one
+  response. No request is resent.
+
 ## 0.10.0 - 2026-10-22 (gateway; workers; store node)
 
 - **The project is now `sandboxes`.** The distribution, the Python package

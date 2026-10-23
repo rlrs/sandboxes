@@ -14,7 +14,7 @@ from sandboxes.control_plane import build_server
 from sandboxes.gateway_response_proxy import encode_response
 from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
 from sandboxes.routing import ExecRoute, SandboxRoute
-from tests.support import postgres_routing_file
+from tests.support import postgres_routing_file, wait_until
 
 TEST_TIER = "contract"
 
@@ -159,13 +159,14 @@ class AsyncGatewayEventTests(unittest.TestCase):
 
     def wait_upload_release(self):
         memory = self.gateway.RequestHandlerClass.upload_memory_limiter
-        deadline = time.monotonic() + 1
-        while time.monotonic() < deadline:
-            if memory.acquire(blocking=False, weight=memory.capacity):
-                memory.release(weight=memory.capacity)
-                return
-            time.sleep(.005)
-        self.fail('upload body ownership leaked')
+
+        def released():
+            if not memory.acquire(blocking=False, weight=memory.capacity):
+                return False
+            memory.release(weight=memory.capacity)
+            return True
+
+        wait_until(released, message='upload body ownership leaked')
 
     def test_eight_blocked_uploads_release_two_handlers_and_hold_body_budget(self):
         connections = []
