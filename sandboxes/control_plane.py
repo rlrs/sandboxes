@@ -2267,20 +2267,10 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             return (heartbeat.job_id, heartbeat.node_id, heartbeat.node_epoch)
 
         def fetch(heartbeat: NodeHeartbeat) -> dict[str, Any] | None:
-            response = self._proxy_request(
-                heartbeat.node_url or "",
-                "/v1/images/builds/" + quote(build_key, safe=""),
-                method="GET",
-                timeout_seconds=NODE_RECONCILE_PROXY_TIMEOUT_SECONDS,
-            )
-            if response.status == HTTPStatus.NOT_FOUND:
+            raw = node_image_build(self._proxy_request, heartbeat, build_key)
+            if raw is None:
                 return None
-            if not 200 <= response.status < 300:
-                raise ImageBuildLookupUnavailableError(response.status)
-            raw = response.json().get("build")
-            if not isinstance(raw, dict) or build_key not in (
-                raw.get("build_id"), raw.get("image_id")
-            ):
+            if build_key not in (raw.get("build_id"), raw.get("image_id")):
                 raise ImageBuildLookupUnavailableError(HTTPStatus.BAD_GATEWAY)
             build = dict(raw)
             build.update(location=heartbeat.node_id, node=_node_metadata(heartbeat))
@@ -2433,21 +2423,12 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         self._record_terminal_build_metrics(build)
         if build.get("status") != "succeeded":
             return
-        raw_image = build.get("image")
-        if not isinstance(raw_image, dict) or not _image_record_available_to_sandboxes(
-            raw_image
-        ):
+        raw_image = sandbox_image_record(self.services.images, build.get("image"))
+        if raw_image is None:
             return
-        raw_image = self.services.images.record_with_digest(raw_image)
         build["image"] = raw_image
-        try:
-            changed = self.image_manager.store.upsert_if_changed(
-                ImageRecord.from_dict(raw_image)
-            )
-        except ValueError:
-            return
-        if changed:
-            self.services.images.invalidate_inventory()
+        store_image_record(self.services.images, self.image_manager.store, raw_image,
+                           only_if_changed=True)
 
     @contextmanager
     def _startup_request_admission(self, *, creating: bool = False, weight: int = 1):
@@ -3236,13 +3217,9 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             image = build.get("image")
             if build.get("sandbox_build") and self.sandbox_builds is not None:
                 image = self.sandbox_builds.adopt(build)
-            if isinstance(image, dict) and _image_record_available_to_sandboxes(image):
-                image = self.services.images.record_with_digest(image)
-                try:
-                    self.image_manager.store.upsert(ImageRecord.from_dict(image))
-                except ValueError:
-                    return
-                self.services.images.invalidate_inventory()
+            image = sandbox_image_record(self.services.images, image)
+            if image is not None:
+                store_image_record(self.services.images, self.image_manager.store, image)
 
         def submit(payload: dict[str, Any]) -> Any:
             restore_context(self.image_recipe_contexts, self.build_context_store,
@@ -3490,11 +3467,9 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                         if prepared_resolution and 200 <= response.status < 300:
                             response_payload["prepared"] = prepared_resolution
                             response.body = json.dumps(response_payload).encode("utf-8")
-                        raw_image = response_payload.get("image")
-                        if isinstance(
-                            raw_image, dict
-                        ) and _image_record_available_to_sandboxes(raw_image):
-                            raw_image = self.services.images.record_with_digest(raw_image)
+                        raw_image = sandbox_image_record(
+                            self.services.images, response_payload.get("image"))
+                        if raw_image is not None:
                             response_payload["image"] = raw_image
                             raw_build = response_payload.get("build")
                             if isinstance(raw_build, dict):
@@ -3515,17 +3490,11 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                     )
                     if accepted_build_response or terminal_build_response:
                         self.routing_store.clear_pending_image_build(spec.id)
-                    if 200 <= response.status < 300:
-                        raw_image = response_payload.get("image")
-                        if isinstance(
-                            raw_image, dict
-                        ) and _image_record_available_to_sandboxes(raw_image):
-                            try:
-                                self.image_manager.store.upsert(
-                                    ImageRecord.from_dict(raw_image)
-                                )
-                            except ValueError:
-                                pass
+                    if 200 <= response.status < 300 and raw_image is not None:
+                        if not store_image_record(
+                                self.services.images, self.image_manager.store, raw_image):
+                            # Unlike a poll, a dispatch refreshes the inventory
+                            # even when the builder's record is not stored.
                             self.services.images.invalidate_inventory()
                     if 200 <= response.status < 300:
                         root.set_attribute("outcome", "builder_completed")
@@ -5079,22 +5048,13 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         # build deduplication and conflicting-spec checks still apply.
         if image_id:
             for heartbeat in candidates:
-                response = self._proxy_request(
-                    heartbeat.node_url or "",
-                    f"/v1/images/builds/{quote(image_id, safe='')}",
-                    method="GET",
-                    timeout_seconds=NODE_RECONCILE_PROXY_TIMEOUT_SECONDS,
-                )
-                if response.status == HTTPStatus.NOT_FOUND:
-                    continue
-                if response.status != HTTPStatus.OK:
+                try:
+                    build = node_image_build(self._proxy_request, heartbeat, image_id)
+                except ImageBuildLookupUnavailableError:
                     return None
-                build = response.json().get("build")
-                if not isinstance(build, dict) or build.get("status") not in {
-                    "running",
-                    "succeeded",
-                    "failed",
-                }:
+                if build is None:
+                    continue
+                if build.get("status") not in {"running", "succeeded", "failed"}:
                     return None
                 if (build["status"] == "running"
                         or build.get("admission_phase") in {"preparing_solving", "finishing"}):
@@ -6510,6 +6470,53 @@ def _image_build_response_terminal(payload: dict[str, Any]) -> bool:
     if not isinstance(build, dict):
         return "image" in payload
     return str(build.get("status") or "").lower() in {"succeeded", "failed"}
+
+
+def node_image_build(
+    proxy: Callable[..., ProxiedResponse], heartbeat: NodeHeartbeat, key: str,
+) -> dict[str, Any] | None:
+    """One builder's record of a build id or image id, or None when it answers 404.
+
+    Raises ImageBuildLookupUnavailableError for any other non-2xx answer or a
+    body without a build record: neither establishes that the build is absent.
+    """
+    response = proxy(
+        heartbeat.node_url or "",
+        "/v1/images/builds/" + quote(key, safe=""),
+        method="GET",
+        timeout_seconds=NODE_RECONCILE_PROXY_TIMEOUT_SECONDS,
+    )
+    if response.status == HTTPStatus.NOT_FOUND:
+        return None
+    if not 200 <= response.status < 300:
+        raise ImageBuildLookupUnavailableError(response.status)
+    build = response.json().get("build")
+    if not isinstance(build, dict):
+        raise ImageBuildLookupUnavailableError(HTTPStatus.BAD_GATEWAY)
+    return build
+
+
+def sandbox_image_record(images: Any, image: Any) -> dict[str, Any] | None:
+    """A built image record digest-pinned, or None when sandboxes cannot use it."""
+    if not isinstance(image, dict) or not _image_record_available_to_sandboxes(image):
+        return None
+    return images.record_with_digest(image)
+
+
+def store_image_record(
+    images: Any, store: ImageStore, image: dict[str, Any], *, only_if_changed: bool = False,
+) -> bool:
+    """Upsert a built image and drop the cached image inventory; False for an
+    invalid record, storing nothing. With only_if_changed, a record equal to the
+    stored one keeps the inventory: build polls observe one result repeatedly."""
+    try:
+        record = ImageRecord.from_dict(image)
+        changed = store.upsert_if_changed(record) if only_if_changed else (store.upsert(record) or True)
+    except ValueError:
+        return False
+    if changed:
+        images.invalidate_inventory()
+    return True
 
 
 def _lifecycle_proxy_error(response: ProxiedResponse) -> str:
