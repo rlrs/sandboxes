@@ -82,7 +82,9 @@ flowchart LR
   publication.
 - `ucloud-environment-io`: serves immutable image roots from the chunk store.
 
-Docker and containerd only pull OCI images; they never own a sandbox.
+Docker never owns a sandbox. Builders pull and build OCI images with it; on
+sandbox workers it supplies only `docker-init`, its FORWARD DROP policy and the
+quota mount that holds the image cache.
 
 **Builder nodes** run BuildKit for Dockerfile builds that cannot run inside a
 sandbox; the autoscaler starts them on build demand. **The store node** sits

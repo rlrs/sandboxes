@@ -383,11 +383,11 @@ def read_token(path, *, create=False):
 
 @dataclass(frozen=True)
 class EnvironmentDeploymentConfig:
-    """Opt-in fleet adapter; paths refer to owned controller-side key files."""
+    """The fleet's images: sandbox workers run only immutable environments.
+    Paths refer to owned controller-side key files."""
     trusted_keys_file: str
     signing_key_file: str = ""
     repository: str = "environments"
-    worker_enabled: bool = False
     # Builders convert each build into the chunk store (docs/images.md).
     builder_enabled: bool = False
     cache_bytes: int = 1024 ** 3
@@ -435,6 +435,11 @@ class EnvironmentDeploymentConfig:
         for name in ("prefetch_enabled", "shared_traces"):
             if not isinstance(values.pop(name, False), bool):
                 raise ValueError(f"immutable environment {name} must be boolean")
+        # Sandbox workers always run immutable environments (no Docker image
+        # store); to_dict writes the key true for 0.10.0, which reads it.
+        if values.pop("worker_enabled", True) is not True:
+            raise ValueError("immutable_environments.worker_enabled must be true: sandbox workers only run "
+                             "immutable environments; delete the key")
         if set(values) - {field.name for field in fields(cls)} or "trusted_keys_file" not in values:
             raise ValueError("invalid immutable_environments fields")
         if values.get("chunk_store") is not None:
@@ -445,7 +450,7 @@ class EnvironmentDeploymentConfig:
         import re
         if not isinstance(result.repository, str) or not re.fullmatch(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*", result.repository):
             raise ValueError("invalid immutable environment repository")
-        for name in ("worker_enabled", "builder_enabled", "dispatch_roots", "regenerate_bases"):
+        for name in ("builder_enabled", "dispatch_roots", "regenerate_bases"):
             if not isinstance(getattr(result, name), bool):
                 raise ValueError(f"immutable environment {name} must be boolean")
         if type(result.attach_concurrency) is not int or not 1 <= result.attach_concurrency <= 256:
@@ -476,7 +481,7 @@ class EnvironmentDeploymentConfig:
     def to_dict(self):
         # Older releases reject unknown fields: write the switch only once set,
         # so a release rollback still reads configs rendered with it off.
-        raw = asdict(self)
+        raw = asdict(self) | {"worker_enabled": True}
         if not self.regenerate_bases:
             del raw["regenerate_bases"]
         if self.device_budget_percent == DEFAULT_DEVICE_BUDGET_PERCENT:

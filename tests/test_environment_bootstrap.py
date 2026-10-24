@@ -90,7 +90,10 @@ class EnvironmentBootstrapTests(unittest.TestCase):
         raw = config.to_dict()
         raw["immutable_environments"] = {"trusted_keys_file": "/etc/producers.json", "worker_enabled": True}
         parsed = DeploymentConfig.from_dict(raw)
-        self.assertTrue(parsed.immutable_environments.worker_enabled)
+        # Retired: true only, and written true, so 0.10.0 reads the same file.
+        self.assertIs(parsed.to_dict()["immutable_environments"]["worker_enabled"], True)
+        del raw["immutable_environments"]["worker_enabled"]
+        self.assertEqual(DeploymentConfig.from_dict(raw), parsed)
         self.assertFalse(parsed.immutable_environments.builder_enabled)
         self.assertEqual(DeploymentConfig.from_dict(parsed.to_dict()), parsed)
         # Configs written for 0.10.0 name the retired prefetch switches; a
@@ -102,7 +105,7 @@ class EnvironmentBootstrapTests(unittest.TestCase):
                                                  **retired}
                 self.assertEqual(DeploymentConfig.from_dict(raw), parsed)
         self.assertFalse({"prefetch_enabled", "shared_traces"} & set(parsed.immutable_environments.to_dict()))
-        for change in ({"worker_enabled": 1}, {"builder_enabled": True},
+        for change in ({"worker_enabled": 1}, {"worker_enabled": False}, {"builder_enabled": True},
                        {"prefetch_enabled": "false"}, {"prefetch_enabled": 0}, {"shared_traces": "true"},
                        {"attach_concurrency": 0},
                        {"attach_concurrency": True}, {"device_budget_percent": 0}, {"device_budget_percent": 101},
@@ -118,7 +121,7 @@ class EnvironmentBootstrapTests(unittest.TestCase):
             trust = provision(Path(temporary) / "key")["public_trust_file"]
             base = DeploymentConfig.default(scope_id="test")
             for attach, budget in ((1, 75), (4, 60)):
-                selected = EnvironmentDeploymentConfig.from_dict({"trusted_keys_file": trust, "worker_enabled": True,
+                selected = EnvironmentDeploymentConfig.from_dict({"trusted_keys_file": trust,
                                                                   "prefetch_enabled": False, "shared_traces": True,
                                                                   "attach_concurrency": attach,
                                                                   "device_budget_percent": budget})

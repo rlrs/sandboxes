@@ -375,7 +375,8 @@ class ReflinkRetentionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'overlap capacity drains'):
                 build_direct_runtime_service(state_root=self.root, volume_mount_root=self.config.memory_root,
                     runsc=self.config.runsc, runsc_commit='a'*40, init_binary=self.root/'init',
-                    storage_native_socket=self.root/'storage.sock', memory_backing_hard_capacity_bytes=1 << 30)
+                    storage_native_socket=self.root/'storage.sock', memory_backing_hard_capacity_bytes=1 << 30,
+                    environment_registry=object(), environment_backend_socket=self.root/'environment-io.sock')
             constructor.assert_not_called()
 
     def test_same_parked_incarnation_reimport_gets_fresh_retention_project(self):

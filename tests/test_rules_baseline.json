@@ -153,9 +153,9 @@
   "private_patch": 1
  },
  "test_direct_runtime_assembly.py": {
-  "private": 2,
+  "private": 1,
   "private_patch": 1,
-  "test_import": 2
+  "test_import": 1
  },
  "test_direct_service.py": {
   "private": 2,

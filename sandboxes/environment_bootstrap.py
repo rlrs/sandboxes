@@ -129,7 +129,7 @@ def validate(options):
     from .environment_config import EnvironmentDeploymentConfig
     EnvironmentDeploymentConfig.from_dict({
         "trusted_keys_file": TRUST_FILE, "signing_key_file": KEY_FILE if options.role == "builder" else "",
-        "repository": options.environment_repository, "worker_enabled": options.role == "sandbox",
+        "repository": options.environment_repository,
         "builder_enabled": options.role == "builder", "cache_bytes": options.environment_cache_bytes,
         "device_budget_percent": options.environment_device_budget_percent,
         "chunk_store": json.loads(options.chunk_store_config_json or "null") if options.role == "builder" else None,

@@ -16,9 +16,10 @@ from unittest.mock import patch
 from urllib.request import Request, urlopen
 
 from tests import test_storage_native_daemon as storage_fixtures
-from tests.test_image_rootfs import Overlay2Runner
 from sandboxes.direct_runtime import build_direct_runtime_service
 from sandboxes.direct_warden import DirectSandbox
+from sandboxes.environment_artifact import EnvironmentArtifactRegistry
+from sandboxes.managed_registry import RegistryClient
 from sandboxes.sandbox import SandboxSpec
 from sandboxes.node_agent import build_direct_node_agent_server
 from sandboxes.storage_native_daemon import (
@@ -30,6 +31,17 @@ TEST_TIER = "contract"
 
 
 class DirectRuntimeAssemblyTests(unittest.TestCase):
+    def test_a_worker_without_immutable_environments_refuses_to_start(self):
+        # Sandbox workers have no Docker image store: nothing is created.
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            with self.assertRaisesRegex(ValueError, "immutable environments"):
+                build_direct_runtime_service(
+                    state_root=root / "state", volume_mount_root=root / "mounts", runsc=root / "runsc",
+                    runsc_commit="a" * 40, init_binary=root / "init", storage_native_socket=root / "storage.sock",
+                    memory_backing_hard_capacity_bytes=8 << 30)
+            self.assertEqual(list(root.iterdir()), [])
+
     def test_split_and_ram_runtime_start_over_real_storage_wire(self):
         fingerprints = {}
         for ram, reflink in ((False, False), (True, False), (False, True), (True, True)):
@@ -118,19 +130,15 @@ class DirectRuntimeAssemblyTests(unittest.TestCase):
                     reflink_memory_restore=reflink,
                     checkpoint_registry_url="http://127.0.0.1:5000",
                     checkpoint_registry_repository="qualification",
+                    # Nothing is attached: the empty image cache never reads either.
+                    environment_registry=EnvironmentArtifactRegistry(
+                        RegistryClient("http://127.0.0.1:5000"), "environments", {}),
+                    environment_backend_socket=root / "environment-io.sock",
                 )
                 stack.callback(service.stop)
                 self.assertEqual(reflink_gate.call_count, int(reflink))
                 self.assertEqual(service.warden.config.reflink_memory_restore, reflink)
                 fingerprints[ram, reflink] = service.warden.config.runtime_fingerprint.node_compatibility_sha256
-                service.provisioner.overlays.image_store.runner = Overlay2Runner(
-                    root / "docker"
-                )
-                (root / "docker").chmod(0o700)
-                (root / "docker" / "overlay2").chmod(0o700)
-                service.provisioner.overlays.image_store._configured_docker_root = (
-                    root / "docker"
-                )
                 self.assertEqual(
                     service.warden.storage.get_metrics()["hard_capacity_bytes"],
                     capacity,
@@ -144,7 +152,6 @@ class DirectRuntimeAssemblyTests(unittest.TestCase):
                     job_id="job",
                     node_id="node",
                     deployment_id="test",
-                    image_runtime=None,
                     node_control_bearer_token="test-token",
                     runtime_metrics_provider=lambda: None,
                 )

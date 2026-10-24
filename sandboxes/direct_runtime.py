@@ -24,7 +24,9 @@ from .gvisor_distribution import (
     require_ram_backing_runtime,
     require_reflink_restore_runtime,
 )
-from .image_rootfs import DockerOverlay2RootfsStore, OverlayRootfsManager
+from .environment_backend import EnvironmentBackendClient
+from .environment_rootfs import EnvironmentRootfsStore
+from .image_rootfs import OverlayRootfsManager
 from .storage_native_daemon import StorageNativeNodeClient
 from .telemetry import Telemetry
 
@@ -38,7 +40,6 @@ def build_direct_runtime_service(
     runsc_commit: str,
     init_binary: Path,
     managed_init_binary: Path | None = None,
-    docker_binary: str = "docker",
     network: str = "none",
     network_allow_tcp: Sequence[str] = (),
     network_relays: Mapping[str, str] | None = None,
@@ -63,6 +64,8 @@ def build_direct_runtime_service(
     runtime/noded owns the registry file and runs creates
     (docs/architecture.md); this agent writes through SQLite's cross-process
     locking and caches its reads. Checkpoints split workspace and memory.
+    Images are immutable environments (docs/images.md): ``environment_registry``
+    and ``environment_backend_socket`` are required.
     """
     for label, path in (
         ("state_root", state_root),
@@ -84,6 +87,11 @@ def build_direct_runtime_service(
         raise ValueError("direct runtime network must be none or sandbox")
     if not storage_native_socket.is_absolute():
         raise ValueError("storage_native_socket must be absolute")
+    if environment_registry is None or environment_backend_socket is None:
+        raise ValueError(
+            "sandbox workers run immutable environments: the environment registry and "
+            "backend socket are required (immutable_environments in deployment.json)"
+        )
     state_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     resolved_image_cache_root = image_cache_root or state_root / "image-cache"
     resolved_image_cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -104,13 +112,9 @@ def build_direct_runtime_service(
         raise ValueError(
             "checkpoint registry origin and repository must be configured together"
         )
-    if (environment_registry is None) != (environment_backend_socket is None):
-        raise ValueError(
-            "immutable environment registry and backend socket must be selected together"
-        )
     runsc_digest = _sha256_file(runsc)
     boot_digest = boot_config_sha256(
-        runsc, runsc_commit, network=network, host_erofs=environment_registry is not None,
+        runsc, runsc_commit, network=network,
         reflink_memory_restore=reflink_memory_restore, ram_backing=application_memory_root is not None,
     )
     fingerprint = HibernationRuntimeFingerprint(
@@ -124,21 +128,13 @@ def build_direct_runtime_service(
         # Replaced with the exact image identity for every artifact manifest.
         rootfs_sha256="0" * 64,
     )
-    if environment_registry is None:
-        image_store = DockerOverlay2RootfsStore(
-            resolved_image_cache_root, docker_binary=docker_binary
-        )
-    else:
-        from .environment_backend import EnvironmentBackendClient
-        from .environment_rootfs import EnvironmentRootfsStore
-
-        image_store = EnvironmentRootfsStore(
-            resolved_image_cache_root,
-            environment_registry,
-            EnvironmentBackendClient(environment_backend_socket),
-            rafs=environment_rafs,
-            device_budget_percent=environment_device_budget_percent,
-        )
+    image_store = EnvironmentRootfsStore(
+        resolved_image_cache_root,
+        environment_registry,
+        EnvironmentBackendClient(environment_backend_socket),
+        rafs=environment_rafs,
+        device_budget_percent=environment_device_budget_percent,
+    )
     overlays = OverlayRootfsManager(
         image_store,
         writable_root=volume_mount_root,
@@ -244,13 +240,13 @@ def build_direct_runtime_service(
     )
 
 
-def boot_config_sha256(runsc: Path, runsc_commit: str, *, network: str, host_erofs: bool,
+def boot_config_sha256(runsc: Path, runsc_commit: str, *, network: str,
                        reflink_memory_restore: bool, ram_backing: bool) -> str:
     """The boot configuration a node's checkpoints bind (runtime fingerprint)."""
     boot_settings: dict[str, object] = {
         "network": network,
         "platform": "systrap",
-        "rootfs_format": "ucloud-host-erofs-environment-v1" if host_erofs else "ucloud-overlay2-rootfs-v1",
+        "rootfs_format": "ucloud-host-erofs-environment-v1",
         "quota_layout": "split-memory-v3",
     }
     if reflink_memory_restore:

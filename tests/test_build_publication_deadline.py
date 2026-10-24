@@ -129,8 +129,6 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
             store = image_store(root, runner)
             with patch("sandboxes.build_deadline.time.monotonic", side_effect=lambda: clock[0]):
                 with build_execution_deadline(0.25):
-                    store.image_content_id("example/image:latest")
-                    store.image_tag_times(("sha256:" + IMAGE_DIGEST,))
                     with store.operation_lease("example/image:latest") as image:
                         pass
                     self.assertTrue(store.collect_image(image.image_id, is_referenced=lambda _: False))
@@ -138,8 +136,9 @@ class BuildPublicationDeadlineTests(unittest.TestCase):
             self.assertTrue(any(command[0] == "umount" for command, _ in runner.budgets))
             self.assertTrue(all(0 < timeout <= 0.25 for _, timeout in runner.budgets))
             runner.budgets.clear()
-            store.image_content_id("example/image:latest")
-            self.assertEqual(runner.budgets[0][1], 60)
+            with store.operation_lease("example/image:latest"):
+                pass
+            self.assertIn(60, {timeout for command, timeout in runner.budgets if command[0] == "mountpoint"})
 
     def test_expired_readonly_remount_cleans_partial_bind_with_separate_budget(self):
         with TemporaryDirectory() as temporary:

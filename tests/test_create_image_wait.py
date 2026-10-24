@@ -29,19 +29,17 @@ class CreateImageWaitTests(unittest.TestCase):
 
     def test_an_environment_attach_is_awaited_not_polled(self):
         # Immutable-environment workers attach in seconds: creates for one
-        # image share the attach and wait for it, instead of a 2 s answer
+        # image share the attach and wait for it, instead of an early answer
         # that sends them back to the durable queue.
-        tasks = cp.CreateImagePullTasks(cp.ENVIRONMENT_ATTACH_WAIT_SECONDS, bounded=False)
+        tasks = cp.CreateImagePullTasks(cp.ENVIRONMENT_ATTACH_WAIT_SECONDS)
         result = cp.ProxiedResponse(201, {}, b"{}")
         pull = Mock(side_effect=lambda: time.sleep(.3) or result)
-        with (patch.object(cp, "SANDBOX_IMAGE_WAIT_SECONDS", 0.02),  # Nor turned away past the 2 s pulls' cap.
-              patch.object(cp, "MAX_BACKGROUND_CREATE_IMAGE_PULLS", 2), ThreadPoolExecutor(max_workers=8) as executor):
+        with ThreadPoolExecutor(max_workers=8) as executor:
             responses = list(executor.map(lambda i: tasks.run((f"image-{i % 4}",), pull), range(8)))
         self.assertEqual((pull.call_count, {id(r) for r in responses}), (4, {id(result)}))
-        self.assertGreater(cp.ENVIRONMENT_ATTACH_WAIT_SECONDS, cp.SANDBOX_IMAGE_WAIT_SECONDS)
 
-    def test_shared_pull_has_bounded_wait_and_bounded_background_capacity(self):
-        tasks = cp.CreateImagePullTasks()
+    def test_a_shared_pull_past_its_wait_answers_pending_then_its_result(self):
+        tasks = cp.CreateImagePullTasks(0.02)
         release = Event()
         finished = Event()
         result = cp.ProxiedResponse(201, {}, b"{}")
@@ -52,28 +50,22 @@ class CreateImageWaitTests(unittest.TestCase):
             return result
 
         pull = Mock(side_effect=pull)
-        with (
-            patch.object(cp, "SANDBOX_IMAGE_WAIT_SECONDS", 0.02),
-            patch.object(cp, "MAX_BACKGROUND_CREATE_IMAGE_PULLS", 1),
-        ):
-            try:
-                with ThreadPoolExecutor(max_workers=12) as executor:
-                    responses = list(
-                        executor.map(lambda _: tasks.run(("same",), pull), range(12))
-                    )
-                self.assertEqual(pull.call_count, 1)
-                self.assertTrue(
-                    all(r.status == 503 and r.json()["retryable"] for r in responses)
+        try:
+            with ThreadPoolExecutor(max_workers=12) as executor:
+                responses = list(
+                    executor.map(lambda _: tasks.run(("same",), pull), range(12))
                 )
-                self.assertEqual(tasks.run(("other",), pull).status, 503)
-                self.assertEqual(pull.call_count, 1)
-                release.set()
-                self.assertTrue(finished.wait(1))
-                self.assertIs(tasks.run(("same",), pull), result)
-                self.assertEqual(pull.call_count, 1)
-                self.assertIs(tasks.run(("other",), pull), result)
-            finally:
-                release.set()
+            self.assertEqual(pull.call_count, 1)
+            self.assertTrue(
+                all(r.status == 503 and r.json()["error_code"] == "image_warmup_pending"
+                    and r.json()["retryable"] for r in responses)
+            )
+            release.set()
+            self.assertTrue(finished.wait(1))
+            self.assertIs(tasks.run(("same",), pull), result)
+            self.assertEqual(pull.call_count, 1)
+        finally:
+            release.set()
 
     def test_long_pull_read_timeout_does_not_allow_long_connection_or_pool_wait(self):
         with patch.object(node_rpc._NODE_HTTP_POOL, "request") as send:
@@ -110,7 +102,7 @@ class CreateImageWaitTests(unittest.TestCase):
                          ["http://unknown", "http://known", "http://absent"])
 
     def test_task_failure_is_propagated_and_does_not_leak_capacity(self):
-        tasks = cp.CreateImagePullTasks()
+        tasks = cp.CreateImagePullTasks(cp.ENVIRONMENT_ATTACH_WAIT_SECONDS)
         with self.assertRaisesRegex(RuntimeError, "lease unavailable"):
             tasks.run(("bad",), Mock(side_effect=RuntimeError("lease unavailable")))
         self.assertEqual(tasks.tasks, {})
@@ -177,7 +169,7 @@ class CreateImageWaitTests(unittest.TestCase):
 
         with (
             _temporary_root() as root,
-            patch.object(cp, "SANDBOX_IMAGE_WAIT_SECONDS", 0.03),
+            patch.object(cp, "ENVIRONMENT_ATTACH_WAIT_SECONDS", 0.03),
         ):
             node = ThreadingHTTPServer(("127.0.0.1", 0), Node)
             with _running_server(node) as node_url:

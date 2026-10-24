@@ -201,13 +201,11 @@ IMAGE_BUILD_PROXY_TIMEOUT_SECONDS = 30 * 60
 IMAGE_PULL_PROXY_TIMEOUT_SECONDS = 30 * 60
 IMAGE_PULL_RETRY_ATTEMPTS = 3
 IMAGE_PULL_RETRY_BASE_DELAY_SECONDS = 0.25
-SANDBOX_IMAGE_WAIT_SECONDS = 2.0
-# On immutable-environment workers a create's "pull" is the image's attach
+# A create's "pull" is the image's attach on an immutable-environment worker
 # (resolve and mount its components): seconds, not an OCI pull's minutes. A
 # create waits for it, up to the admission wait, instead of polling the
 # durable queue every 2 s (a warm 512 burst deferred ~100 creates/10 s so).
 ENVIRONMENT_ATTACH_WAIT_SECONDS = 30.0
-MAX_BACKGROUND_CREATE_IMAGE_PULLS = 32
 DEFAULT_MAX_PROXY_BODY_BYTES = 256 * 1024 * 1024
 DEFAULT_MAX_BUILD_CONTEXT_STORE_BYTES = 2 * 1024 * 1024 * 1024
 _BUILD_CONTEXT_PROBE_MIN_BYTES = 1024 * 1024
@@ -301,15 +299,16 @@ class ImageBuildLookupUnavailableError(RuntimeError):
 
 
 class CreateImagePullTasks:
-    """Share cold pulls without retaining HTTP admission slots indefinitely."""
+    """Share cold pulls without retaining HTTP admission slots indefinitely.
 
-    def __init__(self, wait_seconds: float | None = None, *, bounded: bool = True) -> None:
+    Awaited attaches always have a waiting create, so creates in flight bound
+    them; a pull that outlives its callers' wait answers them pending.
+    """
+
+    def __init__(self, wait_seconds: float) -> None:
         self.lock = RLock()
         self.tasks: dict[tuple[str, ...], Future[ProxiedResponse | None]] = {}
         self.wait_seconds = wait_seconds
-        # Awaited attaches always have a waiting create, so creates in flight
-        # bound them; only pulls that outlive their 2 s callers need a cap.
-        self.bounded = bounded
 
     def run(
         self, key: tuple[str, ...], pull: Callable[[], ProxiedResponse | None]
@@ -320,8 +319,6 @@ class CreateImagePullTasks:
                 # Completed results need no durable cache: the node inventory
                 # is authoritative, including after eviction or a node restart.
                 self.tasks = {k: v for k, v in self.tasks.items() if not v.done()}
-                if self.bounded and len(self.tasks) >= MAX_BACKGROUND_CREATE_IMAGE_PULLS:
-                    return _create_image_pull_pending_response()
                 task = Future()
                 self.tasks[key] = task
 
@@ -337,7 +334,7 @@ class CreateImagePullTasks:
                     del self.tasks[key]
                     raise
         try:
-            return task.result(timeout=self.wait_seconds or SANDBOX_IMAGE_WAIT_SECONDS)
+            return task.result(timeout=self.wait_seconds)
         except FutureTimeoutError:
             if task.done():
                 return task.result()
@@ -5547,9 +5544,7 @@ def build_server(
         max(1, DEFAULT_MAX_PROXY_BODY_BYTES // max(1, process_count))
     )
     BoundHandler.sandbox_create_busy_sampler = GatewayBusySampler(metrics_store)
-    BoundHandler.create_image_pull_tasks = (
-        CreateImagePullTasks(ENVIRONMENT_ATTACH_WAIT_SECONDS, bounded=False) if import_external_images
-        else CreateImagePullTasks())
+    BoundHandler.create_image_pull_tasks = CreateImagePullTasks(ENVIRONMENT_ATTACH_WAIT_SECONDS)
     BoundHandler.telemetry = resolved_telemetry
     from .gateway_response_proxy import AsyncGatewayResponses
     async_responses = (AsyncGatewayResponses(

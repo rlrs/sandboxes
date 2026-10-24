@@ -443,7 +443,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(DEFAULT_MANAGED_INIT),
     )
-    direct_node_agent.add_argument("--docker-binary", default="docker")
     direct_node_agent.add_argument(
         "--max-concurrent-image-pulls",
         type=int,
@@ -1169,10 +1168,7 @@ def cmd_serve_control_plane(args: argparse.Namespace) -> int:
                                       if config.immutable_environments is not None else ""),
         base_regeneration=base_regeneration_from_deployment(config, args.config),
         sandbox_builds=_sandbox_builds(config),
-        import_external_images=bool(
-            config.immutable_environments is not None
-            and config.immutable_environments.worker_enabled
-        ),
+        import_external_images=config.immutable_environments is not None,
         registry_disk_monitor=RegistryDiskMonitor.from_config(config),
         max_concurrent_sandbox_creates=(config.gateway_max_concurrent_sandbox_creates),
         create_target_concurrency_per_node=(
@@ -1390,7 +1386,6 @@ def cmd_serve_direct_node_agent(args: argparse.Namespace) -> int:
         runsc_commit=args.runsc_commit,
         init_binary=args.init_binary.absolute(),
         managed_init_binary=args.managed_init_binary.absolute(),
-        docker_binary=args.docker_binary,
         network=args.network,
         network_allow_tcp=tuple(args.direct_network_allow_tcp or ()),
         network_relays=json.loads(args.network_relays_json),
@@ -1423,10 +1418,6 @@ def cmd_serve_direct_node_agent(args: argparse.Namespace) -> int:
         deployment_id=args.deployment_id,
         init_version=args.init_version,
         total_resources=resource_quantity_from_args(args),
-        image_runtime=DockerImageRuntime(
-            docker_binary=args.docker_binary,
-            dry_run=False,
-        ),
         max_concurrent_image_pulls=args.max_concurrent_image_pulls,
         node_control_bearer_token=read_required_token_file(
             args.node_control_bearer_token_file,
@@ -6507,8 +6498,7 @@ def vm_init_options_for_job(
     environment_options = {}
     selected_environment = config.immutable_environments
     if selected_environment is not None and (
-        (role == "sandbox" and selected_environment.worker_enabled)
-        or (role == "builder" and selected_environment.builder_enabled)
+        role == "sandbox" or (role == "builder" and selected_environment.builder_enabled)
     ):
         from .environment_config import load_trusted_keys
         import base64

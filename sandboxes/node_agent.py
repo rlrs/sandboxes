@@ -1750,12 +1750,6 @@ class NodeAgentHandler(BuildContextHttpHandler):
             # signature); a Docker image store has none.
             environment_root = (str(raw["environment_root"]) if raw.get("environment_root") and getattr(
                 self.image_manager.runtime, "pulls_environment_roots", False) else None)
-            image_evictor = getattr(self, "image_evictor", None)
-            if image_evictor is not None:
-                try:
-                    image_evictor.evict_if_needed()
-                except Exception as exc:
-                    _LOG.warning("could not evict cached images before a pull: %s", exc)
             with self.manager.image_operation(self.image_manager):
                 failed_phase = getattr(self.image_manager.runtime, "pull_phase", "docker_pull")
                 with self.image_manager.pull_slot() as pull_admission:
@@ -1764,10 +1758,6 @@ class NodeAgentHandler(BuildContextHttpHandler):
                     record, result = self.image_manager.pull(image, image_id=image_id,
                                                              environment_root=environment_root)
                 pull_finished = time.monotonic()
-                if image_evictor is not None:
-                    content_id = image_evictor.store.image_content_id(record.tag)
-                    if content_id:
-                        image_evictor.note_used(content_id)
                 materialize_ms: int | None = None
                 if self.image_materializer is not None:
                     failed_phase = "rootfs_materialize"
@@ -2189,7 +2179,7 @@ def build_direct_node_agent_server(
     deployment_id: str,
     init_version: str = "",
     total_resources: ResourceQuantity | None = None,
-    image_runtime: DockerImageRuntime,
+    image_runtime: DockerImageRuntime | None = None,
     node_control_bearer_token: str,
     max_json_body_bytes: int = DEFAULT_MAX_JSON_BODY_BYTES,
     max_file_body_bytes: int = DEFAULT_MAX_FILE_BODY_BYTES,
@@ -2210,6 +2200,8 @@ def build_direct_node_agent_server(
     (exec_fence); it owns the pause tier and local waits (pause_handoff).
     Without ``unix_socket`` the agent serves ``host:port`` with its internal
     routes off (tests).
+    Images come from the immutable environment store (docs/images.md);
+    ``image_runtime`` serves only another store, the LocalFleet harness's.
     ``rust_admission``: node admission moves to noded
     (docs/architecture.md): this agent admits through noded's internal
     socket (admission_backend.NodedAdmission, step 3c.3), says hello there
@@ -2225,6 +2217,9 @@ def build_direct_node_agent_server(
         raise ValueError("deployment_id cannot be empty")
     if max_concurrent_image_pulls < 1:
         raise ValueError("max concurrent image pulls must be positive")
+    from .environment_manifest import HOST_EROFS_ABI
+    if image_runtime is None and getattr(service.provisioner.overlays.image_store, "backend_abi", "") != HOST_EROFS_ABI:
+        raise ValueError("a sandbox worker needs the immutable environment image store")
     configured_resources = total_resources or ResourceQuantity()
     if not configured_resources.is_valid:
         raise ValueError("total_resources cannot contain negative values")
@@ -2246,7 +2241,6 @@ def build_direct_node_agent_server(
     manager = DirectNodeRuntime(service, rust_admission=rust_admission)
     manager.start()
     exec_manager = ExecSessionManager(manager, telemetry=resolved_telemetry)
-    from .environment_manifest import HOST_EROFS_ABI
     if getattr(service.provisioner.overlays.image_store, "backend_abi", "") == HOST_EROFS_ABI:
         from .environment_rootfs import EnvironmentImageRuntime
         image_runtime = EnvironmentImageRuntime(service.provisioner.overlays.image_store)
@@ -2270,21 +2264,6 @@ def build_direct_node_agent_server(
     DirectBoundHandler.manager = manager
     DirectBoundHandler.exec_manager = exec_manager
     DirectBoundHandler.image_manager = image_manager
-    image_evictor = getattr(service.provisioner, "image_evictor", None)
-    DirectBoundHandler.image_evictor = image_evictor
-    if image_evictor is not None:
-        evictable_store = service.provisioner.overlays.image_store
-
-        def forget_evicted_images(_evicted: tuple[str, ...]) -> None:
-            # Heartbeats advertise these records; the gateway skips the pull
-            # for an advertised image, so stale records would fail creates.
-            missing = [
-                record.tag for record in image_manager.list()
-                if not evictable_store.image_present(record.tag)
-            ]
-            image_manager.store.delete_by_tags(missing)
-
-        image_evictor.after_eviction.append(forget_evicted_images)
     DirectBoundHandler.build_context_store = build_context_store
     DirectBoundHandler.job_id = job_id
     DirectBoundHandler.node_id = node_id
