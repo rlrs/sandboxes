@@ -1036,6 +1036,9 @@ class ScalePolicy:
     provisioning_scale_down_multiplier: float = 2.0
     drain_on_park_enabled: bool = True
     drain_on_park_moves_per_cycle: int = 4
+    # Pending demand blocks a drain only when it does not fit without the
+    # worker; off, any pending create the worker fits pins it.
+    drain_on_park_with_pending_enabled: bool = False
     default_node_resources: ResourceQuantity = ResourceQuantity(
         vcpu=32.0,
         memory_mb=98304,

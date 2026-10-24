@@ -1369,6 +1369,9 @@ def plan_soft_drain(
     ready_job_ids = {node.job_id for node in ready_nodes}
     reported_free = _reported_free_resources(ready_nodes)
     excess = len(pool) > policy.min_nodes
+    # surplus() already places pending demand on the survivors. As a veto,
+    # hours of pending demand that fit on one worker pinned all of them.
+    pending_vetoes = pending_count > 0 and not policy.drain_on_park_with_pending_enabled
 
     def surplus(node: SandboxNode) -> bool:
         heartbeat = node.heartbeat
@@ -1394,7 +1397,7 @@ def plan_soft_drain(
         ) is not None
 
     def serves_pending(node: SandboxNode) -> bool:
-        if pending_count <= 0:
+        if not pending_vetoes:
             return False
         if not placement_requests or node.heartbeat is None:
             return True
@@ -1448,7 +1451,7 @@ def plan_soft_drain(
             reasons.append(f"no other worker shares {node.job_id}'s CPU features")
         else:
             kept = node.job_id
-    if kept or not allow_select or not excess or pending_count > 0:
+    if kept or not allow_select or not excess or pending_vetoes:
         return SoftDrainPlan(
             job_id=kept, clear_job_ids=tuple(clear), reason="; ".join(reasons),
         )

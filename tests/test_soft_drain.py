@@ -208,6 +208,38 @@ class SoftDrainSelectionTests(unittest.TestCase):
             "",
         )
 
+    def test_pending_demand_that_fits_without_a_worker_need_not_pin_it(self):
+        # Six workers with a few parks each; queued creates waiting on image
+        # builds hold 24 vCPU pending, which fits on any one of them.
+        nodes = [worker(str(job), active=active)
+                 for job, active in ((100, 15), (200, 4), (300, 1), (400, 9), (500, 6), (600, 2))]
+        now = utc_now()  # After the workers' memory samples, so they are fresh.
+        waiting = demand(pending_count=12, placement_requests=(
+            SandboxPlacementRequest(ResourceQuantity(2, 4096, 20_480)),) * 12)
+        off, on = ScalePolicy(), ScalePolicy(drain_on_park_with_pending_enabled=True)
+        self.assertEqual(evaluate_scale(nodes, waiting, off, now=now).soft_drain_job_id, "")
+        decision = evaluate_scale(nodes, waiting, on, now=now)
+        self.assertEqual((decision.soft_drain_job_id, decision.soft_drain_selected), ("300", True))
+        self.assertEqual((decision.creates, decision.stops), (0, ()))
+
+        # Plain plan inputs: the flag lifts the pending veto, nothing else.
+        def plan(policy, nodes=nodes, request=ResourceQuantity(2, 4096, 20_480), count=12):
+            return plan_soft_drain(
+                nodes, policy, now, required_resources=request.scaled(cpu=count, memory=count, disk=count),
+                placement_requests=(SandboxPlacementRequest(request),) * count, pending_count=count,
+            )
+        self.assertEqual(plan(off).job_id, "")
+        self.assertEqual((plan(on).job_id, plan(on).selected), ("300", True))
+        # An existing selection is kept rather than cleared for serving pending demand.
+        draining = [*nodes[:2], drained_node(nodes[2]), *nodes[3:]]
+        self.assertEqual(plan(off, draining).clear_job_ids, ("300",))
+        self.assertEqual((plan(on, draining).job_id, plan(on, draining).clear_job_ids), ("300", ()))
+        # Pending demand that needs every worker still pins them.
+        pair = nodes[1:3]
+        self.assertEqual(plan(on, pair, ResourceQuantity(4, 4096, 20_480), 10).job_id, "")
+        self.assertEqual(plan(on, [pair[0], drained_node(pair[1])],
+                              ResourceQuantity(4, 4096, 20_480), 10).clear_job_ids, ("300",))
+
     def test_no_selection_while_creates_are_recent(self):
         # The next rollout step needs the workers this one's creates used.
         nodes = [worker("100", active=10), worker("200")]
@@ -695,16 +727,19 @@ class SoftDrainConfigTests(unittest.TestCase):
         config = replace(
             config,
             policy=replace(
-                config.policy, drain_on_park_enabled=False, drain_on_park_moves_per_cycle=7
+                config.policy, drain_on_park_enabled=False, drain_on_park_moves_per_cycle=7,
+                drain_on_park_with_pending_enabled=True,
             ),
         )
         self.assertEqual(DeploymentConfig.from_dict(config.to_dict()), config)
         raw = DeploymentConfig.default().to_dict()
         raw["policy"].pop("drain_on_park_enabled")
         raw["policy"].pop("drain_on_park_moves_per_cycle")
+        raw["policy"].pop("drain_on_park_with_pending_enabled")
         policy = DeploymentConfig.from_dict(raw).policy
         self.assertTrue(policy.drain_on_park_enabled)
         self.assertEqual(policy.drain_on_park_moves_per_cycle, 4)
+        self.assertFalse(policy.drain_on_park_with_pending_enabled)
         raw["policy"]["drain_on_park_moves_per_cycle"] = -1
         with self.assertRaises(ValueError):
             DeploymentConfig.from_dict(raw)

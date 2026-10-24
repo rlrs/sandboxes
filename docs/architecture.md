@@ -388,7 +388,11 @@ delays scale-up; node admission still owns safety.
 `scale_down_idle_seconds` (extended by recent pressure and boot latency). A
 busy RL fleet is never idle, so **drain on park** (default on) soft-drains one
 surplus worker at a time by migrating its parks elsewhere; workers that
-rebooted twice in 24 h are retired the same way. A suspended UCloud job is
+rebooted twice in 24 h are retired the same way. A worker is surplus when
+current demand, pending creates included, still fits without it. By default
+any pending create also vetoes a drain, so long-pending demand that would fit
+on one worker can pin them all; `policy.drain_on_park_with_pending_enabled`
+(default off) drops that veto. A suspended UCloud job is
 quarantined from placement but keeps its routes until continuity is proven.
 
 ### Placement
