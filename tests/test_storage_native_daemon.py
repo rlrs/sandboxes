@@ -436,28 +436,22 @@ class StorageNativeNodeServiceTests(unittest.TestCase):
             self.assertEqual(service.metrics()["retired_devices"], 1)
             self.assertEqual(backend.release_calls, [])
 
-    def test_journal_v3_records_keep_their_full_size_charge(self):
+    def test_an_older_journal_version_is_refused_unchanged(self):
+        # Versions 2 and 3 were migrated in place up to 0.10.0.
         with TemporaryDirectory() as raw:
             service, _, _ = self._service(Path(raw))
-            owner = StorageVolumeOwner("vol", "sandbox", 1)
-            service.converge_volume(owner, action="prepare", operation_id="create",
-                                    virtual_size=4 << 30, granted_size=1 << 30)
-            with sqlite3.connect(service.journal.path) as connection:
-                raw_json = json.loads(connection.execute(
-                    "SELECT record_json FROM volumes").fetchone()[0])
-                raw_json.pop("granted_size")
-                raw_json.pop("local_layer_bytes")
-                connection.execute("UPDATE volumes SET record_json = ?",
-                                   (json.dumps(raw_json, sort_keys=True),))
+            service.converge_volume(StorageVolumeOwner("vol", "sandbox", 1), action="prepare",
+                                    operation_id="create", virtual_size=4 << 30)
+            with closing(sqlite3.connect(service.journal.path)) as connection, connection:
                 connection.executescript(
                     "DROP INDEX volumes_live_charges;"
                     "ALTER TABLE volumes DROP COLUMN charged_bytes; PRAGMA user_version=3;"
                 )
-            migrated = StorageNativeJournal(service.journal.path)
-            # A pre-grant record was formatted at full size: charge it so.
-            self.assertEqual(migrated.load("vol").granted_size, 4 << 30)
-            with migrated._connection() as connection:
-                self.assertEqual(migrated._active_reserved_bytes(connection), 4 << 30)
+            with self.assertRaisesRegex(StorageNativeNodeError, "version 3 is unsupported"):
+                StorageNativeJournal(service.journal.path)
+            with closing(sqlite3.connect(service.journal.path)) as connection:
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 3)
+                self.assertEqual(connection.execute("SELECT volume_id FROM volumes").fetchall(), [("vol",)])
 
     def test_workspace_grant_bounds_filesystem_and_charge_until_grown(self):
         with TemporaryDirectory() as raw:

@@ -36,7 +36,7 @@ use crate::fsutil::{FileLock, euid, fsync_dir};
 
 /// The ownership marker inside each allocation directory.
 pub const MARKER: &str = ".memory-owner.json";
-/// `PRAGMA user_version` this code writes; versions 0 to 3 are migrated on open.
+/// `PRAGMA user_version` this code writes and the only one it opens.
 pub const JOURNAL_VERSION: i64 = 3;
 /// The first XFS project id the shared counter hands out.
 pub const FIRST_PROJECT_ID: i64 = 600_000;
@@ -969,14 +969,20 @@ impl MemoryBackingStore {
             let mut conn = connect(&journal, true)?;
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-            if !(0..=JOURNAL_VERSION).contains(&version) {
-                return fail("unsupported memory backing journal version");
+            let fresh = version == 0
+                && tx.query_row("SELECT 1 FROM sqlite_master LIMIT 1", [], |_| Ok(())).optional()?.is_none();
+            if version != JOURNAL_VERSION && !fresh {
+                // Versions before 3 were migrated in place up to 0.10.0.
+                return fail(&format!(
+                    "memory backing journal version {version} is unsupported; this release reads only version {JOURNAL_VERSION}"
+                ));
             }
             tx.execute_batch(
                 "CREATE TABLE IF NOT EXISTS allocations (\
                  allocation_id TEXT PRIMARY KEY, sandbox_id TEXT NOT NULL, \
                  generation INTEGER NOT NULL, project_id INTEGER UNIQUE NOT NULL, \
-                 quota_bytes INTEGER NOT NULL, state TEXT NOT NULL)",
+                 quota_bytes INTEGER NOT NULL, state TEXT NOT NULL, \
+                 active_mode TEXT NOT NULL DEFAULT 'file', limit_bytes INTEGER NOT NULL DEFAULT -1)",
             )?;
             tx.execute_batch("CREATE TABLE IF NOT EXISTS counter (value INTEGER NOT NULL)")?;
             tx.execute_batch("CREATE TABLE IF NOT EXISTS features (name TEXT PRIMARY KEY)")?;
@@ -988,26 +994,11 @@ impl MemoryBackingStore {
                  project_id INTEGER UNIQUE NOT NULL, state TEXT NOT NULL, \
                  PRIMARY KEY(allocation_id,hibernation_generation))",
             )?;
-            let columns: Vec<String> = tx
-                .prepare("PRAGMA table_info(allocations)")?
-                .query_map([], |row| row.get(1))?
-                .collect::<rusqlite::Result<_>>()?;
-            if !columns.iter().any(|c| c == "active_mode") {
-                // A journal from before per-owner placement: its layout was the worker's.
-                tx.execute_batch("ALTER TABLE allocations ADD COLUMN active_mode TEXT NOT NULL DEFAULT 'file'")?;
-                if active_root.is_some() {
-                    tx.execute_batch("UPDATE allocations SET active_mode='ram'")?;
-                }
-            }
-            if !columns.iter().any(|c| c == "limit_bytes") {
-                tx.execute_batch("ALTER TABLE allocations ADD COLUMN limit_bytes INTEGER NOT NULL DEFAULT -1")?;
-                tx.execute_batch("UPDATE allocations SET limit_bytes=quota_bytes WHERE limit_bytes<0")?;
-            }
             let counters: i64 = tx.query_row("SELECT COUNT(*) FROM counter", [], |row| row.get(0))?;
             if counters == 0 {
                 tx.execute_batch("INSERT INTO counter VALUES (600000)")?;
             }
-            tx.execute_batch("PRAGMA user_version=3")?;
+            tx.execute_batch(&format!("PRAGMA user_version={JOURNAL_VERSION}"))?;
             tx.commit()?;
             let mut statement =
                 conn.prepare("SELECT sandbox_id,generation,active_mode FROM allocations WHERE state!='deleted'")?;

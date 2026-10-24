@@ -353,7 +353,7 @@ fn open_validates_configuration_and_journal() {
     assert_eq!(message(node.open(&quota)), "memory allocation has an unsupported active backing mode");
     node.sql().execute("UPDATE allocations SET active_mode='file'", []).unwrap();
     node.sql().execute_batch("PRAGMA user_version=4").unwrap();
-    assert_eq!(message(node.open(&quota)), "unsupported memory backing journal version");
+    assert_eq!(message(node.open(&quota)), "memory backing journal version 4 is unsupported; this release reads only version 3");
     node.sql().execute_batch("PRAGMA user_version=3").unwrap();
 
     let store = node.open(&quota).unwrap();
@@ -538,34 +538,29 @@ fn a_fresh_journal_has_pythons_exact_schema() {
 }
 
 #[test]
-fn a_legacy_journal_migrates_as_python_migrates_it() {
-    let ours = Node::new(1 << 20, true);
-    let theirs = Node::new(1 << 20, true);
-    for node in [&ours, &theirs] {
-        fs::create_dir_all(node.journal().parent().unwrap()).unwrap();
-        // The pre-placement six-column layout, with a ready row and a used counter.
-        node.sql()
-            .execute_batch(
-                "CREATE TABLE allocations (allocation_id TEXT PRIMARY KEY, sandbox_id TEXT NOT NULL, \
-                 generation INTEGER NOT NULL, project_id INTEGER UNIQUE NOT NULL, \
-                 quota_bytes INTEGER NOT NULL, state TEXT NOT NULL);
-                 CREATE TABLE counter (value INTEGER NOT NULL);
-                 INSERT INTO counter VALUES (600001);
-                 INSERT INTO allocations VALUES ('guest.sandbox-1','guest',1,600000,4096,'ready');",
-            )
-            .unwrap();
-    }
-    let store = ours.open(&FakeQuota::default()).unwrap();
-    assert_eq!(store.active_mode("guest", 1), Some(ActiveMode::Ram));
-    let Some(_) = python(&theirs, "store(); print('null')") else { return };
-    let migrated = schema(&ours.journal());
-    assert_eq!(migrated, schema(&theirs.journal()));
-    assert_eq!(migrated["user_version"], 3);
-    assert_eq!(migrated["counter"], json!([600001]));
-    assert_eq!(
-        migrated["allocations"],
-        json!([["Text(\"guest.sandbox-1\")", "Text(\"guest\")", "Integer(1)", "Integer(600000)", "Integer(4096)", "Text(\"ready\")", "Text(\"ram\")", "Integer(4096)"]])
-    );
+fn a_journal_from_before_version_3_is_refused_as_python_refuses_it() {
+    // Versions before 3 were migrated in place up to 0.10.0.
+    const PRE_PLACEMENT: &str = "CREATE TABLE allocations (allocation_id TEXT PRIMARY KEY, sandbox_id TEXT NOT NULL, \
+         generation INTEGER NOT NULL, project_id INTEGER UNIQUE NOT NULL, \
+         quota_bytes INTEGER NOT NULL, state TEXT NOT NULL);
+         CREATE TABLE counter (value INTEGER NOT NULL);
+         INSERT INTO counter VALUES (600001);
+         INSERT INTO allocations VALUES ('guest.sandbox-1','guest',1,600000,4096,'ready');";
+    let node = Node::new(1 << 20, true);
+    fs::create_dir_all(node.journal().parent().unwrap()).unwrap();
+    node.sql().execute_batch(PRE_PLACEMENT).unwrap();
+    let refusal = "memory backing journal version 0 is unsupported; this release reads only version 3";
+    assert_eq!(message(node.open(&FakeQuota::default())), refusal);
+    let columns: i64 = node.sql().query_row("SELECT COUNT(*) FROM pragma_table_info('allocations')", [], |r| r.get(0)).unwrap();
+    let version: i64 = node.sql().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!((columns, version), (6, 0));
+    let Some(seen) = python(
+        &node,
+        "from sandboxes.memory_backing import MemoryBackingError\ntry:\n    store()\nexcept MemoryBackingError as error:\n    print(json.dumps(str(error)))",
+    ) else {
+        return;
+    };
+    assert_eq!(seen, json!(refusal));
 }
 
 #[test]

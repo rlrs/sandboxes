@@ -150,7 +150,6 @@
   "sleep": 1
  },
  "test_direct_registry.py": {
-  "private": 1,
   "private_patch": 1
  },
  "test_direct_runtime_assembly.py": {
@@ -552,7 +551,7 @@
   "test_import": 1
  },
  "test_registry_hot_paths.py": {
-  "private": 7,
+  "private": 5,
   "test_import": 1
  },
  "test_registry_index.py": {
@@ -709,7 +708,7 @@
  },
  "test_storage_native_daemon.py": {
   "clock": 4,
-  "private": 12,
+  "private": 10,
   "private_patch": 4,
   "sleep": 1
  },

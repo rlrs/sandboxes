@@ -155,8 +155,8 @@ class MemoryBackingModeTests(unittest.TestCase):
         (generation / 'more.img').write_bytes(b'y' * 5000)
         self.assertGreater(self.store.allocated_bytes(self.ref), before)
 
-    def test_legacy_journal_migrates_worker_layout_transactionally(self):
-        # An old six-column allocation is the actual input to the migration.
+    def test_journal_from_before_version_3_is_refused_unchanged(self):
+        # Versions before 3 were migrated in place up to 0.10.0.
         journal = self.root / 'memory.sqlite'
         with closing(sqlite3.connect(journal)) as conn, conn:
             conn.execute('DROP TABLE allocations')
@@ -165,15 +165,12 @@ class MemoryBackingModeTests(unittest.TestCase):
                          'quota_bytes INTEGER, state TEXT)')
             conn.execute('INSERT INTO allocations VALUES (?,?,?,?,?,?)',
                          ('guest.sandbox-1', 'guest', 1, 600000, 4096, 'ready'))
-            conn.execute('PRAGMA user_version=0')
-        reopened = self.open_store()
-        self.assertEqual(reopened.active_mode('guest', 1), 'ram')
+            conn.execute('PRAGMA user_version=2')
+        with self.assertRaisesRegex(MemoryBackingError, 'version 2 is unsupported'):
+            self.open_store()
         with closing(sqlite3.connect(journal)) as conn:
-            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 3)
-            self.assertEqual(conn.execute('SELECT active_mode FROM allocations').fetchone()[0], 'ram')
-            # Existing allocations keep their full ceiling as their limit.
-            self.assertEqual(conn.execute('SELECT limit_bytes FROM allocations').fetchone()[0], 4096)
-        self.assertEqual(self.open_store().active_mode('guest', 1), 'ram')
+            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 2)
+            self.assertEqual(len(conn.execute('PRAGMA table_info(allocations)').fetchall()), 6)
 
     def test_selection_failure_does_not_publish_file_mode(self):
         self.store.prepare(self.ref, **self.owner)

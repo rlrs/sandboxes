@@ -363,6 +363,29 @@ class DirectRegistryTests(unittest.TestCase):
                     with self.assertRaisesRegex(DirectRegistryError, "schema"):
                         DirectSandboxRegistry(path).snapshot()
 
+    def test_refuses_an_older_schema_version_without_changing_it(self) -> None:
+        # Versions 3 to 8 were migrated in place up to 0.10.0.
+        with TemporaryDirectory() as raw:
+            path = (Path(raw) / "registry.sqlite3").resolve()
+            DirectSandboxRegistry(path).plan(
+                spec=self.spec(),
+                sandbox_generation=1,
+                operation_id="create:1",
+                runtime_compatibility_sha256="b" * 64,
+            )
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("DROP TABLE registration_disk")
+                connection.execute("PRAGMA user_version = 7")
+                before = connection.execute("SELECT * FROM registrations").fetchall()
+            with self.assertRaisesRegex(DirectRegistryError, "version 7 is unsupported"):
+                DirectSandboxRegistry(path).snapshot()
+            with closing(sqlite3.connect(path)) as connection:
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 7)
+                self.assertEqual(connection.execute("SELECT * FROM registrations").fetchall(), before)
+                self.assertIsNone(connection.execute(
+                    "SELECT 1 FROM sqlite_schema WHERE name = 'registration_disk'"
+                ).fetchone())
+
     def test_migration_phases_are_generation_and_digest_fenced(self) -> None:
         with TemporaryDirectory() as raw:
             root = Path(raw)
@@ -632,27 +655,14 @@ if __name__ == "__main__":
 
 
 class RelayWakeFenceTests(unittest.TestCase):
-    def test_legacy_schema_upgrade_retains_registration_and_fences_survive_reopen(self):
-        from sandboxes import direct_registry as module
+    def test_fences_survive_reopen_and_refuse_other_generations(self):
         with TemporaryDirectory() as raw:
             path=(Path(raw)/'registry.sqlite3').resolve()
-            registry=DirectSandboxRegistry(path)
-            original=registry.plan(spec=DirectRegistryTests().spec(),sandbox_generation=1,
-                                  operation_id='create:1',runtime_compatibility_sha256='b'*64)
-            # Exact prior on-disk schema, not a hand-written approximation.
-            with closing(sqlite3.connect(path)) as conn:
-                conn.execute('DROP TABLE relay_wake_fences')
-                conn.execute('DROP TABLE managed_growth')
-                conn.execute('DROP TABLE reflink_overlaps')
-                conn.execute('DROP TABLE workspace_capacity')
-                conn.execute('DROP TABLE registration_disk')
-                conn.execute('PRAGMA user_version=3')
+            DirectSandboxRegistry(path).plan(spec=DirectRegistryTests().spec(),sandbox_generation=1,
+                                             operation_id='create:1',runtime_compatibility_sha256='b'*64)
             reopened=DirectSandboxRegistry(path)
-            self.assertEqual(reopened.get('sandbox'),original)
             self.assertFalse(reopened.relay_wake_fence('sandbox',1,'request'))
             self.assertTrue(reopened.relay_wake_fence('sandbox',1,'request',record=True))
             self.assertTrue(DirectSandboxRegistry(path).relay_wake_fence('sandbox',1,'request'))
             with self.assertRaises(DirectRegistryConflictError):
                 reopened.relay_wake_fence('sandbox',2,'request',record=True)
-            with closing(sqlite3.connect(path)) as conn:
-                self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0],module._DIRECT_REGISTRY_SCHEMA_VERSION)

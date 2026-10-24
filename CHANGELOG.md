@@ -161,6 +161,16 @@
   `scripts/release/verify_heartbeat_upgrade.py` with this package against
   `control-state.sqlite`; it must validate every row. Rolling back to 0.10.0
   needs nothing: it accepts everything this release writes.
+- **Worker state files are no longer upgraded in place.** The agent and noded
+  open only the current on-disk versions: the direct registry at
+  `user_version` 9, the storage-native journal at 4 and the memory-backing
+  journal at 3 (empty files are still created fresh). A file at an older
+  version, which no release since 0.6.0 writes, is refused at start with
+  "schema version N is unsupported" and left unchanged; re-initialize that
+  worker. Every production worker already has the current versions, and VM
+  init creates the files fresh. Rolling back to 0.10.0 needs nothing: the
+  formats are unchanged, and a fresh memory-backing journal's DDL is
+  byte-identical to the one 0.10.0 writes.
 - `ucloud.platform.postgres.duration` no longer records a `lock_query` phase. No
   query was timed into it, so it was always 0.
 - **Every managed-process sandbox must bind its state mount.** Sandboxes

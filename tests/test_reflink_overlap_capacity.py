@@ -1,8 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import sqlite3
 from threading import Barrier
 import unittest
 
@@ -125,16 +123,3 @@ class ReflinkOverlapCapacityTests(unittest.TestCase):
         with self.assertRaises(DirectRegistryCapacityUnavailable):
             self.reserve()
         self.assertEqual(self.registry.reflink_overlap_bytes(), 0)
-
-    def test_version5_upgrade_preserves_ownership_and_fences_older_readers(self):
-        original = self.registry.get('one')
-        with closing(sqlite3.connect(self.registry.path)) as conn:
-            conn.execute('DROP TABLE reflink_overlaps')
-            conn.execute('DROP TABLE workspace_capacity')
-            conn.execute('DROP TABLE registration_disk')
-            conn.execute('PRAGMA user_version=5')
-        reopened = DirectSandboxRegistry(self.registry.path, hard_disk_capacity_mb=self.base+100)
-        self.assertEqual(reopened.get('one'), original)
-        self.reserve(registry=reopened)
-        with closing(sqlite3.connect(self.registry.path)) as conn:
-            self.assertEqual(conn.execute('PRAGMA user_version').fetchone()[0], 9)

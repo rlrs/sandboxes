@@ -116,18 +116,6 @@ class PublishedWorkspaceCapacityTests(unittest.TestCase):
         with self.assertRaises(DirectRegistryCapacityUnavailable):
             self._plan("two")
 
-    def test_version6_registry_upgrades_without_releases(self):
-        with closing(sqlite3.connect(self.registry.path)) as conn:
-            conn.execute("DROP TABLE workspace_capacity")
-            conn.execute("DROP TABLE registration_disk")
-            conn.execute("PRAGMA user_version=6")
-        reopened = DirectSandboxRegistry(self.registry.path, hard_disk_capacity_mb=self.claim)
-        self.assertEqual(reopened.workspace_mount_epoch("one", 1), 0)
-        with closing(sqlite3.connect(self.registry.path)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 9)
-        self.assertTrue(reopened.release_published_workspace(
-            "one", 1, workspace_mb=self.workspace, expected_mount_epoch=0))
-
 
 class WardenWorkspaceCapacityWiringTests(unittest.TestCase):
     """The Warden re-reserves before every mount and releases on publication."""
