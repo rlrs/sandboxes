@@ -648,7 +648,6 @@ function renderMetrics(snapshot) {
   const nodes = snapshot.nodes || {};
   const sandboxes = snapshot.sandboxes || {};
   const capacity = snapshot.capacity || {};
-  const exec = snapshot.exec || {};
   const images = snapshot.images || {};
   const builders = snapshot.builders || {};
   const registry = snapshot.registry || {};

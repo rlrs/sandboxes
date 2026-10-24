@@ -1,6 +1,6 @@
 """PostgreSQL persistence for the routing domain operations in routing.py.
 
-All routing domains live here: lifecycle, migrations, generations, execs,
+All routing domains live here: lifecycle, migrations, generations,
 program observations, demand and snapshot liveness. The domain methods are
 RoutingStore's; this boundary supplies serializable transactions, connection
 pooling, schema migration and bulk queries, never a process lock.
@@ -136,9 +136,9 @@ SANDBOX_GROUP_DDL = (
 # Statements added after version 1 that old code ignores, so old and new code
 # share the schema version; ``migrate`` applies them idempotently.
 ROUTING_ADDITIVE_DDL = (
-    # Detach, migration, owner loss and delete remove a sandbox's sessions;
-    # without it each DELETE scanned the table and, under SERIALIZABLE, took a
-    # relation predicate lock that conflicted with every exec upsert.
+    # Gateways up to 0.10.0 delete a sandbox's exec_sessions rows on detach,
+    # migration, owner loss and delete. Later gateways never touch the table;
+    # drop both together once no 0.10.0 process can share the schema.
     "CREATE INDEX IF NOT EXISTS exec_sessions_sandbox ON exec_sessions(sandbox_id)",
     # C3.2 group creates: their tables, and their durable command kind (old
     # placement workers claim only create and wake commands).
@@ -847,8 +847,6 @@ TRANSACTIONAL_METHODS = (
     "delete_sandboxes_for_jobs_with_error",
     "retire_node_epochs",
     "delete_stale_sandboxes",
-    "upsert_exec",
-    "delete_exec",
     "upsert_pending",
     "upsert_pending_with_demand",
     "clear_pending",

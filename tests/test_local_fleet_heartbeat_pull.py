@@ -64,10 +64,6 @@ class HeartbeatPullTests(unittest.TestCase):
         def first_session(fleet, session):
             return fleet.events(session, after=0, wait_seconds=0), (410, "exec_worker_lost")
 
-        def first_durable_session(fleet, session):
-            self.assertTrue(session.startswith("exec-"))
-            return first_session(fleet, session)
-
         def first_delete(fleet, session):
             # Retirement keeps the recorded delete for delivery (D1), so the
             # request that pulled the new boot answers one retryable 503 and
@@ -76,10 +72,9 @@ class HeartbeatPullTests(unittest.TestCase):
             self.assertEqual((first.status, first.json()["error_code"]), (503, "sandbox_worker_unreachable"))
             return fleet.delete("alpha"), (200, None)
 
-        for first in (first_exec, first_session, first_durable_session, first_delete):
+        for first in (first_exec, first_session, first_delete):
             with self.subTest(first.__name__), LocalFleet() as fleet:
                 node = fleet.nodes[0]
-                node.honor_exec_session_prefix = first is not first_durable_session
                 store = fleet.gateway.RequestHandlerClass.services.fleet.store
                 fleet.create("alpha")
                 session = fleet.start_exec("alpha", ["sleep", "30"]).json()["session"]["id"]

@@ -630,7 +630,6 @@ class PreparedBuilderDemand:
 @dataclass(frozen=True)
 class RoutingState:
     sandboxes: dict[str, SandboxRoute]
-    exec_sessions: dict[str, ExecRoute]
     pending: dict[str, PendingSandboxDemand]
     image_builds: dict[str, PendingImageBuildDemand]
     prepared: dict[str, PreparedCapacityDemand] = field(default_factory=dict)
@@ -674,12 +673,6 @@ class SandboxGroup:
         return [f"{self.group_id}-{index:04d}" for index in range(self.count)]
 
 
-_EXEC_ROUTE_BY_ID_SQL = """
-            SELECT session_id, sandbox_id, node_id, job_id, node_url,
-                   created_at, updated_at
-            FROM exec_sessions
-            WHERE session_id = ?
-            """
 _SANDBOX_ROUTE_BY_ID_SQL = """
             SELECT sandbox_id, node_id, job_id, node_url, resources_json, spec_json, state,
                    generation, create_operation_id, spec_hash, delete_operation_id,
@@ -707,30 +700,17 @@ class RoutingStore:
         THEN COALESCE(NULLIF(updated_at,''),created_at)::timestamptz END <= ?::timestamptz
     """
 
-    def load(self, *, include_exec_sessions: bool = True) -> RoutingState:
-        """Prune expired signals and read one coherent routing snapshot.
-
-        Autoscaling uses capacity and sandbox ownership, not individual exec
-        sessions. Omitting that projection avoids work proportional to retained
-        exec history without changing its lifetime or the snapshot transaction.
-        """
+    def load(self) -> RoutingState:
+        """Prune expired signals and read one coherent routing snapshot."""
         with self._transaction() as conn:
             self._prune_expired_unlocked(conn, utc_now())
-            return self._load_unlocked(
-                conn, include_exec_sessions=include_exec_sessions
-            )
+            return self._load_unlocked(conn)
 
-    def load_metrics(self) -> tuple[RoutingState, int]:
-        """Load dashboard state without materializing every exec session."""
+    def load_metrics(self) -> RoutingState:
+        """Load dashboard state without pruning."""
 
         with self._connect() as conn:
-            exec_session_count = int(
-                conn.execute("SELECT COUNT(*) FROM exec_sessions").fetchone()[0]
-            )
-            return (
-                self._load_unlocked(conn, include_exec_sessions=False),
-                exec_session_count,
-            )
+            return self._load_unlocked(conn)
 
     def get_sandbox(self, sandbox_id: str) -> SandboxRoute | None:
         # A single-row read is one autocommit statement's snapshot. Mutations
@@ -760,18 +740,6 @@ class RoutingStore:
                   )
                 """,
                 (sandbox_id, cutoff),
-            ).fetchone()
-        return dict(row) if row is not None else None
-
-    def get_exec_loss(self, session_id: str) -> dict[str, Any] | None:
-        """Keep an accepted process's loss distinct from an unknown session ID."""
-        cutoff = (
-            utc_now() - timedelta(seconds=PROGRAM_TERMINAL_RETENTION_SECONDS)
-        ).isoformat()
-        with self._read() as conn:
-            row = conn.execute(
-                "SELECT * FROM exec_losses WHERE session_id = ? AND lost_at > ?",
-                (session_id, cutoff),
             ).fetchone()
         return dict(row) if row is not None else None
 
@@ -1544,10 +1512,6 @@ class RoutingStore:
                 updated_at=utc_now().isoformat(),
             )
             self._write_sandbox(conn, stored)
-            conn.execute(
-                "DELETE FROM exec_sessions WHERE sandbox_id = ?",
-                (stored.sandbox_id,),
-            )
         return stored
 
     def complete_sandbox_detach(
@@ -2320,10 +2284,6 @@ class RoutingStore:
                 updated_at=now,
             )
             self._write_sandbox(conn, route)
-            conn.execute(
-                "DELETE FROM exec_sessions WHERE sandbox_id = ?",
-                (migration.sandbox_id,),
-            )
             migration = replace(
                 migration,
                 phase="routed",
@@ -2641,9 +2601,6 @@ class RoutingStore:
                             route, state="parked", node_epoch=node_epoch,
                             activity_epoch=max(0, activity_epoch), updated_at=observed_at,
                         ))
-                    # Its exec sessions belonged to the old boot's processes.
-                    self._record_exec_losses_unlocked(conn, route)
-                    conn.execute("DELETE FROM exec_sessions WHERE sandbox_id = ?", (route.sandbox_id,))
                 elif disposition is SandboxOwnerLossDisposition.RECOVER_DETACHED:
                     self._detach_owner_lost_route_unlocked(conn, route, updated_at=observed_at)
                 elif self._delete_sandbox_unlocked(
@@ -2796,29 +2753,7 @@ class RoutingStore:
             updated_at=updated_at,
         )
         self._write_sandbox(conn, detached)
-        self._record_exec_losses_unlocked(conn, route)
-        conn.execute(
-            "DELETE FROM exec_sessions WHERE sandbox_id = ?",
-            (route.sandbox_id,),
-        )
         return detached
-
-    @staticmethod
-    def _record_exec_losses_unlocked(
-        conn: RoutingConnection, route: SandboxRoute
-    ) -> None:
-        # Exec sessions belong to the worker process, even when a portable
-        # sandbox snapshot survives. Never redirect or replay an accepted exec.
-        conn.execute(
-            """
-            INSERT INTO exec_losses
-                (session_id, sandbox_id, generation, job_id, lost_at)
-            SELECT session_id, sandbox_id, ?, job_id, ?
-            FROM exec_sessions WHERE sandbox_id = ? AND job_id = ?
-            ON CONFLICT(session_id) DO NOTHING
-            """,
-            (route.generation, utc_now().isoformat(), route.sandbox_id, route.job_id),
-        )
 
     def _delete_sandbox_unlocked(
         self,
@@ -2850,7 +2785,6 @@ class RoutingStore:
                 "DELETE FROM sandboxes WHERE sandbox_id = ?", (sandbox_id,)
             ).rowcount
         if removed and terminal_error and isinstance(route, SandboxRoute):
-            self._record_exec_losses_unlocked(conn, route)
             conn.execute(
                 """
                 INSERT INTO sandbox_losses VALUES (?, ?, ?, ?, ?)
@@ -2872,7 +2806,6 @@ class RoutingStore:
             (sandbox_id,),
         )
         conn.execute("DELETE FROM pending WHERE sandbox_id = ?", (sandbox_id,))
-        conn.execute("DELETE FROM exec_sessions WHERE sandbox_id = ?", (sandbox_id,))
         conn.execute("DELETE FROM managed_processes WHERE sandbox_id = ?", (sandbox_id,))
         conn.execute(
             """
@@ -2926,53 +2859,9 @@ class RoutingStore:
             parameters,
         ).rowcount
 
-    def get_exec(self, session_id: str) -> ExecRoute | None:
-        # The autoscaler retires routes in another process. Its commit cannot
-        # invalidate this process's cache, so routing must read the indexed
-        # durable row. One statement is one snapshot, so an exec poll needs
-        # no BEGIN/SET/COMMIT.
-        row = self._fetchone_readonly(_EXEC_ROUTE_BY_ID_SQL, (session_id,))
-        return _exec_route_from_row(row) if row is not None else None
-
     def get_pending(self, sandbox_id: str) -> PendingSandboxDemand | None:
         with self._connect() as conn:
             return self._get_pending_unlocked(conn, sandbox_id)
-
-    def upsert_exec(self, route: ExecRoute) -> None:
-        # Reads already use the durable row because another process may retire
-        # the worker; the write transaction fences IDs.
-        now = utc_now().isoformat()
-        with self._transaction() as conn:
-            existing = self._get_exec_unlocked(conn, route.session_id)
-            if existing is not None and (
-                existing.sandbox_id != route.sandbox_id
-                or existing.node_id != route.node_id
-                or existing.job_id != route.job_id
-                or existing.node_url != route.node_url
-            ):
-                raise SandboxRouteConflictError(
-                    "exec session id belongs to another sandbox or worker"
-                )
-            stored = ExecRoute(
-                session_id=route.session_id,
-                sandbox_id=route.sandbox_id,
-                node_id=route.node_id,
-                job_id=route.job_id,
-                node_url=route.node_url,
-                created_at=route.created_at
-                or (existing.created_at if existing else now),
-                updated_at=now,
-            )
-            self._write_exec(conn, stored)
-
-    def delete_exec(self, session_id: str) -> ExecRoute | None:
-        with self._transaction() as conn:
-            existing = self._get_exec_unlocked(conn, session_id)
-            conn.execute(
-                "DELETE FROM exec_sessions WHERE session_id = ?",
-                (session_id,),
-            )
-        return existing
 
     def upsert_pending(
         self,
@@ -3393,9 +3282,6 @@ class RoutingStore:
             "DELETE FROM sandbox_losses WHERE lost_at <= ?", (terminal_cutoff,)
         )
         conn.execute(
-            "DELETE FROM exec_losses WHERE lost_at <= ?", (terminal_cutoff,)
-        )
-        conn.execute(
             """
             DELETE FROM program_requests
             WHERE state = 'terminal' AND updated_at <= ?
@@ -3501,12 +3387,7 @@ class RoutingStore:
             prepared_placement_requests=tuple(prepared_placement_requests),
         )
 
-    def _load_unlocked(
-        self,
-        conn: RoutingConnection,
-        *,
-        include_exec_sessions: bool = True,
-    ) -> RoutingState:
+    def _load_unlocked(self, conn: RoutingConnection) -> RoutingState:
         return RoutingState(
             sandboxes={
                 route.sandbox_id: route
@@ -3529,25 +3410,6 @@ class RoutingStore:
                 )
                 if route is not None
             },
-            exec_sessions=(
-                {
-                    route.session_id: route
-                    for route in (
-                        _exec_route_from_row(row)
-                        for row in conn.execute(
-                            """
-                            SELECT session_id, sandbox_id, node_id, job_id, node_url,
-                                   created_at, updated_at
-                            FROM exec_sessions
-                            ORDER BY session_id
-                            """
-                        )
-                    )
-                    if route is not None
-                }
-                if include_exec_sessions
-                else {}
-            ),
             pending={
                 item.sandbox_id: item
                 for item in (
@@ -3652,14 +3514,6 @@ class RoutingStore:
             (sandbox_id,),
         ).fetchone()
         return _sandbox_route_from_row(row) if row is not None else None
-
-    def _get_exec_unlocked(
-        self,
-        conn: RoutingConnection,
-        session_id: str,
-    ) -> ExecRoute | None:
-        row = conn.execute(_EXEC_ROUTE_BY_ID_SQL, (session_id,)).fetchone()
-        return _exec_route_from_row(row) if row is not None else None
 
     def _get_sandbox_migration_unlocked(
         self,
@@ -3885,33 +3739,6 @@ class RoutingStore:
                     THEN sandbox_generation_hwm.generation ELSE excluded.generation END
             """,
             (route.sandbox_id, route.generation),
-        )
-
-    def _write_exec(self, conn: RoutingConnection, route: ExecRoute) -> None:
-        conn.execute(
-            """
-            INSERT INTO exec_sessions (
-                session_id, sandbox_id, node_id, job_id, node_url,
-                created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id) DO UPDATE SET
-                sandbox_id = excluded.sandbox_id,
-                node_id = excluded.node_id,
-                job_id = excluded.job_id,
-                node_url = excluded.node_url,
-                created_at = excluded.created_at,
-                updated_at = excluded.updated_at
-            """,
-            (
-                route.session_id,
-                route.sandbox_id,
-                route.node_id,
-                route.job_id,
-                route.node_url,
-                route.created_at,
-                route.updated_at,
-            ),
         )
 
     def _write_sandbox_migration(
@@ -4297,18 +4124,6 @@ def _program_request_from_row(row: Mapping[str, Any]) -> ProgramRequestState:
         wake_completed_at=str(row["wake_completed_at"] or ""),
         updated_at=str(row["updated_at"] or ""),
         last_error=str(row["last_error"] or ""),
-    )
-
-
-def _exec_route_from_row(row: Mapping[str, Any]) -> ExecRoute:
-    return ExecRoute(
-        session_id=str(row["session_id"]),
-        sandbox_id=str(row["sandbox_id"]),
-        node_id=str(row["node_id"]),
-        job_id=str(row["job_id"]),
-        node_url=str(row["node_url"]),
-        created_at=str(row["created_at"]),
-        updated_at=str(row["updated_at"]),
     )
 
 

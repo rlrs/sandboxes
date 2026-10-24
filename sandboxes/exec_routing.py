@@ -47,7 +47,7 @@ def heartbeat_proves_route_absent(
 Refresh = Optional[Callable[[NodeHeartbeat], Optional[NodeHeartbeat]]]
 
 
-def _worker_unreachable(route: ExecRoute | SignedExecRoute) -> ExecRouteUnavailable:
+def _worker_unreachable(route: SignedExecRoute) -> ExecRouteUnavailable:
     return ExecRouteUnavailable(
         HTTPStatus.SERVICE_UNAVAILABLE,
         {
@@ -79,23 +79,27 @@ def _worker_lost(
 
 
 class ExecRoutingService:
+    """Routes exec sessions by the signed prefix their worker named them under."""
+
     def __init__(
         self,
         control_store,
         routing_store,
         heartbeat_ttl_seconds,
-        session_routes: ExecSessionRoutes | None = None,
+        session_routes: ExecSessionRoutes,
     ):
         self.control_store = control_store
         self.routing_store = routing_store
         self.heartbeat_ttl_seconds = heartbeat_ttl_seconds
         self.session_routes = session_routes
 
-    def signed_prefix(self, route) -> str | None:
-        """Prefix for a new session on this exact sandbox incarnation."""
+    def signed_prefix(self, route) -> str:
+        """Prefix for a new session on this exact sandbox incarnation.
 
-        if self.session_routes is None:
-            return None
+        Raises ExecRouteUnavailable rather than start a session that later
+        requests could not route.
+        """
+
         try:
             return self.session_routes.prefix(
                 SignedExecRoute(
@@ -107,23 +111,16 @@ class ExecRoutingService:
                 )
             )
         except ValueError:
-            # An identity too long to sign keeps the durable exec route.
-            return None
-
-    def is_signed_for(self, session_id: str, route) -> bool:
-        """Whether a worker-named session already carries this route."""
-
-        signed = (
-            self.session_routes.decode(session_id)
-            if self.session_routes is not None
-            else None
-        )
-        return bool(
-            signed is not None
-            and signed.sandbox_id == route.sandbox_id
-            and signed.sandbox_generation == route.generation
-            and signed.job_id == route.job_id
-        )
+            # Heartbeat intake bounds worker IDs, so only a malformed route
+            # (for example a huge generation) can get here.
+            raise ExecRouteUnavailable(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                {
+                    "error": "sandbox route identity is too long to sign an exec session",
+                    "error_code": "exec_route_unsignable",
+                    "retryable": False,
+                },
+            ) from None
 
     def fresh(self, heartbeat: NodeHeartbeat | None) -> bool:
         return bool(
@@ -132,72 +129,30 @@ class ExecRoutingService:
             and heartbeat.is_fresh(utc_now(), self.heartbeat_ttl_seconds)
         )
 
-    def heartbeat(self, route: ExecRoute | SignedExecRoute, refresh: Refresh = None) -> NodeHeartbeat | None:
+    def heartbeat(self, route: SignedExecRoute, refresh: Refresh = None) -> NodeHeartbeat | None:
         heartbeat = self.control_store.get_heartbeat(
             route.job_id, include_inventory=False
         )
         if refresh is not None and heartbeat is not None and not self.fresh(heartbeat):
             # Silence is never loss: ask the worker once before a 503.
             heartbeat = refresh(heartbeat)
-        if heartbeat is not None and heartbeat.active_sandboxes == 0:
-            heartbeat = self.control_store.get_heartbeat(route.job_id)
         return heartbeat
 
     def resolve(self, session_id: str, *, refresh: Refresh = None) -> tuple[ExecRoute, NodeHeartbeat]:
-        """Route one session; ``refresh`` pulls a stale worker's heartbeat."""
-        signed = (
-            self.session_routes.decode(session_id)
-            if self.session_routes is not None
-            else None
-        )
-        if signed is not None:
-            return self._resolve_signed(session_id, signed, refresh)
-        route = self.routing_store.get_exec(session_id)
-        if route is None:
-            raise self._missing(session_id)
-        heartbeat = self.heartbeat(route, refresh)
-        if heartbeat_proves_route_absent(
-            heartbeat,
-            sandbox_id=route.sandbox_id,
-            route_created_at=route.created_at,
-            route_updated_at=route.updated_at,
-            heartbeat_ttl_seconds=self.heartbeat_ttl_seconds,
-        ):
-            self.routing_store.delete_exec(route.session_id)
-            raise ExecRouteUnavailable(
-                HTTPStatus.NOT_FOUND,
-                {
-                    "error": "exec route is stale",
-                    "sandbox_id": route.sandbox_id,
-                    "retryable": False,
-                },
-            )
-        if not self.fresh(heartbeat):
-            if refresh is not None and self.routing_store.get_exec(session_id) is None:
-                # The pull proved a new boot, whose ingest retired this route.
-                raise self._missing(session_id)
-            raise _worker_unreachable(route)
-        return route, heartbeat
+        """Route one session by its signed worker identity.
 
-    def _missing(self, session_id: str) -> ExecRouteUnavailable:
-        loss = self.routing_store.get_exec_loss(session_id)
-        if loss is None:
-            return ExecRouteUnavailable(
-                HTTPStatus.NOT_FOUND, {"error": "exec route not found", "retryable": False},
-            )
-        return _worker_lost(session_id, loss["sandbox_id"], loss["generation"], loss["lost_at"])
-
-    def _resolve_signed(
-        self, session_id: str, signed: SignedExecRoute, refresh: Refresh
-    ) -> tuple[ExecRoute, NodeHeartbeat]:
-        """Route by the signed worker identity; read routing only on failure.
-
-        A fresh worker is the authority on its own sessions and answers an
-        unknown one with 404. No heartbeat inventory can prove absence here:
-        a heartbeat captured before the sandbox existed may be received after
-        the prefix was minted.
+        ``refresh`` pulls a stale worker's heartbeat. Routing state is read
+        only on failure. A fresh worker is the authority on its own sessions
+        and answers an unknown one with 404. No heartbeat inventory can prove
+        absence here: a heartbeat captured before the sandbox existed may be
+        received after the prefix was minted.
         """
 
+        signed = self.session_routes.decode(session_id)
+        if signed is None:
+            raise ExecRouteUnavailable(
+                HTTPStatus.NOT_FOUND, {"error": "exec route not found", "retryable": False},
+            )
         heartbeat = self.heartbeat(signed, refresh)
         if self.fresh(heartbeat):
             return (
@@ -212,8 +167,8 @@ class ExecRoutingService:
                 ),
                 heartbeat,
             )
-        # Keep the routed-session distinction between a lost owner and a
-        # temporarily silent one. Sessions are never redirected to another owner.
+        # Keep the distinction between a lost owner and a temporarily silent
+        # one. Sessions are never redirected to another owner.
         current = self.routing_store.get_sandbox_readonly(signed.sandbox_id)
         if current is None or current.generation != signed.sandbox_generation:
             loss = (
@@ -227,7 +182,7 @@ class ExecRoutingService:
                     signed.sandbox_generation,
                     loss["lost_at"],
                 )
-            # A deleted or replaced incarnation retains no routed sessions.
+            # A deleted or replaced incarnation keeps no sessions.
             raise ExecRouteUnavailable(
                 HTTPStatus.NOT_FOUND,
                 {"error": "exec route not found", "retryable": False},

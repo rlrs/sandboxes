@@ -1,16 +1,15 @@
 """Exec session identifiers that carry their own signed worker route.
 
 The gateway gives the worker an authenticated prefix when it forwards an exec
-start. A capable worker names the session ``<prefix>.<random>``; the gateway
-can then route every later poll, stdin, signal and close request by verifying
-the prefix, without a durable exec-route row or a database read. Workers that
-ignore the prefix keep minting ``exec-<uuid>`` names, which continue to use the
-durable route table.
+start. The worker names the session ``<prefix>.<random>``; the gateway then
+routes every later poll, stdin, signal and close request by verifying the
+prefix, without a durable exec-route row or a database read. A session name
+without a valid prefix is unknown.
 
 The prefix binds the sandbox incarnation and worker job. It never redirects an
-accepted command: when that worker is gone the session is reported lost, as
-for routed sessions. Rotating the gateway credential invalidates outstanding
-prefixes; their sessions then read as unknown.
+accepted command: when that worker is gone the session is reported lost.
+Rotating the gateway credential invalidates outstanding prefixes; their
+sessions then read as unknown.
 """
 
 from __future__ import annotations
@@ -29,6 +28,11 @@ _VERSION = "xr1"
 _MAC_BYTES = 16
 _KEY_CONTEXT = b"ucloud-sandboxes exec session route v1"
 _MAX_PREFIX_LENGTH = 768
+# Heartbeat intake refuses longer node and job IDs (counted as their JSON
+# encoding), so every route on an accepted worker fits a prefix: sandbox IDs
+# are at most 64 characters, and two 128-byte IDs leave room for 64-bit
+# generations and timestamps.
+MAX_WORKER_ID_BYTES = 128
 PREFIX_RE = re.compile(r"xr1\.[A-Za-z0-9_-]{1,700}\.[A-Za-z0-9_-]{22}")
 _SESSION_RE = re.compile(r"(xr1\.[A-Za-z0-9_-]{1,700}\.[A-Za-z0-9_-]{22})\.[0-9a-f]{32}")
 
@@ -52,6 +56,13 @@ def _b64(data: bytes) -> str:
 
 def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def worker_id_fits(value: str) -> bool:
+    """Whether a node or job ID is short enough to sign into a session prefix."""
+
+    encoded = json.dumps(value, ensure_ascii=False).encode("utf-8")
+    return len(encoded) - 2 <= MAX_WORKER_ID_BYTES
 
 
 def valid_session_prefix(prefix: str) -> bool:
@@ -94,7 +105,7 @@ class ExecSessionRoutes:
         return prefix
 
     def decode(self, session_id: str) -> SignedExecRoute | None:
-        """Return the signed route, or None for routed or unauthentic names."""
+        """Return the signed route, or None for unsigned or unauthentic names."""
 
         match = _SESSION_RE.fullmatch(session_id)
         if match is None:
