@@ -426,7 +426,7 @@ NODED_FILES = {"file": "runtime/noded/ucloud-noded", "manifest_file": "runtime/n
 
 def add_noded(root: Path, manifest: dict, build_dir: Path) -> dict:
     """runtime/noded from runtime/noded/build_pinned.sh's output: the node's front
-    door (Rust), which sandbox init installs when sandbox.direct_node_front_door is on."""
+    door (Rust), which sandbox init requires and installs."""
     if manifest["runtime"].get("role") != "sandbox":
         raise ValueError("only sandbox bundles carry ucloud-noded")
     built = {"file": build_dir / "ucloud-noded", "manifest_file": build_dir / "build-manifest.json"}

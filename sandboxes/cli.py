@@ -379,30 +379,13 @@ def build_parser() -> argparse.ArgumentParser:
     direct_node_agent.add_argument("--port", type=int, default=8090)
     direct_node_agent.add_argument(
         "--unix-socket", type=Path,
-        help="serve on this Unix socket instead of --host/--port; runtime/noded owns the port",
-    )
-    direct_node_agent.add_argument(
-        "--registry-foreign", action="store_true",
-        help="runtime/noded owns the node registry; write as a foreign process and cache reads",
-    )
-    direct_node_agent.add_argument(
-        "--rust-creates", action="store_true",
-        help="runtime/noded runs creates; hold their admission over the socket (needs --unix-socket, --registry-foreign)",
-    )
-    direct_node_agent.add_argument(
-        "--rust-execs", action="store_true",
-        help="runtime/noded runs execs on running sandboxes; fence them through flock files (needs --unix-socket)",
-    )
-    direct_node_agent.add_argument(
-        "--rust-pause-tier", action="store_true",
-        help="runtime/noded owns pauses, thaws, idle pauses, local waits and paused reclaim "
-             "(needs --rust-execs, --pause-tier)",
+        help="serve on this Unix socket behind runtime/noded, which owns the port, the registry, "
+             "creates, execs and the pause tier (without it, serve --host/--port alone, for tests)",
     )
     direct_node_agent.add_argument(
         "--rust-admission", action="store_true",
         help="node admission moves to runtime/noded; for now, say hello on its internal socket "
-             "and read its resident samples instead of sampling "
-             "(needs --rust-creates, --rust-execs, --rust-pause-tier)",
+             "and read its resident samples instead of sampling",
     )
     direct_node_agent.add_argument("--job-id")
     direct_node_agent.add_argument("--node-id")
@@ -426,24 +409,13 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Root-only storage-native node service socket.",
     )
-    direct_node_agent.add_argument(
-        "--split-memory-backing", action="store_true",
-        help="Use qualified XFS project-quota memory backing on newly provisioned workers.",
-    )
-    direct_node_agent.add_argument("--memory-backing-hard-capacity-bytes", type=int, default=0)
+    direct_node_agent.add_argument("--memory-backing-hard-capacity-bytes", type=int, required=True,
+                                   help="The XFS project-quota memory backing's physical disk budget.")
     direct_node_agent.add_argument("--application-memory-root", type=Path,
                                    help="Qualified nodewide noswap tmpfs for active application memory.")
     direct_node_agent.add_argument(
         "--reflink-memory-restore", action="store_true",
         help="Use the qualified file-backed reflink restore capability with split checkpoints.",
-    )
-    direct_node_agent.add_argument(
-        "--pause-tier", action="store_true",
-        help="Pause idle and model-wait sandboxes in place instead of hibernating (C1.1).",
-    )
-    direct_node_agent.add_argument(
-        "--local-model-waits", action="store_true",
-        help="Pause on outstanding plaintext private-relay calls, thaw on their answers (needs --pause-tier).",
     )
     direct_node_agent.add_argument(
         "--workspace-initial-grant-mb", type=int, default=0,
@@ -1426,10 +1398,7 @@ def cmd_serve_direct_node_agent(args: argparse.Namespace) -> int:
         max_concurrent_startups=args.max_concurrent_startups,
         idle_park_seconds=float(args.idle_park_seconds),
         storage_native_socket=args.storage_native_socket.absolute(),
-        split_memory_backing=args.split_memory_backing,
         reflink_memory_restore=args.reflink_memory_restore,
-        pause_tier=args.pause_tier,
-        local_model_waits=args.local_model_waits,
         workspace_initial_grant_mb=args.workspace_initial_grant_mb,
         application_memory_root=(args.application_memory_root.absolute()
                                  if args.application_memory_root is not None else None),
@@ -1440,8 +1409,6 @@ def cmd_serve_direct_node_agent(args: argparse.Namespace) -> int:
         environment_backend_socket=getattr(args, "environment_backend_socket", None),
         environment_rafs=getattr(args, "environment_rafs", False),
         environment_device_budget_percent=args.environment_device_budget_percent,
-        registry_foreign=args.registry_foreign,
-        rust_creates=args.rust_creates,
         telemetry=telemetry,
     )
     server = build_direct_node_agent_server(
@@ -1468,9 +1435,6 @@ def cmd_serve_direct_node_agent(args: argparse.Namespace) -> int:
         telemetry=telemetry,
         heartbeat=heartbeat,
         unix_socket=args.unix_socket,
-        rust_creates=args.rust_creates,
-        rust_execs=args.rust_execs,
-        rust_pause_tier=args.rust_pause_tier,
         rust_admission=args.rust_admission,
     )
     if args.unix_socket is not None:
@@ -1480,11 +1444,7 @@ def cmd_serve_direct_node_agent(args: argparse.Namespace) -> int:
         print(f"Serving direct-runsc node agent on http://{host}:{port}")
     print(f"Heartbeat push: {heartbeat.url if heartbeat else 'off (GET /v1/heartbeat only)'}")
     print(f"Direct state root: {state_root}")
-    print(f"Registry: {'foreign (runtime/noded owns it)' if args.registry_foreign else 'owned'}; "
-          f"creates: {'runtime/noded' if args.rust_creates else 'this agent'}; "
-          f"execs: {'runtime/noded' if args.rust_execs else 'this agent'}; "
-          f"pause tier: {'runtime/noded' if args.rust_pause_tier else 'this agent'}; "
-          f"noded admission handshake: {'on' if args.rust_admission else 'off'}")
+    print(f"noded admission handshake: {'on' if args.rust_admission else 'off'}")
     print(
         "Direct image cache root: "
         f"{args.image_cache_root or state_root / 'image-cache'}"
@@ -1557,7 +1517,9 @@ def cmd_serve_model_relay(args: argparse.Namespace) -> int:
         result_notifier=result_notifier,
         unavailable_callers=unavailable_callers,
         telemetry=telemetry,
-        local_model_waits=config.sandbox.direct_local_model_waits,
+        # Workers always pause on a private relay call themselves
+        # (sandbox.direct_local_model_waits is retired true).
+        local_model_waits=True,
     )
 
     async def shutdown_telemetry(_app: object) -> None:
@@ -5790,7 +5752,7 @@ def _initial_disk_claim_mb(config: DeploymentConfig, heartbeats) -> int:
             return metrics.storage_workspace_grant_mb + metrics.storage_memory_idle_claim_mb
     # No worker yet (a cold start): the deployment says what they will charge.
     sandbox = config.sandbox
-    if sandbox.direct_workspace_initial_grant_mb > 0 and sandbox.direct_split_memory_backing:
+    if sandbox.direct_workspace_initial_grant_mb > 0:
         return sandbox.direct_workspace_initial_grant_mb + IDLE_MEMORY_CLAIM_MB
     return 0
 
@@ -6728,22 +6690,13 @@ def vm_init_options_for_job(
         direct_max_concurrent_restores=(config.sandbox.direct_max_concurrent_restores),
         direct_max_concurrent_startups=config.policy.create_target_concurrency_per_node,
         direct_idle_park_seconds=config.sandbox.direct_idle_park_seconds,
-        direct_split_memory_backing=(
-            role == "sandbox" and config.sandbox.direct_split_memory_backing
-        ),
         direct_ram_memory_backing=(
             role == "sandbox" and config.sandbox.direct_ram_memory_backing
         ),
         direct_reflink_memory_restore=(
             role == "sandbox" and config.sandbox.direct_reflink_memory_restore
         ),
-        direct_pause_tier=role == "sandbox" and config.sandbox.direct_pause_tier,
         direct_pause_tier_zswap=role == "sandbox" and config.sandbox.direct_pause_tier_zswap,
-        direct_local_model_waits=role == "sandbox" and config.sandbox.direct_local_model_waits,
-        direct_node_front_door=role == "sandbox" and config.sandbox.direct_node_front_door,
-        direct_node_rust_create=role == "sandbox" and config.sandbox.direct_node_rust_create,
-        direct_node_rust_exec=role == "sandbox" and config.sandbox.direct_node_rust_exec,
-        direct_node_rust_pause=role == "sandbox" and config.sandbox.direct_node_rust_pause,
         direct_node_rust_admission=role == "sandbox" and config.sandbox.direct_node_rust_admission,
         direct_workspace_initial_grant_mb=(
             config.sandbox.direct_workspace_initial_grant_mb if role == "sandbox" else 0
@@ -6796,16 +6749,9 @@ def vm_init_options_to_dict(options: VmInitOptions) -> dict[str, Any]:
         "directNetwork": options.direct_network,
         "directNetworkAllowTcp": list(options.direct_network_allow_tcp),
         "networkRelays": dict(options.network_relays or {}),
-        "directSplitMemoryBacking": options.direct_split_memory_backing,
         "directRamMemoryBacking": options.direct_ram_memory_backing,
         "directReflinkMemoryRestore": options.direct_reflink_memory_restore,
-        "directPauseTier": options.direct_pause_tier,
         "directPauseTierZswap": options.direct_pause_tier_zswap,
-        "directLocalModelWaits": options.direct_local_model_waits,
-        "directNodeFrontDoor": options.direct_node_front_door,
-        "directNodeRustCreate": options.direct_node_rust_create,
-        "directNodeRustExec": options.direct_node_rust_exec,
-        "directNodeRustPause": options.direct_node_rust_pause,
         "directNodeRustAdmission": options.direct_node_rust_admission,
         "directWorkspaceInitialGrantMb": options.direct_workspace_initial_grant_mb,
         "storageNativeRegistryUrl": options.storage_native_registry_url,

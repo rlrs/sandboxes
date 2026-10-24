@@ -57,9 +57,7 @@ from .hibernation import HibernationError, HibernationState
 from .memory_backing import MemoryBackingBusyError
 from .models import NodeRuntimeMetrics, ResourceQuantity
 from . import phase_timings
-from .resident_memory import (
-    PublishedResidentMemory, ResidentMemorySampler, ResidentMemoryReclaimer, ResidentReclaimResult,
-)
+from .resident_memory import PublishedResidentMemory, ResidentMemorySampler
 from .sandbox import (
     OPERATION_ID_RE,
     SandboxAdmissionClosedError,
@@ -74,6 +72,7 @@ from .sandbox import (
     SandboxRestoreBusyError,
     SandboxSpec,
     SandboxStartupBusyError,
+    WarmParkDeferred,
     compose_activity_revision,
     validate_container_path,
 )
@@ -83,7 +82,6 @@ from .upload_archive import (
     ArchivePlan, SandboxArchiveUnsupportedError, archive_helper_unsupported, sandbox_archive_extract_script,
 )
 from .transition_admission import MemoryDemand, TransitionCost, TransitionKind, TransitionLedger
-from .warm_park import WarmParkDeferred
 from .disk_claims import next_grant
 from . import pause_tier
 
@@ -313,11 +311,9 @@ class DirectProcessRunner:
 class DirectSandboxService:
     """Product-facing service owned by the single direct runtime daemon."""
 
-    # --rust-execs (DirectNodeRuntime installs it): noded's execs advance each
-    # sandbox's activity clock, the mtime of its fence file.
+    # DirectNodeRuntime installs it: noded's execs advance each sandbox's
+    # activity clock, the mtime of its fence file.
     exec_fence = None
-    # --rust-pause-tier: noded samples paused sandboxes for its own reclaim.
-    rust_pause_tier = False
     # --rust-admission (phase 3b): noded samples managed sandboxes too and
     # publishes resident.json; use_published_resident_memory installs it.
     rust_admission = False
@@ -517,8 +513,6 @@ class DirectSandboxService:
             interval = self.provisioner.network_manager.resolve_interval_seconds
             network_thread.join(timeout=max(2.0, interval * 2))
         self._network_thread = None
-        if self.provisioner.network_manager is not None:
-            self.provisioner.network_manager.stop_pool()
         snapshot_hydration_thread = self._snapshot_hydration_thread
         if snapshot_hydration_thread is not None:
             snapshot_hydration_thread.join(timeout=2.0)
@@ -950,81 +944,6 @@ class DirectSandboxService:
         with self._activity_guard:
             self._last_activity.pop(key, None)
         self._forget_published_snapshot(*key)
-
-
-    def reclaim_resident_wait(
-        self,
-        sandbox_id: str,
-        *,
-        generation: int,
-        relay_request_id: str,
-        target_bytes: int,
-        is_wait_current,
-    ):
-        """Reclaim measured file cache without blocking a foreground response."""
-        registration = self._require_managed_registration(sandbox_id)
-        if (
-            registration.sandbox_generation != generation
-            or not registration.spec.parkable
-        ):
-            raise DirectWardenError("resident reclaim no longer owns the managed wait")
-        key = (sandbox_id, registration.sandbox_generation)
-        sandbox = registration.to_direct_sandbox()
-        with self._lock(*key):
-            captured = self.warden.inspect_snapshot(sandbox)
-            sample = self.resident_memory_sample(*key)
-            if (
-                captured is None
-                or captured.state != HibernationState.RUNNING
-                or sample is None
-                or (sample.sentry_pid, sample.sentry_start_time_ticks)
-                != (captured.sentry_pid, captured.sentry_start_time_ticks)
-            ):
-                raise DirectWardenError("reclaim requires a measured live incarnation")
-
-        activity = self._activity_mark(key)
-
-        def is_current():
-            if not is_wait_current():
-                return False
-            with self._lock(*key):
-                current = self.provisioner.registry.get(sandbox_id)
-                unchanged_activity = self._activity_mark(key) == activity
-                return (
-                    current == registration
-                    and unchanged_activity
-                    and self.warden.inspect_snapshot(sandbox) == captured
-                    and not self.provisioner.registry.relay_wake_fence(
-                        sandbox_id, generation, relay_request_id
-                    )
-                )
-
-        if self.resident_application_reclaim_enabled(*key):
-            # Writeback may block, so neither it nor kernel reclaim owns the
-            # service lifecycle lock. The exact wait and native owner are fenced
-            # before and after; a response cancels all subsequent work.
-            if (not is_current()
-                    or not self.warden.flush_reclaimable_memory(sandbox)
-                    or not is_current()):
-                return ResidentReclaimResult(0, 0, 0.0, 0, "superseded")
-            refreshed = self._resident_memory.sample(
-                key, pid=sample.sentry_pid,
-                start_time_ticks=sample.sentry_start_time_ticks,
-                container_id=Path(sample.cgroup_path).name,
-                expected_path=sample.cgroup_path,
-            )
-            if refreshed is None or (
-                refreshed.cgroup_device, refreshed.cgroup_inode,
-                refreshed.sentry_pid, refreshed.sentry_start_time_ticks,
-            ) != (
-                sample.cgroup_device, sample.cgroup_inode,
-                sample.sentry_pid, sample.sentry_start_time_ticks,
-            ):
-                return ResidentReclaimResult(0, 0, 0.0, 0, "cgroup_changed")
-            sample = refreshed
-        return ResidentMemoryReclaimer(self._resident_memory).reclaim(
-            key, sample, target_bytes=target_bytes, is_current=is_current
-        )
 
     def park(
         self,
@@ -2291,18 +2210,6 @@ class DirectSandboxService:
     def resident_memory_sample(self, sandbox_id: str, generation: int):
         return self._resident_memory.get((sandbox_id, generation))
 
-    def resident_memory_ram_bytes(self, sandbox_id, generation, sample):
-        if self.resident_memory_file_backed(sandbox_id, generation):
-            return 0
-        return None if sample is None else sample.shared_memory_bytes
-
-    def resident_memory_file_backed(self, sandbox_id, generation):
-        return self.warden.application_memory_mode(sandbox_id, generation) == "file"
-
-    def resident_application_reclaim_enabled(self, sandbox_id, generation):
-        return (bool(getattr(self.warden.config, "reflink_memory_restore", False))
-                and self.resident_memory_file_backed(sandbox_id, generation))
-
     def cached_resident_memory_sample(self, sandbox_id: str, generation: int):
         """Historical calibration evidence; not an active admission measurement."""
         return self._resident_memory.historical((sandbox_id, generation))
@@ -2346,7 +2253,7 @@ class DirectSandboxService:
         return True
 
     def refresh_resident_memory(self, keys=None) -> None:
-        """Sample managed candidates before their first pressure wait, and paused ones."""
+        """Sample managed candidates before their first pressure wait (noded samples paused ones)."""
         if self.rust_admission:
             self.refresh_published_resident_memory()
             return
@@ -2359,8 +2266,7 @@ class DirectSandboxService:
                 for key, item in registrations.items()
                 if item.phase == "owned"
                 and item.spec.parkable
-                and (item.spec.managed_process
-                     or (not self.rust_pause_tier and self.warden.is_paused(*key)))
+                and item.spec.managed_process
             }
         )
         self._resident_memory.retain(keys)
@@ -2403,46 +2309,11 @@ class DirectSandboxService:
             expected_path=path,
         )
 
-    def reclaim_paused(self, sandbox_id, generation, *, target_bytes, is_current, budget):
-        """Swap out a paused runtime's memory without any lifecycle lock (C1.1).
-
-        A thaw supersedes it from its first read back, before its marker goes,
-        and so cancels the next window (one already in the kernel may finish,
-        which costs refaults only); losing that race before any window is no
-        stall. Every window takes its bytes from the node's one ReclaimBudget.
-        """
-        registration = self._require_registration(sandbox_id)
-        if registration.sandbox_generation != generation:
-            raise DirectWardenError("paused reclaim no longer owns this generation")
-        key, sandbox = (sandbox_id, generation), registration.to_direct_sandbox()
-
-        def paused():
-            return self.warden.is_paused(*key) and not self.warden.thawing(*key)
-
-        if not paused():
-            return ResidentReclaimResult(0, 0, 0.0, 0, "superseded")
-        captured = self.warden.inspect_snapshot(sandbox)
-        sample = self._sample_resident(key, sandbox)
-        if captured is None or captured.state != HibernationState.RUNNING or sample is None:
-            raise DirectWardenError("paused reclaim requires a measured paused incarnation")
-        return ResidentMemoryReclaimer(self._resident_memory).reclaim(
-            key, sample, target_bytes=target_bytes, swappiness=200,
-            window_bytes=pause_tier.RECLAIM_WINDOW_BYTES, budget=budget,
-            is_current=lambda: (is_current() and paused()
-                                and self.warden.inspect_snapshot(sandbox) == captured))
-
     def mark_activity(self, sandbox_id: str, generation: int) -> None:
         with self._activity_guard:
             self._last_activity[(sandbox_id, generation)] = time.monotonic()
         if self.exec_fence is not None:
             self.exec_fence.touch(sandbox_id)
-
-    def _activity_mark(self, key: tuple[str, int]) -> tuple[float | None, int | None]:
-        """Changes with any activity of this process or of noded's execs."""
-        with self._activity_guard:
-            local = self._last_activity.get(key)
-        fence = self.exec_fence
-        return local, (fence.activity_mtime_ns(key[0]) if fence is not None else None)
 
     @property
     def idle_park_seconds(self) -> float:
@@ -2777,22 +2648,6 @@ class DirectSandboxService:
             if initial is None or current is None or current.hibernation_generation != initial.hibernation_generation:
                 raise SandboxRestoreBusyError("checkpoint changed during restore admission")
             yield
-
-    def warm_park_demand(self) -> MemoryDemand:
-        return self.admission.warm_park_demand()
-
-    def _local_warm_park_demand(self) -> MemoryDemand:
-        """Memory for admitted work and the next eligible foreground owner.
-
-        The rest of a FIFO queue cannot allocate yet. Charging every request's
-        configured limit at once would evict resident waits to fill concurrency
-        slots. Reclaim enough for progress; actual admission remains concurrent
-        whenever live headroom covers the full guarantees.
-        """
-        with self._capacity_guard:
-            if not self._admission_open:
-                return MemoryDemand(1 << 63, 1 << 63)
-            return self._next_memory_demand_locked()
 
     def reclaim_demand(self) -> tuple[bool, MemoryDemand]:
         return self.admission.reclaim_demand()

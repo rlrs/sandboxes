@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import errno
 from functools import lru_cache
+from itertools import count
 import os
 from pathlib import Path
 import re
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from threading import Lock, current_thread
 import time
 from typing import Any, Awaitable, Callable, TypeVar
 import unittest
@@ -279,3 +281,122 @@ def reopen_routing_store(path: Path):
 
     close_routing_store(path)
     return open_routing_store(path)
+
+
+class FakeKernel:
+    """The kernel under a DirectNetworkManager (``install``).
+
+    Namespaces are files naming an id, as bind mounts name one nsfs inode.
+
+    A namespace lives while a name refers to it; dropping its last name
+    destroys it with its veth pair. ``links`` maps each host interface to
+    the namespace holding its ``eth0`` peer.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.links: dict[str, int] = {}
+        self.configured: set[str] = set()
+        self.commands: list[tuple[str, tuple[str, ...]]] = []
+        self._ids = count(1)
+        self._guard = Lock()
+
+    def install(self, manager: Any) -> Any:
+        manager.runner = self.run
+        manager.ip_batch_runner = self.batch
+        manager._command_ok = self.command_ok
+        manager._run_best_effort = self.best_effort
+        manager._attach_namespace = self.attach
+        manager._detach_namespace = self.detach
+        manager._interface_present = self.links.__contains__
+        manager._ensure_host_rules = lambda: None
+        return manager
+
+    def namespace(self, name: str) -> int | None:
+        try:
+            return int((self.root / name).read_text())
+        except FileNotFoundError:
+            return None
+
+    def names(self) -> set[str]:
+        return {path.name for path in self.root.iterdir()} if self.root.exists() else set()
+
+    def _record(self, command) -> None:
+        self.commands.append((current_thread().name, tuple(command)))
+
+    def _drop_name(self, path: Path) -> None:
+        identity = int(path.read_text())
+        path.unlink()
+        if identity not in {self.namespace(name) for name in self.names()}:
+            for link in [link for link, peer in self.links.items() if peer == identity]:
+                del self.links[link]
+                self.configured.discard(link)
+
+    def run(self, command) -> None:
+        from sandboxes.direct_network import DirectNetworkError
+
+        self._record(command)
+        if command[:3] == ("ip", "netns", "add"):
+            name = command[3]
+            with self._guard:
+                self.root.mkdir(parents=True, exist_ok=True)
+                with (self.root / name).open("x") as handle:
+                    handle.write(str(next(self._ids)))
+        elif command[:3] == ("ip", "link", "add"):
+            host, namespace = command[3], command[-1]
+            with self._guard:
+                if host in self.links:
+                    raise DirectNetworkError(f"{host} exists")
+                identity = self.namespace(namespace)
+                if identity is None:
+                    raise DirectNetworkError(f"no namespace {namespace}")
+                self.links[host] = identity
+        else:
+            raise AssertionError(f"unexpected command {command}")
+
+    def batch(self, argv, commands: str) -> None:
+        from sandboxes.direct_network import DirectNetworkError
+
+        self._record(argv)
+        with self._guard:
+            if argv[:2] == ("ip", "-n"):
+                identity = self.namespace(argv[2])
+                if identity is None or identity not in self.links.values():
+                    raise DirectNetworkError("guest eth0 is absent")
+            else:
+                host = commands.split()[3]
+                if host not in self.links:
+                    raise DirectNetworkError("host veth is absent")
+                self.configured.add(host)
+
+    def command_ok(self, command) -> bool:
+        self._record(command)
+        with self._guard:
+            if command[:3] == ("ip", "link", "show"):
+                return command[-1] in self.links
+            if command[:2] == ("ip", "-n"):
+                identity = self.namespace(command[2])
+                return identity is not None and identity in self.links.values()
+        raise AssertionError(f"unexpected check {command}")
+
+    def best_effort(self, command) -> None:
+        self._record(command)
+        with self._guard:
+            if command[:3] == ("ip", "link", "delete"):
+                self.links.pop(command[3], None)
+                self.configured.discard(command[3])
+            elif command[:3] == ("ip", "netns", "delete"):
+                path = self.root / command[3]
+                if path.exists():
+                    self._drop_name(path)
+            else:
+                raise AssertionError(f"unexpected cleanup {command}")
+
+    def attach(self, source: Path, target: Path) -> None:
+        with self._guard:
+            os.link(source, target)  # One inode, as two binds name one nsfs inode.
+
+    def detach(self, path: Path) -> None:
+        with self._guard:
+            if path.exists():
+                self._drop_name(path)

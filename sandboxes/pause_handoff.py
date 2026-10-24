@@ -1,8 +1,8 @@
 """The agent's half of runtime/noded's pause tier (docs/architecture.md).
 
-With ``--rust-pause-tier`` noded owns pause and thaw, idle pauses, local waits,
-paused reclaim and the escalation decision; the agent starts none of those
-loops. What crosses the process boundary:
+noded owns pause and thaw, idle pauses, local waits, paused reclaim and the
+escalation decision; the agent runs none of those loops. What crosses the
+process boundary:
 
 - markers stay the truth, and a thaw's flock on its marker is "thaw in
   progress" (pause_tier.thaw_hold); lifecycle fences are exec_fence's T and A;
@@ -264,28 +264,24 @@ def parse_managed_growth_call(path: str, raw: object) -> tuple[Any, ...]:
     return tuple(raw[key] for key in keys)
 
 
-def pause_config(service: Any, *, rust_pause_enabled: bool) -> dict[str, Any]:
+def pause_config(service: Any) -> dict[str, Any]:
     """The ``pause`` block of GET /internal/v1/creates/config.
 
-    ``rust_pause_enabled``: the agent started without its local waits, idle
-    pauses, paused reclaim and paused sampling; noded owns them. With the
-    ``admission`` block's ``rust_admission_enabled`` too (phase 3b) the agent
-    samples no managed sandbox either; noded samples them and publishes
-    ``resident_path``.
+    The agent runs no local waits, idle pauses or paused reclaim and samples
+    no paused sandbox; noded owns them. With the ``admission`` block's
+    ``rust_admission_enabled`` (phase 3b) the agent samples no managed sandbox
+    either; noded samples them and publishes ``resident_path``.
     """
     from .direct_network import NETWORK_CIDR
     from . import local_wait
 
     config = service.warden.config
-    pause, waits = bool(getattr(config, "pause_tier", False)), bool(getattr(config, "local_model_waits", False))
     network = getattr(service.provisioner, "network_manager", None)
     endpoints = (local_wait.relay_endpoints(network.relays, network.relay_addresses)
                  if network is not None else ())
     idle = float(service.idle_park_seconds)
     directory = noded_directory(service)
     return {
-        "rust_pause_enabled": bool(rust_pause_enabled),
-        "pause_tier": pause,
         "runsc": str(config.runsc),
         "runtime_root": str(config.runtime_root),
         "warden_paused_dir": str(config.runtime_root / "warden-paused"),
@@ -326,7 +322,7 @@ def pause_config(service: Any, *, rust_pause_enabled: bool) -> dict[str, Any]:
             "transfer_break_even_seconds": pause_tier.TRANSFER_BREAK_EVEN_SECONDS,
         },
         "local_waits": {
-            "enabled": pause and waits and bool(endpoints),
+            "enabled": bool(endpoints),
             "endpoints": [{"ip": host, "port": port} for host, port in endpoints],
             "network": str(NETWORK_CIDR),
             "nflog_group": local_wait.NFLOG_GROUP,

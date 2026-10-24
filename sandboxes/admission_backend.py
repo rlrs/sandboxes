@@ -199,9 +199,6 @@ class LocalAdmission:
     def resident_demand(self):
         return self.service._local_resident_demand_snapshot()
 
-    def warm_park_demand(self) -> MemoryDemand:
-        return self.service._local_warm_park_demand()
-
     def reclaim_demand(self) -> tuple[bool, MemoryDemand]:
         return self.service._local_reclaim_demand()
 
@@ -655,11 +652,6 @@ class NodedAdmission:
     def slots(self):
         """Each pool's ``{capacity, available, waiting}``."""
         return self.snapshot()["slots"]
-
-    def warm_park_demand(self) -> MemoryDemand:
-        if not self.service._admission_open:
-            return MemoryDemand(1 << 63, 1 << 63)
-        return self._next_demand(self.resident_demand())
 
     def reclaim_demand(self) -> tuple[bool, MemoryDemand]:
         snapshot = self.snapshot()

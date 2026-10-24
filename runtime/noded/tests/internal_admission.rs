@@ -264,8 +264,7 @@ service = DirectSandboxService(provisioner, max_concurrent_startups=12, max_conc
 service.configure_active_capacity(fixtures.ResourceQuantity(vcpu=6, memory_mb=24576), runtime_metrics_provider=lambda: None)
 sessions = SimpleNamespace(max_sessions=1024, max_events_per_session=512, completed_retention_seconds=30.0,
                            delivered_grace_seconds=2.0, output_idle_timeout_seconds=300.0)
-config = create_config(service, node_epoch="epoch", rust_creates_enabled=True, rust_execs_enabled=True,
-                       exec_sessions=sessions, rust_pause_enabled=True, rust_admission_enabled=True)
+config = create_config(service, node_epoch="epoch", exec_sessions=sessions, rust_admission_enabled=True)
 digest = hashlib.sha256(json.dumps(config, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 print(json.dumps(dict(config, config_sha256=digest)))
 "#;

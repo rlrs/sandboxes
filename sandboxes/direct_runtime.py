@@ -9,7 +9,7 @@ from typing import Mapping, Sequence
 from .checkpoint_registry import RegistryCheckpointStore
 from .managed_registry import RegistryClient
 from .memory_backing import MemoryBackingStore
-from .direct_network import NETWORK_POOL_SIZE, DirectNetworkManager
+from .direct_network import DirectNetworkManager
 from .direct_oci import DirectOciConfigBuilder
 from .direct_provisioner import DirectSandboxProvisioner
 from .disk_claims import DiskClaimPolicy
@@ -46,31 +46,24 @@ def build_direct_runtime_service(
     max_concurrent_startups: int = 8,
     idle_park_seconds: float = 0.0,
     storage_native_socket: Path,
-    split_memory_backing: bool = False,
+    memory_backing_hard_capacity_bytes: int,
     reflink_memory_restore: bool = False,
-    pause_tier: bool = False,
-    local_model_waits: bool = False,
     workspace_initial_grant_mb: int = 0,
     application_memory_root: Path | None = None,
-    memory_backing_hard_capacity_bytes: int = 0,
     checkpoint_registry_url: str = "",
     checkpoint_registry_repository: str = "",
     environment_registry: object | None = None,
     environment_backend_socket: Path | None = None,
     environment_rafs: bool = False,
     environment_device_budget_percent: int = DEFAULT_DEVICE_BUDGET_PERCENT,
-    registry_foreign: bool = False,
-    rust_creates: bool = False,
     telemetry: Telemetry | None = None,
 ) -> DirectSandboxService:
     """Assemble the one production direct-runtime owner for an entire node.
 
-    ``registry_foreign``: runtime/noded owns the registry file; this agent
-    writes through SQLite's cross-process locking and caches its reads.
-    ``rust_creates``: noded runs creates (docs/architecture.md).
+    runtime/noded owns the registry file and runs creates
+    (docs/architecture.md); this agent writes through SQLite's cross-process
+    locking and caches its reads. Checkpoints split workspace and memory.
     """
-    if rust_creates and not registry_foreign:
-        raise ValueError("Rust creates require the registry owned by runtime/noded (--registry-foreign)")
     for label, path in (
         ("state_root", state_root),
         ("image_cache_root", image_cache_root or state_root / "image-cache"),
@@ -87,8 +80,6 @@ def build_direct_runtime_service(
             raise ValueError(f"{label} must be absolute")
     if network_relays and network != "sandbox":
         raise ValueError("network_relays requires sandbox networking")
-    if local_model_waits and not pause_tier:
-        raise ValueError("node-local model waits require the pause tier")
     if network not in {"none", "sandbox"}:
         raise ValueError("direct runtime network must be none or sandbox")
     if not storage_native_socket.is_absolute():
@@ -97,24 +88,18 @@ def build_direct_runtime_service(
     resolved_image_cache_root = image_cache_root or state_root / "image-cache"
     resolved_image_cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     volume_mount_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if application_memory_root is not None:
-        if not split_memory_backing:
-            raise ValueError("RAM application memory requires split checkpoint storage")
     if not isinstance(reflink_memory_restore, bool):
         raise ValueError("reflink_memory_restore must be a boolean")
-    if reflink_memory_restore and not split_memory_backing:
-        raise ValueError("reflink memory restore requires split checkpoint storage")
-    if split_memory_backing:
-        if memory_backing_hard_capacity_bytes <= 0:
-            raise ValueError(
-                "split memory backing requires the shared physical disk budget"
-            )
-        if reflink_memory_restore:
-            require_reflink_restore_runtime(runsc, runsc_commit)
-        elif application_memory_root is None:
-            require_capture_barrier_runtime(runsc, runsc_commit)
-        else:
-            require_ram_backing_runtime(runsc, runsc_commit)
+    if memory_backing_hard_capacity_bytes <= 0:
+        raise ValueError(
+            "split memory backing requires the shared physical disk budget"
+        )
+    if reflink_memory_restore:
+        require_reflink_restore_runtime(runsc, runsc_commit)
+    elif application_memory_root is None:
+        require_capture_barrier_runtime(runsc, runsc_commit)
+    else:
+        require_ram_backing_runtime(runsc, runsc_commit)
     if bool(checkpoint_registry_url) != bool(checkpoint_registry_repository):
         raise ValueError(
             "checkpoint registry origin and repository must be configured together"
@@ -124,30 +109,10 @@ def build_direct_runtime_service(
             "immutable environment registry and backend socket must be selected together"
         )
     runsc_digest = _sha256_file(runsc)
-    boot_settings: dict[str, object] = {
-        "network": network,
-        "platform": "systrap",
-        "rootfs_format": (
-            "ucloud-host-erofs-environment-v1"
-            if environment_registry is not None
-            else "ucloud-overlay2-rootfs-v1"
-        ),
-        "quota_layout": "split-memory-v3"
-        if split_memory_backing
-        else "storage-native-v1",
-    }
-    if reflink_memory_restore:
-        # This is the portable reader capability. Fresh RAM/file placement and
-        # a particular owner's later restore mode never change checkpoint ABI.
-        boot_settings["application_memory_backend"] = "reflink-restore-v1"
-    elif application_memory_root is not None:
-        boot_settings["application_memory_backend"] = "ram-sparse-capture-v1"
-    companions = installed_sidecar_fingerprints(runsc, runsc_commit)
-    if companions:
-        # Preserve legacy fingerprints, but bind new checkpoints to every
-        # executable that can implement their kernel and restore operations.
-        boot_settings["gvisor_companions"] = companions
-    boot_digest = _canonical_sha256(boot_settings)
+    boot_digest = boot_config_sha256(
+        runsc, runsc_commit, network=network, host_erofs=environment_registry is not None,
+        reflink_memory_restore=reflink_memory_restore, ram_backing=application_memory_root is not None,
+    )
     fingerprint = HibernationRuntimeFingerprint(
         runsc_sha256=runsc_digest,
         runsc_commit=runsc_commit,
@@ -185,39 +150,44 @@ def build_direct_runtime_service(
             state_root / "network-slots.json",
             allowed_tcp_egress=network_allow_tcp,
             network_relays=network_relays,
-            # Pooled pairs are usable only by the process that configured
-            # them. While noded creates it owns the pool (its size comes from
-            # create_config), and this agent never touches state["pool"].
-            pool_size=0 if rust_creates else NETWORK_POOL_SIZE,
-            pool_owner=not rust_creates,
         )
         if network == "sandbox"
         else None
     )
+    # noded owns the registry and its index; the agent is a foreign writer
+    # with a revalidated read cache.
+    registry = DirectSandboxRegistry(
+        state_root / "direct-registry.sqlite",
+        hard_disk_capacity_mb=memory_backing_hard_capacity_bytes // (1024 * 1024),
+        cached_reads=True,
+    )
+    if not reflink_memory_restore and registry.reflink_overlap_bytes():
+        # A crash may leave a global reservation before the allocator writes
+        # its retention row. Keep the cleanup-capable reader until it drains.
+        raise ValueError("reflink restore reader is required until overlap capacity drains")
     storage_client = StorageNativeNodeClient(
         storage_native_socket,
         telemetry=telemetry,
     )
     storage_status = storage_client.wait_ready()
-    memory_backing = None
-    if split_memory_backing:
-        if (
-            storage_status["metrics"].get("hard_capacity_bytes")
-            != memory_backing_hard_capacity_bytes
-        ):
-            raise ValueError("workspace and memory must share one physical disk budget")
-        capacity = os.statvfs(volume_mount_root)
-        if capacity.f_blocks * capacity.f_frsize < memory_backing_hard_capacity_bytes:
-            raise ValueError(
-                "memory filesystem is smaller than the physical disk budget"
-            )
-        memory_backing = MemoryBackingStore(
-            volume_mount_root,
-            state_root / "memory-backing.sqlite",
-            hard_capacity_bytes=memory_backing_hard_capacity_bytes,
-            active_root=application_memory_root,
-            ram_swappable=pause_tier,
+    if (
+        storage_status["metrics"].get("hard_capacity_bytes")
+        != memory_backing_hard_capacity_bytes
+    ):
+        raise ValueError("workspace and memory must share one physical disk budget")
+    capacity = os.statvfs(volume_mount_root)
+    if capacity.f_blocks * capacity.f_frsize < memory_backing_hard_capacity_bytes:
+        raise ValueError(
+            "memory filesystem is smaller than the physical disk budget"
         )
+    memory_backing = MemoryBackingStore(
+        volume_mount_root,
+        state_root / "memory-backing.sqlite",
+        hard_capacity_bytes=memory_backing_hard_capacity_bytes,
+        active_root=application_memory_root,
+        # The pause tier swaps paused sandboxes' RAM-backed memory out.
+        ram_swappable=True,
+    )
     checkpoint_store = (
         RegistryCheckpointStore(
             RegistryClient(checkpoint_registry_url),
@@ -226,19 +196,6 @@ def build_direct_runtime_service(
         if checkpoint_registry_url
         else None
     )
-    # The node agent owns the registry and its index, unless noded does: then
-    # the agent is a foreign writer with a revalidated read cache.
-    registry = DirectSandboxRegistry(
-        state_root / "direct-registry.sqlite",
-        hard_disk_capacity_mb=memory_backing_hard_capacity_bytes // (1024 * 1024)
-        if split_memory_backing else 0,
-        owner=not registry_foreign,
-        cached_reads=registry_foreign,
-    )
-    if not reflink_memory_restore and registry.reflink_overlap_bytes():
-        # A crash may leave a global reservation before the allocator writes
-        # its retention row. Keep the cleanup-capable reader until it drains.
-        raise ValueError("reflink restore reader is required until overlap capacity drains")
     ensure_sandbox_cgroup_parent()
     warden = DirectRunscWarden(
         DirectRunscWardenConfig(
@@ -247,8 +204,6 @@ def build_direct_runtime_service(
             memory_root=volume_mount_root,
             application_memory_root=application_memory_root,
             reflink_memory_restore=reflink_memory_restore,
-            pause_tier=pause_tier,
-            local_model_waits=local_model_waits,
             bundle_root=state_root / "bundles",
             journal_root=state_root / "journals",
             runtime_fingerprint=fingerprint,
@@ -257,7 +212,7 @@ def build_direct_runtime_service(
         storage=storage_client,
         memory_backing=memory_backing,
         memory_capacity=registry if reflink_memory_restore else None,
-        disk_capacity=registry if split_memory_backing else None,
+        disk_capacity=registry,
         rootfs_lifecycle=overlays,
         telemetry=telemetry,
     )
@@ -276,9 +231,8 @@ def build_direct_runtime_service(
         # restore turns owners file-backed at their first park, so their
         # memory keeps the formula claim.
         disk_claim_policy=DiskClaimPolicy(
-            workspace_grant_mb=workspace_initial_grant_mb if split_memory_backing else 0,
-            demonstrated_memory=bool(split_memory_backing and application_memory_root is not None
-                                     and not reflink_memory_restore),
+            workspace_grant_mb=workspace_initial_grant_mb,
+            demonstrated_memory=application_memory_root is not None and not reflink_memory_restore,
         ),
     )
     return DirectSandboxService(
@@ -288,6 +242,29 @@ def build_direct_runtime_service(
         idle_park_seconds=idle_park_seconds,
         telemetry=telemetry,
     )
+
+
+def boot_config_sha256(runsc: Path, runsc_commit: str, *, network: str, host_erofs: bool,
+                       reflink_memory_restore: bool, ram_backing: bool) -> str:
+    """The boot configuration a node's checkpoints bind (runtime fingerprint)."""
+    boot_settings: dict[str, object] = {
+        "network": network,
+        "platform": "systrap",
+        "rootfs_format": "ucloud-host-erofs-environment-v1" if host_erofs else "ucloud-overlay2-rootfs-v1",
+        "quota_layout": "split-memory-v3",
+    }
+    if reflink_memory_restore:
+        # This is the portable reader capability. Fresh RAM/file placement and
+        # a particular owner's later restore mode never change checkpoint ABI.
+        boot_settings["application_memory_backend"] = "reflink-restore-v1"
+    elif ram_backing:
+        boot_settings["application_memory_backend"] = "ram-sparse-capture-v1"
+    companions = installed_sidecar_fingerprints(runsc, runsc_commit)
+    if companions:
+        # Preserve legacy fingerprints, but bind new checkpoints to every
+        # executable that can implement their kernel and restore operations.
+        boot_settings["gvisor_companions"] = companions
+    return _canonical_sha256(boot_settings)
 
 
 def _sha256_file(path: Path) -> str:

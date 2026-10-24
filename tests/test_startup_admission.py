@@ -75,9 +75,10 @@ class StartupAdmissionTests(AdmissionBackendCase, unittest.TestCase):
         self.assertEqual(self.slots_available(service, "startup"), 8)
 
 
-class WarmDemandTests(unittest.TestCase):
+class ReclaimDemandTests(unittest.TestCase):
     def test_startup_demand_deduplicates_active_lease_and_cleans_failures(self):
         from sandboxes.models import ResourceQuantity
+        from sandboxes.transition_admission import MemoryDemand
 
         with TemporaryDirectory() as directory:
             provisioner, *_ = direct_fixtures.DirectProvisionerTests().make(Path(directory).resolve())
@@ -86,13 +87,14 @@ class WarmDemandTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'injected'):
                 with service._startup_demand('first', 1, requested):
                     with service._startup_demand('first', 1, requested):
-                        self.assertEqual(service.warm_park_demand().physical_bytes, 256 * 1024**2)
+                        self.assertEqual(service.reclaim_demand()[1].physical_bytes, 256 * 1024**2)
                     with service._startup_demand('second', 1, requested):
-                        self.assertEqual(service.warm_park_demand().physical_bytes, 256 * 1024**2)
-                    self.assertEqual(service.warm_park_demand().physical_bytes, 256 * 1024**2)
+                        self.assertEqual(service.reclaim_demand()[1].physical_bytes, 256 * 1024**2)
+                    self.assertEqual(service.reclaim_demand()[1].physical_bytes, 256 * 1024**2)
                     raise ValueError('injected')
-            self.assertEqual(service.warm_park_demand().physical_bytes, 0)
+            self.assertEqual(service.reclaim_demand()[1].physical_bytes, 0)
             self.assertEqual(service.transition_admission_snapshot()["startup"]["waiting"], 0)
             service.close_admission()
-            self.assertEqual(service.warm_park_demand().physical_bytes, 1 << 63)
+            # A drain bills paused reclaim nothing.
+            self.assertEqual(service.reclaim_demand(), (False, MemoryDemand()))
 

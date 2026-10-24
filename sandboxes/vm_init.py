@@ -50,7 +50,7 @@ STATIC_RUNTIME_RECEIPT_SCHEMA = 2
 DEFAULT_DIRECT_RUNSC = "/usr/local/libexec/ucloud-gvisor/runsc"
 DEFAULT_MANAGED_INIT = "/usr/local/libexec/ucloud-sandbox-init"
 DEFAULT_NODED = "/usr/local/libexec/ucloud-noded"
-# The Python agent's socket behind ucloud-noded (direct_node_front_door).
+# The Python agent's socket behind ucloud-noded, the node's front door.
 NODE_AGENT_SOCKET = "/run/ucloud-sandboxes/node-agent/agent.sock"
 DEFAULT_STORAGE_NATIVE_BACKEND = "/usr/local/libexec/ucloud-storage-native-backend"
 DEFAULT_STORAGE_NATIVE_BACKEND_SOCKET = (
@@ -247,16 +247,9 @@ class VmInitOptions:
     direct_max_concurrent_restores: int = DEFAULT_DIRECT_MAX_CONCURRENT_RESTORES
     direct_max_concurrent_startups: int = 8
     direct_idle_park_seconds: float = 0.0
-    direct_split_memory_backing: bool = False
     direct_ram_memory_backing: bool = False
     direct_reflink_memory_restore: bool = False
-    direct_pause_tier: bool = False
     direct_pause_tier_zswap: bool = False
-    direct_local_model_waits: bool = False
-    direct_node_front_door: bool = False
-    direct_node_rust_create: bool = False
-    direct_node_rust_exec: bool = False
-    direct_node_rust_pause: bool = False
     direct_node_rust_admission: bool = False
     direct_workspace_initial_grant_mb: int = 0
     environment_registry_url: str = ""
@@ -587,21 +580,15 @@ def render_vm_init_script(options: VmInitOptions) -> str:
                 )
             )
         split_memory_flags = (
-            " --split-memory-backing"
             " --memory-backing-hard-capacity-bytes ${UCLOUD_STORAGE_NATIVE_HARD_CAPACITY_BYTES}"
             " --checkpoint-registry-url ${UCLOUD_STORAGE_NATIVE_REGISTRY_URL}"
             " --checkpoint-registry-repository ${UCLOUD_STORAGE_NATIVE_REPOSITORY}"
-            if options.direct_split_memory_backing else ""
         )
         if options.direct_ram_memory_backing:
             split_memory_flags += " --application-memory-root ${UCLOUD_APPLICATION_MEMORY_ROOT}"
         if options.direct_reflink_memory_restore:
             split_memory_flags += " --reflink-memory-restore"
-        if options.direct_pause_tier:
-            split_memory_flags += " --pause-tier"
-        if options.direct_local_model_waits:
-            split_memory_flags += " --local-model-waits"
-        if options.direct_split_memory_backing and options.direct_workspace_initial_grant_mb:
+        if options.direct_workspace_initial_grant_mb:
             split_memory_flags += (
                 f" --workspace-initial-grant-mb {options.direct_workspace_initial_grant_mb}"
             )
@@ -610,11 +597,7 @@ def render_vm_init_script(options: VmInitOptions) -> str:
             " --job-id ${UCLOUD_JOB_ID}"
             " --node-id ${UCLOUD_NODE_ID}"
             " --node-url ${UCLOUD_NODE_URL}"
-            + (f" --unix-socket {NODE_AGENT_SOCKET}" if options.direct_node_front_door else
-               " --host ${UCLOUD_NODE_AGENT_HOST} --port ${UCLOUD_NODE_AGENT_PORT}")
-            + (" --registry-foreign --rust-creates" if options.direct_node_rust_create else "")
-            + (" --rust-execs" if options.direct_node_rust_exec else "")
-            + (" --rust-pause-tier" if options.direct_node_rust_pause else "")
+            + f" --unix-socket {NODE_AGENT_SOCKET}"
             + (" --rust-admission" if options.direct_node_rust_admission else "")
             + f"{deployment_flag}{version_flags}"
             " --state-root ${UCLOUD_STATE_DIR}/direct-runtime"
@@ -676,19 +659,14 @@ def render_vm_init_script(options: VmInitOptions) -> str:
         node_service_after = "network-online.target docker.service"
         node_service_requires = "docker.service"
 
-    front_door = options.role == "sandbox" and options.direct_node_front_door
-    if front_door:
+    if options.role == "sandbox":
         node_service_wants += " ucloud-sandbox-noded.service"
         node_service_after += " ucloud-sandbox-noded.service"
         host = options.node_agent_host
         listen = f"[{host}]:{options.node_agent_port}" if ":" in host else f"{host}:{options.node_agent_port}"
         # The daemon reads the same token to call the agent's internal endpoints
         # (the create handoff, escalations, growth events and the configuration).
-        rust_flags = ((" --rust-create" if options.direct_node_rust_create else "")
-                      + (" --rust-exec" if options.direct_node_rust_exec else "")
-                      + (" --rust-pause" if options.direct_node_rust_pause else ""))
-        if rust_flags:
-            rust_flags += " --node-control-token-file " + shlex.quote(options.node_control_bearer_token_file)
+        rust_flags = " --node-control-token-file " + shlex.quote(options.node_control_bearer_token_file)
         if options.direct_node_rust_admission:
             # The agent's way in: <state_root>/noded/noded.sock (noded_client.py).
             internal_socket = PurePosixPath(state_dir) / "direct-runtime" / "noded" / "noded.sock"
@@ -752,19 +730,13 @@ fi
         "ExecStartPre=/usr/bin/env PYTHONPATH=$UCLOUD_AGENT_RUNTIME_DIR/site-packages /usr/bin/python3"
         " -m sandboxes.memory_filesystem --mount-root $UCLOUD_STORAGE_NATIVE_MOUNT_ROOT"
         " --hard-capacity-bytes $UCLOUD_STORAGE_NATIVE_HARD_CAPACITY_BYTES\n"
-        if options.direct_split_memory_backing else ""
     )
     if options.direct_ram_memory_backing:
         memory_filesystem_prestart = memory_filesystem_prestart.rstrip("\n") + (
             " --ram-root $UCLOUD_APPLICATION_MEMORY_ROOT"
-            " --ram-capacity-bytes $UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES"
-            + (" --ram-swappable\n" if options.direct_pause_tier else "\n")
+            " --ram-capacity-bytes $UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES --ram-swappable\n"
         )
-    storage_runtime_root = (
-        "${UCLOUD_STORAGE_NATIVE_MOUNT_ROOT}/.runtime"
-        if options.direct_split_memory_backing
-        else "${UCLOUD_STORAGE_NATIVE_ROOT}/runtime"
-    )
+    storage_runtime_root = "${UCLOUD_STORAGE_NATIVE_MOUNT_ROOT}/.runtime"
     mirrors = _registry_mirrors(options)
     # Docker's daemon (and its embedded builder) mirrors only Docker Hub and
     # falls back to it; the mirrors are plain HTTP, hence insecure-registries.
@@ -853,10 +825,8 @@ UCLOUD_STORAGE_NATIVE_BACKEND_SOCKET={shlex.quote(storage_native_backend_socket)
 UCLOUD_STORAGE_NATIVE_SERVICE_SOCKET={shlex.quote(storage_native_service_socket)}
 UCLOUD_STORAGE_NATIVE_ROOT={shlex.quote(storage_native_root)}
 UCLOUD_STORAGE_NATIVE_MOUNT_ROOT=$UCLOUD_STORAGE_NATIVE_ROOT/mounts
-UCLOUD_DIRECT_SPLIT_MEMORY_BACKING={int(options.direct_split_memory_backing)}
 UCLOUD_DIRECT_RAM_MEMORY_BACKING={int(options.direct_ram_memory_backing)}
 UCLOUD_DIRECT_REFLINK_MEMORY_RESTORE={int(options.direct_reflink_memory_restore)}
-UCLOUD_DIRECT_PAUSE_TIER={int(options.direct_pause_tier)}
 UCLOUD_DIRECT_PAUSE_TIER_ZSWAP={int(options.direct_pause_tier_zswap)}
 UCLOUD_APPLICATION_MEMORY_ROOT=/run/ucloud-sandboxes/application-memory
 UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES={int(options.total_resources.memory_mb) * 1024**2}
@@ -1019,8 +989,7 @@ if [ -f "$UCLOUD_STATIC_RUNTIME_RECEIPT" ] \
       || {{ [ -x "$UCLOUD_DIRECT_RUNSC" ] \
         && [ -x "$UCLOUD_MANAGED_INIT" ] \
         && [ -x "$UCLOUD_STORAGE_NATIVE_BACKEND" ] \
-        && {{ [ "$UCLOUD_DIRECT_SPLIT_MEMORY_BACKING" -eq 0 ] \
-          || [ -f "$(dirname "$UCLOUD_DIRECT_RUNSC")/build-manifest.json" ]; }} \
+        && [ -f "$(dirname "$UCLOUD_DIRECT_RUNSC")/build-manifest.json" ] \
         && {{ [ "$UCLOUD_DIRECT_RUNSC_COMMIT" != {GVISOR_COMMIT} ] \
           || {{ [ -x "$(dirname \"$UCLOUD_DIRECT_RUNSC\")/gvisor-bin/checkpointgofer" ] \
             && [ -x "$(dirname \"$UCLOUD_DIRECT_RUNSC\")/gvisor-bin/gvisor-sentry-prewarmer" ] \
@@ -1212,14 +1181,11 @@ if runtime.get("role") == "sandbox":
     for item in sidecars:
         verified_artifact(item, item["file"], "gVisor companion executable")
 
+    # Split memory backing needs authenticated gVisor build provenance.
     build_manifest = direct.get("build_manifest")
-    build_manifest_path = bundle_dir / "runtime/direct/build-manifest.json"
-    if build_manifest is not None or build_manifest_path.exists():
-        if not isinstance(build_manifest, dict):
-            raise SystemExit("gVisor build provenance metadata is absent")
-        verified_artifact(build_manifest, "runtime/direct/build-manifest.json", "gVisor build provenance")
-    elif {options.direct_split_memory_backing!r}:
-        raise SystemExit("split memory backing requires authenticated gVisor build provenance")
+    if not isinstance(build_manifest, dict):
+        raise SystemExit("gVisor build provenance metadata is absent")
+    verified_artifact(build_manifest, "runtime/direct/build-manifest.json", "gVisor build provenance")
 
     managed = runtime.get("managed_init")
     if not isinstance(managed, dict):
@@ -1297,12 +1263,10 @@ if runtime.get("role") == "sandbox":
         for key, digest_key in (("manifest_file", "manifest_sha256"), ("license_file", "license_sha256")):
             if digest(bundle_dir / nydusd_files[key]) != nydusd.get(digest_key):
                 raise SystemExit(f"nydusd {{key}} checksum mismatch")
-    noded_sha256 = "none"
-    if {options.direct_node_front_door!r}:
-        noded = runtime.get("noded")
-        if not isinstance(noded, dict) or noded.get("file") != "runtime/noded/ucloud-noded":
-            raise SystemExit("the node front door is enabled but the bundle carries no ucloud-noded")
-        noded_sha256 = verified_artifact(noded, "runtime/noded/ucloud-noded", "ucloud-noded")
+    noded = runtime.get("noded")
+    if not isinstance(noded, dict) or noded.get("file") != "runtime/noded/ucloud-noded":
+        raise SystemExit("the sandbox bundle carries no ucloud-noded")
+    noded_sha256 = verified_artifact(noded, "runtime/noded/ucloud-noded", "ucloud-noded")
     # nydusd's digest may be empty, so it stays last: read collapses empty tab fields.
     result.extend((direct_sha256, managed_sha256, storage_sha256, noded_sha256, nydusd_sha256))
 
@@ -1622,7 +1586,7 @@ if [ "$UCLOUD_SWAP_GB" -gt 0 ]; then
   if [ "$UCLOUD_DIRECT_PAUSE_TIER_ZSWAP" -eq 1 ]; then
     echo zstd | $SUDO tee /sys/module/zswap/parameters/compressor >/dev/null
     echo Y | $SUDO tee /sys/module/zswap/parameters/enabled >/dev/null
-  elif [ "$UCLOUD_DIRECT_PAUSE_TIER" -eq 1 ] && [ -e /sys/module/zswap/parameters/enabled ]; then
+  elif [ "$UCLOUD_NODE_ROLE" = sandbox ] && [ -e /sys/module/zswap/parameters/enabled ]; then
     echo N | $SUDO tee /sys/module/zswap/parameters/enabled >/dev/null
   fi
 fi
@@ -1705,11 +1669,9 @@ if [ "$UCLOUD_NODE_ROLE" = sandbox ]; then
     $SUDO install -m 0755 -o root -g root "$UCLOUD_BUNDLED_MANAGED_INIT" "$UCLOUD_MANAGED_INIT"
     printf '%s  %s\n' "$UCLOUD_BUNDLED_MANAGED_INIT_SHA256" "$UCLOUD_MANAGED_INIT" | sha256sum --check --status -
     test "$("$UCLOUD_MANAGED_INIT" version)" = managed-primary-v1
-    if [ "$UCLOUD_BUNDLED_NODED_SHA256" != none ]; then
-      echo "Installing bundle-verified node front door"
-      $SUDO install -m 0755 -o root -g root "$UCLOUD_BUNDLED_NODED" {shlex.quote(DEFAULT_NODED)}
-      printf '%s  %s\n' "$UCLOUD_BUNDLED_NODED_SHA256" {shlex.quote(DEFAULT_NODED)} | sha256sum --check --status -
-    fi
+    echo "Installing bundle-verified node front door"
+    $SUDO install -m 0755 -o root -g root "$UCLOUD_BUNDLED_NODED" {shlex.quote(DEFAULT_NODED)}
+    printf '%s  %s\n' "$UCLOUD_BUNDLED_NODED_SHA256" {shlex.quote(DEFAULT_NODED)} | sha256sum --check --status -
     echo "Installing bundle-verified storage-native backend"
     $SUDO install -m 0755 -o root -g root \
       "$UCLOUD_BUNDLED_STORAGE_NATIVE_BACKEND" "$UCLOUD_STORAGE_NATIVE_BACKEND"
@@ -1974,11 +1936,10 @@ printf '#!/bin/sh\nexec env PYTHONPATH=%q /usr/bin/python3 -m sandboxes.storage_
   "$UCLOUD_AGENT_RUNTIME_DIR/site-packages" > "$UCLOUD_STORAGE_AGENT_LAUNCHER"
 $SUDO install -m 0755 -o root -g root "$UCLOUD_STORAGE_AGENT_LAUNCHER" "$UCLOUD_STORAGE_AGENT_BIN"
 rm -f "$UCLOUD_STORAGE_AGENT_LAUNCHER"
-if [ "$UCLOUD_DIRECT_SPLIT_MEMORY_BACKING" -eq 1 ]; then
+if [ "$UCLOUD_NODE_ROLE" = sandbox ]; then
   UCLOUD_RAM_MEMORY_ARGS=()
   if [ "$UCLOUD_DIRECT_RAM_MEMORY_BACKING" -eq 1 ]; then
-    UCLOUD_RAM_MEMORY_ARGS=(--ram-root "$UCLOUD_APPLICATION_MEMORY_ROOT" --ram-capacity-bytes "$UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES")
-    [ "$UCLOUD_DIRECT_PAUSE_TIER" -eq 0 ] || UCLOUD_RAM_MEMORY_ARGS+=(--ram-swappable)
+    UCLOUD_RAM_MEMORY_ARGS=(--ram-root "$UCLOUD_APPLICATION_MEMORY_ROOT" --ram-capacity-bytes "$UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES" --ram-swappable)
   fi
   $SUDO env PYTHONPATH="$UCLOUD_AGENT_RUNTIME_DIR/site-packages" /usr/bin/python3 \
     -m sandboxes.memory_filesystem \
@@ -2055,7 +2016,6 @@ UCLOUD_STORAGE_NATIVE_BACKEND_SOCKET=$UCLOUD_STORAGE_NATIVE_BACKEND_SOCKET
 UCLOUD_STORAGE_NATIVE_SERVICE_SOCKET=$UCLOUD_STORAGE_NATIVE_SERVICE_SOCKET
 UCLOUD_STORAGE_NATIVE_ROOT=$UCLOUD_STORAGE_NATIVE_ROOT
 UCLOUD_STORAGE_NATIVE_MOUNT_ROOT=$UCLOUD_STORAGE_NATIVE_MOUNT_ROOT
-UCLOUD_DIRECT_SPLIT_MEMORY_BACKING=$UCLOUD_DIRECT_SPLIT_MEMORY_BACKING
 UCLOUD_STORAGE_NATIVE_CACHE_ROOT=$UCLOUD_STORAGE_NATIVE_CACHE_ROOT
 UCLOUD_STORAGE_NATIVE_BACKEND_CONFIG=$UCLOUD_STORAGE_NATIVE_BACKEND_CONFIG
 UCLOUD_STORAGE_NATIVE_RESIZE_BACKEND_CONFIG=$UCLOUD_STORAGE_NATIVE_RESIZE_BACKEND_CONFIG
@@ -2191,30 +2151,6 @@ log_init_phase "systemd-services"
     return script
 
 
-def _validate_pause_tier(options: VmInitOptions) -> None:
-    if options.direct_pause_tier and options.swap_gb < 1:
-        raise ValueError("the pause tier requires a swapfile (swap_gb).")
-    if options.direct_pause_tier_zswap and not options.direct_pause_tier:
-        raise ValueError("pause-tier zswap requires the pause tier.")
-    if options.direct_local_model_waits and not options.direct_pause_tier:
-        raise ValueError("node-local model waits require the pause tier.")
-    if options.direct_node_rust_create and not options.direct_node_front_door:
-        raise ValueError("Rust node creates require the node front door.")
-    if options.direct_node_rust_create and not options.node_control_bearer_token_file:
-        raise ValueError("Rust node creates require a node control bearer token file.")
-    if options.direct_node_rust_exec and not (options.direct_node_front_door and options.direct_node_rust_create):
-        raise ValueError("Rust node execs require the node front door and Rust node creates.")
-    if options.direct_node_rust_exec and not options.node_control_bearer_token_file:
-        raise ValueError("Rust node execs require a node control bearer token file.")
-    if options.direct_node_rust_pause and not (options.direct_pause_tier and options.direct_node_rust_exec):
-        raise ValueError("the Rust node pause tier requires the pause tier and Rust node execs.")
-    if options.direct_node_rust_admission and not (
-            options.direct_node_front_door and options.direct_node_rust_create
-            and options.direct_node_rust_exec and options.direct_node_rust_pause):
-        raise ValueError("Rust node admission requires the node front door, Rust node creates, "
-                         "Rust node execs and the Rust node pause tier.")
-
-
 def validate_vm_init_options(options: VmInitOptions) -> None:  # noqa: C901
     from .environment_bootstrap import validate as validate_environment_bootstrap
     validate_environment_bootstrap(options)
@@ -2238,24 +2174,19 @@ def validate_vm_init_options(options: VmInitOptions) -> None:  # noqa: C901
         raise ValueError("node role must be sandbox, builder or store")
     from .chunk_store_node import validate_store_options
     validate_store_options(options)
-    if not isinstance(options.direct_split_memory_backing, bool):
-        raise ValueError("direct_split_memory_backing must be a boolean")
-    if options.direct_split_memory_backing and options.role != "sandbox":
+    for name in ("direct_ram_memory_backing", "direct_reflink_memory_restore",
+                 "direct_pause_tier_zswap", "direct_node_rust_admission"):
+        if not isinstance(getattr(options, name), bool):
+            raise ValueError(f"{name} must be a boolean")
+    if options.role != "sandbox" and (options.direct_ram_memory_backing or options.direct_reflink_memory_restore):
         raise ValueError("split memory backing is only supported by sandbox workers")
-    if options.direct_split_memory_backing and options.storage_native_snapshot_backend != "registry":
-        raise ValueError("split memory backing requires registry checkpoint publication; S3 split checkpoints are unsupported")
-    if not isinstance(options.direct_ram_memory_backing, bool):
-        raise ValueError("direct_ram_memory_backing must be a boolean")
-    if options.direct_ram_memory_backing and not options.direct_split_memory_backing:
-        raise ValueError("RAM memory backing requires split memory backing")
-    if not isinstance(options.direct_reflink_memory_restore, bool):
-        raise ValueError("direct_reflink_memory_restore must be a boolean")
-    if options.direct_reflink_memory_restore and not options.direct_split_memory_backing:
-        raise ValueError("reflink memory restore requires split memory backing")
     grant = options.direct_workspace_initial_grant_mb
     if isinstance(grant, bool) or not isinstance(grant, int) or (grant and grant < 512):
         raise ValueError("direct_workspace_initial_grant_mb must be 0 or at least 512")
     if options.role == "sandbox":
+        if options.storage_native_snapshot_backend != "registry":
+            raise ValueError("split memory backing requires registry checkpoint publication; "
+                             "S3 split checkpoints are unsupported")
         if not re.fullmatch(r"[0-9a-f]{40}", options.direct_runsc_commit):
             raise ValueError(
                 "direct runtime requires an exact 40-character runsc commit"
@@ -2358,7 +2289,6 @@ def validate_vm_init_options(options: VmInitOptions) -> None:  # noqa: C901
             raise ValueError("direct max concurrent startups must be positive.")
         if options.direct_max_concurrent_restores < 1:
             raise ValueError("direct max concurrent restores must be positive.")
-    _validate_pause_tier(options)
     if options.docker_quota_image_gb < 0:
         raise ValueError("docker quota image size cannot be negative.")
     if options.swap_gb < 0:

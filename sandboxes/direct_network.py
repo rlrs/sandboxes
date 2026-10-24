@@ -47,14 +47,10 @@ MAX_NETWORK_SLOTS = (NETWORK_CIDR.num_addresses // 2) - 1
 # veth default at 1500 allows small requests through but black-holes larger TLS
 # records when upstream ICMP fragmentation feedback is filtered.
 NETWORK_MTU = 1420
-# Pre-created netns+veth pairs a node keeps for new leases: one burst of the
-# 32 concurrent creates the create gate measures.
+# Pre-created netns+veth pairs runtime/noded keeps for new leases: one burst
+# of the 32 concurrent creates the create gate measures.
 NETWORK_POOL_SIZE = 32
-# The refill defers to in-flight ensures for at most this long per pair, so a
-# sustained create stream still refills slowly instead of never.
-_POOL_YIELD_SECONDS = 1.0
 _ONE_QUEUE = ("numtxqueues", "1", "numrxqueues", "1")
-_POOL_RETRY_SECONDS = 5.0
 DEFAULT_EGRESS_RESOLVE_INTERVAL_SECONDS = 2.0
 DENIED_DESTINATIONS = (
     "10.0.0.0/8",
@@ -158,11 +154,12 @@ class DirectNetworkTcpEgress:
 class DirectNetworkManager:
     """Crash-durable owner of direct-runtime netns/veth/NAT slots.
 
-    A background thread keeps ``pool_size`` slots in the durable ``pool``,
-    each with a configured pair in namespace ``ucloud-pool-<slot>``. A slot is
-    in ``leases`` or ``pool``, never both, and moves in the write that records
-    its lease, so a pair has one owner. A pooled name a crash leaves behind
-    belongs to the slot's lease: its next ensure attaches it, or release drops it.
+    runtime/noded keeps NETWORK_POOL_SIZE slots in the durable ``pool``, each
+    with a configured pair in namespace ``ucloud-pool-<slot>``; this process
+    never touches ``pool`` and leases other slots. A slot is in ``leases`` or
+    ``pool``, never both, and moves in the write that records its lease, so a
+    pair has one owner. A pooled name a crash leaves behind belongs to the
+    slot's lease: its next ensure attaches it, or release drops it.
     """
 
     def __init__(
@@ -177,28 +174,13 @@ class DirectNetworkManager:
         resolver: Callable[[str], Sequence[str]] | None = None,
         ip_batch_runner: Callable[[Sequence[str], str], None] | None = None,
         resolve_interval_seconds: float = DEFAULT_EGRESS_RESOLVE_INTERVAL_SECONDS,
-        pool_size: int = 0,
-        pool_owner: bool = True,
     ) -> None:
         if not state_path.is_absolute() or not namespace_root.is_absolute():
             raise ValueError("direct network paths must be absolute")
         if resolve_interval_seconds <= 0:
             raise ValueError("direct network resolve interval must be positive")
-        if not 0 <= pool_size <= 1024:
-            raise ValueError("direct network pool size must be in 0..1024")
         self.state_path = state_path
         self.lock_path = state_path.with_suffix(state_path.suffix + ".lock")
-        self.pool_size = pool_size
-        # False while runtime/noded creates (--rust-creates): the daemon owns
-        # state["pool"] and its pairs, and this process never touches either.
-        self.pool_owner = pool_owner
-        # Only slots this process configured while owning the pool are handed
-        # out; other durable pool slots are rechecked first.
-        self._pool_ready: set[int] = set()
-        self._pool_guard = threading.Lock()
-        self._pool_wake, self._pool_stop = threading.Event(), threading.Event()
-        self._pool_thread: threading.Thread | None = None
-        self._foreground = 0
         self.egress_state_path = state_path.with_suffix(
             state_path.suffix + ".egress.json"
         )
@@ -277,17 +259,14 @@ class DirectNetworkManager:
         if any(ipaddress.IPv4Address(item) not in NETWORK_CIDR for item in avoided):
             raise ValueError("avoided guest IP is outside the direct network")
         key = self._key(sandbox_id, sandbox_generation)
-        with self._lease_locked(key), self._foreground_work():
-            pooled = False
+        with self._lease_locked(key):
             with self._locked():
                 state = self._load()
                 slot = state["leases"].get(key)
                 if slot is None:
-                    slot = self._claim_pooled(state, avoided)
-                    pooled = slot is not None
                     used = {int(item) for item in state["leases"].values()}
                     used.update(state["pool"])
-                    slot = slot or next(
+                    slot = next(
                         (candidate for candidate in range(1, MAX_NETWORK_SLOTS + 1)
                          if candidate not in used
                          and self._lease(
@@ -299,7 +278,6 @@ class DirectNetworkManager:
                     )
                     if slot is None:
                         raise DirectNetworkError("direct network slot capacity is exhausted")
-                    # One durable write moves a pooled slot to this lease.
                     state["leases"][key] = slot
                     if network_policy.egress == "relay":
                         state.setdefault("policies", {})[key] = network_policy.to_dict()
@@ -331,125 +309,11 @@ class DirectNetworkManager:
                         raise DirectNetworkError(
                             "relay has no usable IPv4 address; egress is blocked"
                         )
-            # A pair the pool configured needs only its name; any other lease,
-            # and a handoff a crash interrupted, is checked and repaired.
-            adopted = self._adopt_pooled(lease)
-            if not (pooled and adopted and self._interface_present(lease.host_interface)):
-                self._ensure_kernel_lease(lease)
+            # A handoff from noded's pool a crash interrupted is named here;
+            # every lease is checked and repaired.
+            self._adopt_pooled(lease)
+            self._ensure_kernel_lease(lease)
             return lease
-
-    def start_pool(self) -> None:
-        """Start the low-priority refill, or the trim of a disabled pool."""
-        if not self.pool_owner:
-            return
-        if self._pool_thread is not None and self._pool_thread.is_alive():
-            return
-        if self.pool_size == 0:
-            with self._locked():
-                if not self._load()["pool"]:
-                    return
-        self._pool_stop.clear()
-        self._pool_thread = threading.Thread(
-            target=self._pool_loop, name="ucloud-direct-network-pool", daemon=True
-        )
-        self._pool_thread.start()
-
-    def stop_pool(self) -> None:
-        """Stop refilling. Pooled slots stay durable and are rechecked on start."""
-        self._pool_stop.set()
-        self._pool_wake.set()
-        if self._pool_thread is not None:
-            self._pool_thread.join(timeout=10)
-        self._pool_thread = None
-
-    @contextmanager
-    def _foreground_work(self):
-        with self._pool_guard:
-            self._foreground += 1
-        try:
-            yield
-        finally:
-            with self._pool_guard:
-                self._foreground -= 1
-
-    def _claim_pooled(self, state: dict, avoided: set[str]) -> int | None:
-        """Move one configured slot out of ``state["pool"]``."""
-        with self._pool_guard:
-            # A ready slot no longer pooled was leased by an older release.
-            self._pool_ready.intersection_update(state["pool"])
-            slot = min((item for item in self._pool_ready
-                        if self._pool_lease(item).guest_ip not in avoided), default=None)
-            if slot is not None:
-                self._pool_ready.discard(slot)
-                state["pool"].remove(slot)
-                self._pool_wake.set()
-        return slot
-
-    def _pool_loop(self) -> None:
-        # Low priority by deferral, not SCHED_IDLE: this thread shares the GIL
-        # and the state lock with creates, and starving a holder stalls them.
-        owner = self.lock_path.with_name(self.lock_path.name + ".pool")
-        owner.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with owner.open("a+b") as handle:
-            try:
-                # One process owns the pool; others treat pooled slots as used.
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                _LOG.warning("another process owns the direct network pool")
-                return
-            try:
-                while not self._pool_stop.is_set():
-                    try:
-                        progressed = self._refill_one()
-                    except Exception:
-                        _LOG.exception("direct network pool refill failed; retrying")
-                        self._pool_stop.wait(_POOL_RETRY_SECONDS)
-                        continue
-                    if not progressed and self.pool_size == 0:
-                        return
-                    if not progressed:
-                        self._pool_wake.wait()
-                        self._pool_wake.clear()
-            finally:
-                with self._pool_guard:  # Hand-outs end before another owner starts.
-                    self._pool_ready.clear()
-
-    def _refill_one(self) -> bool:
-        """Fill, recheck or trim one pooled slot; False once the pool is settled."""
-        deadline = time.monotonic() + _POOL_YIELD_SECONDS
-        while self._foreground and time.monotonic() < deadline:
-            if self._pool_stop.wait(0.01):
-                return False
-        with self._locked():
-            state = self._load()
-            pool = state["pool"]
-            with self._pool_guard:
-                pending = [slot for slot in pool if slot not in self._pool_ready]
-                trim = len(pool) > self.pool_size
-                if trim:  # Under the state lock, so no hand-out holds it.
-                    slot = (pending or pool)[-1]
-                    self._pool_ready.discard(slot)
-            if not trim and pending:
-                slot = pending[0]
-            elif not trim:
-                used = set(pool).union(state["leases"].values())
-                free = (item for item in range(1, MAX_NETWORK_SLOTS + 1) if item not in used)
-                if len(pool) == self.pool_size or (slot := next(free, None)) is None:
-                    return False
-                # Written before any kernel object exists, so none is orphaned.
-                state["pool"] = sorted((*pool, slot))
-                self._store(state, pool_only=True)
-        if not trim:  # Recreated unless complete; configuration is idempotent.
-            self._ensure_kernel_lease(self._pool_lease(slot))
-            with self._pool_guard:
-                self._pool_ready.add(slot)
-            return True
-        self._cleanup_kernel_lease(self._pool_lease(slot))
-        with self._locked():
-            state = self._load()
-            state["pool"] = [item for item in state["pool"] if item != slot]
-            self._store(state, pool_only=True)
-        return True
 
     def release(self, sandbox_id: str, sandbox_generation: int) -> None:
         key = self._key(sandbox_id, sandbox_generation)
@@ -1154,11 +1018,11 @@ class DirectNetworkManager:
         raw["pool"] = sorted(set(pool).difference(raw["leases"].values()))
         return raw
 
-    def _store(self, state: dict, *, pool_only: bool = False) -> None:
+    def _store(self, state: dict) -> None:
         # Pool-only writes skip the directory fsync: after an OS crash the name
         # holds a complete later write or the last synced one, with the same
         # leases and policies. Pooled pairs die with the kernel; start rechecks.
-        _write_durably(self.state_path, state, sync_directory=not pool_only)
+        _write_durably(self.state_path, state)
 
     def _lease_locked(self, key: str):
         digest = hashlib.sha256(key.encode("utf-8")).hexdigest()

@@ -1,5 +1,4 @@
 """Admission consumes each memory forecast once and never fences out cancellation."""
-from sandboxes.transition_admission import MemoryDemand
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
@@ -16,7 +15,6 @@ from tests import test_direct_provisioner as fixtures
 from tests.admission_backends import AdmissionBackendCase
 from tests.test_startup_admission import wait_queued
 from sandboxes.admission import CREATE_ADMISSION_WAIT, FairCapacity
-from sandboxes.background_io import Pressure
 from sandboxes.checkpoint_components import MemoryBackingRef, WorkspaceCaptureRef
 from sandboxes.direct_service import (
     DirectSandboxService,
@@ -30,7 +28,6 @@ from sandboxes.hibernation import (
 )
 from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
 from sandboxes.resource_evidence import MemoryBackingCapacity
-from sandboxes.warm_park import WarmParkPolicy, decide_resident_wait
 from sandboxes.transition_admission import (
     TransitionCost,
     TransitionKind,
@@ -51,10 +48,6 @@ class TransitionLedgerTests(unittest.TestCase):
                 ledger.wait((kind.value, index), TransitionCost(kind, 2 * gib))
         # Sixteen pending 2 GiB guarantees do not justify 32 GiB of evictions.
         self.assertEqual(ledger.next_memory_demands(limits), 2 * gib)
-        pressure = Pressure(16 / 90, 0, 30, 16 * gib)
-        self.assertFalse(decide_resident_wait(
-            pressure, MemoryDemand(ledger.next_memory_demands(limits), ledger.next_memory_demands(limits))
-        ).reclaim)
         active = ledger.claim(("restore", 0), TransitionCost(TransitionKind.RESTORE, 2 * gib))
         self.assertEqual(ledger.next_memory_demands(limits), 4 * gib)
         snapshot = ledger.demand_snapshot(limits)
@@ -253,7 +246,7 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
                 self.wait_queued(self.service, "restore", 1)
                 future = pool.submit(start)
                 self.assertFalse(entered.wait(.3))
-                self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+                self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
             # Restore itself can spend its protected headroom immediately.
             self.assertTrue(restored.wait(2))
             self.assertFalse(entered.is_set())
@@ -304,7 +297,7 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
             cost = self.service._transition_memory_cost(TransitionKind.RESTORE, owner, 4 << 30)
             self.assertEqual(cost.ram_backing_bytes, 0)
             with self.restore(owner, ResourceQuantity(memory_mb=4096), cost):
-                demand = self.service.warm_park_demand()
+                demand = self.service.reclaim_demand()[1]
                 self.assertEqual(demand.physical_bytes, 4 << 30)
                 self.assertEqual(demand.ram_backing_bytes, 0)
         self.assert_clean()
@@ -321,10 +314,6 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
         self.service.configure_active_capacity(
             ResourceQuantity(vcpu=4, memory_mb=8192), runtime_metrics_provider=metrics,
         )
-        pressure = SimpleNamespace(memory_available_bytes=3072 * 1024**2,
-                                   memory_fraction=3072 / 8192,
-                                   io_stall=0, memory_stall=0)
-        self.assertFalse(decide_resident_wait(pressure, MemoryDemand(0, 0)).reclaim)
         with ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(self.fixture.create, self.service,
                                  replace(self.fixture.spec(), memory_mb=4096))
@@ -333,11 +322,8 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
             # survive that interval rather than disappearing with an HTTP 503.
             self.assertFalse(Event().wait(0.3))
             self.assertFalse(future.done())
-            incoming = self.service.warm_park_demand().physical_bytes
+            incoming = self.service.reclaim_demand()[1].physical_bytes
             self.assertEqual(incoming, 4096 * 1024**2)
-            decision = decide_resident_wait(pressure, MemoryDemand(incoming, incoming))
-            self.assertTrue(decision.reclaim)
-            self.assertEqual(decision.reason, "queued_demand")
             available[0] = 6144  # physical sample after resident capture/reap
             self.assertEqual(future.result(2).state, "running")
         self.assert_clean()
@@ -376,7 +362,7 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
             self.assertFalse(Event().wait(0.3))
             self.assertFalse(future.done())
             self.assertEqual(self.known_memory_bytes(self.service), 0)
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 4096 * 1024**2)
+            self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4096 * 1024**2)
             available[0] = 6144
             self.assertEqual(future.result(2).state, "running")
         self.assert_clean()
@@ -407,7 +393,7 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
                     future = pool.submit(start)
                     self.assertTrue(sampled.wait(1))
                     self.assertFalse(entered.wait(0.3))
-                    self.assertEqual(self.service.warm_park_demand().physical_bytes, 2 << 30)
+                    self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 2 << 30)
                     evidence[0] = MemoryBackingCapacity(8 << 30, 2 << 30, "mount")
                     future.result(2)
                 self.assertTrue(entered.is_set())
@@ -692,14 +678,8 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
                     self.assertFalse(Event().wait(0.3))
                     self.assertFalse(future.done())
                     resumed.assert_not_called()
-                    self.assertEqual(self.service.warm_park_demand().physical_bytes, expected)
+                    self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, expected)
                     if reclaim_capture:
-                        policy = WarmParkPolicy(
-                            lambda: Pressure(
-                                memory_fraction=available[0] / 8192,
-                                memory_available_bytes=available[0] * 1024**2,
-                            ), demand=self.service.warm_park_demand,
-                        )
                         original_park = self.service.warden.park
 
                         def release_resident(*args, **kwargs):
@@ -713,14 +693,10 @@ class TransitionServiceTests(AdmissionBackendCase, unittest.TestCase):
                             available[0] = 4096
                             return record
 
-                        key = ("resident", 7, "relay-wait")
-                        with policy.defer(key, memory_bytes=1536 * 1024**2, blocking=False):
-                            with patch.object(self.service.warden, "park", side_effect=release_resident):
-                                self.assertEqual(self.service.park(
-                                    "resident", operation_id="park:pressure-reclaim",
-                                ).state, "parked")
-                            policy.parked(key)
-                        self.assertEqual(policy.snapshot()["checkpoints_completed"], 1)
+                        with patch.object(self.service.warden, "park", side_effect=release_resident):
+                            self.assertEqual(self.service.park(
+                                "resident", operation_id="park:pressure-reclaim",
+                            ).state, "parked")
                     else:
                         available[0] = 8192
                     self.assertEqual(future.result(2).state, "running")

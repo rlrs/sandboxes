@@ -190,7 +190,7 @@ class PublishedGrowthTests(unittest.TestCase):
         self.service.start_managed_process("one", ManagedProcessStart("primary", ("/bin/agent",), cwd="/workspace"))
 
     def demand(self) -> int:
-        return self.service.warm_park_demand().physical_bytes
+        return self.service.reclaim_demand()[1].physical_bytes
 
     def test_without_the_flag_the_agent_samples_and_ignores_the_file(self) -> None:
         publish(self.path, 1, {self.key: sample()})
@@ -258,38 +258,35 @@ class RustAdmissionRuntimeTests(unittest.TestCase):
         warden.config.runtime_root = root / "runsc"
         (root / "runsc" / "warden-locks").mkdir(parents=True)
         service = DirectSandboxService(provisioner, process_runner=fixtures.FakeProcessRunner())
-        runtime = DirectNodeRuntime(service, rust_execs=True, **flags)
+        runtime = DirectNodeRuntime(service, **flags)
         self.addCleanup(runtime.stop)
         return root, service, runtime
 
-    def test_the_flag_installs_noded_observations_and_needs_the_rust_pause_tier(self) -> None:
-        root, service, runtime = self.runtime(rust_pause_tier=True, rust_admission=True)
+    def test_the_flag_installs_noded_observations(self) -> None:
+        root, service, runtime = self.runtime(rust_admission=True)
         self.assertTrue(runtime.rust_admission and service.rust_admission)
         self.assertIsInstance(service._resident_memory, PublishedResidentMemory)
         self.assertEqual(service._resident_memory.path, root / "noded" / "resident.json")
-        _, service, runtime = self.runtime(rust_pause_tier=True)
+        _, service, runtime = self.runtime()
         self.assertFalse(runtime.rust_admission or service.rust_admission)
         self.assertIsInstance(service._resident_memory, ResidentMemorySampler)
-        with self.assertRaisesRegex(ValueError, "Rust admission needs the Rust pause tier"):
-            self.runtime(rust_admission=True)
 
-    def test_the_parking_loop_looks_for_a_pass_every_tick_only_with_the_flag(self) -> None:
+    def test_the_sampling_loop_looks_for_a_pass_every_tick_only_with_the_flag(self) -> None:
         for flag, calls in ((True, 4), (False, 1)):
             with self.subTest(rust_admission=flag):
-                _, service, runtime = self.runtime(rust_pause_tier=True, rust_admission=flag)
+                _, service, runtime = self.runtime(rust_admission=flag)
                 refresh = Mock()
                 with patch.object(service, "refresh_resident_memory", refresh), \
-                        patch.object(runtime, "_recheck_relay_parks"), \
                         patch.object(runtime._background_stop, "wait", side_effect=[False] * 4 + [True]):
-                    runtime._relay_parking_loop()
+                    runtime._sampling_loop()
                 self.assertEqual(refresh.call_count, calls)
 
     def test_the_pause_block_tells_noded_where_to_publish(self) -> None:
         # Whether noded samples is the admission block's rust_admission_enabled
         # (tests/test_noded_client.py); the pause block names the file.
-        root, service, runtime = self.runtime(rust_pause_tier=True, rust_admission=True)
+        root, service, runtime = self.runtime(rust_admission=True)
         service.warden.config.runsc = root / "runsc-binary"
-        pause = pause_handoff.pause_config(service, rust_pause_enabled=True)
+        pause = pause_handoff.pause_config(service)
         self.assertEqual(pause["resident_path"], str(root / "noded" / "resident.json"))
         self.assertNotIn("rust_admission_enabled", pause)
 

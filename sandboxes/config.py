@@ -258,6 +258,17 @@ def normalize_s3_endpoint(
     return urlunsplit((parsed.scheme, netloc, "", "", ""))
 
 
+# Always on after 0.10.0: noded's front door, creates, execs and pause tier,
+# the pause tier itself, node-local model waits and split memory backing
+# (docs/architecture.md). Deployment files may name them, true only, and
+# to_dict writes them true, so 0.10.0 still loads the same file on a rollback.
+RETIRED_NODED_FLAGS = (
+    "direct_node_front_door", "direct_node_rust_create", "direct_node_rust_exec",
+    "direct_node_rust_pause", "direct_pause_tier", "direct_local_model_waits",
+    "direct_split_memory_backing",
+)
+
+
 @dataclass(frozen=True)
 class SandboxPoolConfig:
     product_id: str = "cpu-amd-zen5-32-vcpu"
@@ -289,36 +300,13 @@ class SandboxPoolConfig:
     direct_disk_headroom_mb: int = 16 * 1024
     direct_max_concurrent_restores: int = 8
     direct_idle_park_seconds: float = 0.0
-    direct_split_memory_backing: bool = False
     direct_ram_memory_backing: bool = False
     direct_reflink_memory_restore: bool = False
-    # C1.1: idle and model-wait parks pause in place; needs swap_gb > 0.
-    direct_pause_tier: bool = False
     # zswap ahead of the pause tier's swap: only for measured compressible heaps.
     direct_pause_tier_zswap: bool = False
-    # Node-local model waits (docs/architecture.md): nodes pause on a
-    # sandbox's outstanding plaintext call to a private relay endpoint and thaw
-    # on its answer; the relay sends no park and wakes only an unacknowledged
-    # answer. Needs the pause tier.
-    direct_local_model_waits: bool = False
-    # runtime/noded (Rust) owns the node's port and forwards to the Python agent
-    # on a Unix socket (docs/architecture.md).
-    direct_node_front_door: bool = False
-    # noded owns the node registry and runs creates; the agent keeps admission
-    # (docs/architecture.md). Requires the front door.
-    direct_node_rust_create: bool = False
-    # noded runs execs on running, unpaused sandboxes; the agent fences them
-    # through flock files (docs/architecture.md).
-    # Requires the front door.
-    direct_node_rust_exec: bool = False
-    # noded owns the pause tier: pause and thaw, idle pauses, local waits,
-    # paused reclaim and escalation decisions (docs/architecture.md,
-    # phase 3a). Requires the pause tier and Rust execs.
-    direct_node_rust_pause: bool = False
     # Node admission moves to noded (docs/architecture.md); step 3c.0
     # adds noded's internal socket and the agent's hello on it, and noded's
-    # resident sampling of managed sandboxes for the agent (3b). Requires
-    # the front door, Rust creates, Rust execs and the Rust pause tier.
+    # resident sampling of managed sandboxes for the agent (3b).
     direct_node_rust_admission: bool = False
     # Split workspaces start with an XFS filesystem this large and grow online
     # toward disk_mb (docs/architecture.md). 0 formats full-size workspaces.
@@ -343,16 +331,16 @@ class SandboxPoolConfig:
     def from_dict(cls, raw: object) -> "SandboxPoolConfig":
         # Optional extension of schema 5; existing deployment files remain valid.
         if isinstance(raw, dict):
-            raw = {"network_relays": {}, "direct_split_memory_backing": False,
-                   "direct_ram_memory_backing": False,
-                   "direct_reflink_memory_restore": False,
-                   "direct_pause_tier": False, "direct_pause_tier_zswap": False,
-                   "direct_local_model_waits": False, "direct_node_front_door": False,
-                   "direct_node_rust_create": False, "direct_node_rust_exec": False,
-                   "direct_node_rust_pause": False, "direct_node_rust_admission": False,
+            raw = {"network_relays": {}, "direct_ram_memory_backing": False,
+                   "direct_reflink_memory_restore": False, "direct_pause_tier_zswap": False,
+                   "direct_node_rust_admission": False,
                    "direct_workspace_initial_grant_mb": cls.direct_workspace_initial_grant_mb,
                    "storage_native_max_concurrent_prepares": 0,
                    **raw}
+            for name in RETIRED_NODED_FLAGS:
+                if raw.pop(name, True) is not True:
+                    raise ValueError(f"sandbox.{name} is retired and must be true or absent: "
+                                     "the agent and noded always run it")
         values = _exact_dataclass_values("sandbox", raw, cls())
         values["direct_network_allow_tcp"] = _string_tuple(
             "sandbox.direct_network_allow_tcp",
@@ -407,53 +395,12 @@ class SandboxPoolConfig:
                 "sandbox.storage_native_pool_high_watermark cannot exceed "
                 "sandbox.storage_native_max_ublk_devices"
             )
-        if not isinstance(result.direct_split_memory_backing, bool):
-            raise ValueError("sandbox.direct_split_memory_backing must be a boolean")
-        if not isinstance(result.direct_ram_memory_backing, bool):
-            raise ValueError("sandbox.direct_ram_memory_backing must be a boolean")
-        if result.direct_ram_memory_backing and not result.direct_split_memory_backing:
-            raise ValueError("RAM memory backing requires split memory backing")
-        if not isinstance(result.direct_reflink_memory_restore, bool):
-            raise ValueError("sandbox.direct_reflink_memory_restore must be a boolean")
-        if result.direct_reflink_memory_restore and not result.direct_split_memory_backing:
-            raise ValueError("reflink memory restore requires split memory backing")
-        if not isinstance(result.direct_pause_tier, bool):
-            raise ValueError("sandbox.direct_pause_tier must be a boolean")
-        if result.direct_pause_tier and result.swap_gb < 1:
+        if result.swap_gb < 1:
             raise ValueError("the pause tier requires sandbox.swap_gb")
-        if not isinstance(result.direct_pause_tier_zswap, bool):
-            raise ValueError("sandbox.direct_pause_tier_zswap must be a boolean")
-        if result.direct_pause_tier_zswap and not result.direct_pause_tier:
-            raise ValueError("sandbox.direct_pause_tier_zswap requires the pause tier")
-        if not isinstance(result.direct_local_model_waits, bool):
-            raise ValueError("sandbox.direct_local_model_waits must be a boolean")
-        if result.direct_local_model_waits and not result.direct_pause_tier:
-            raise ValueError("sandbox.direct_local_model_waits requires the pause tier")
-        if not isinstance(result.direct_node_front_door, bool):
-            raise ValueError("sandbox.direct_node_front_door must be a boolean")
-        if not isinstance(result.direct_node_rust_create, bool):
-            raise ValueError("sandbox.direct_node_rust_create must be a boolean")
-        if result.direct_node_rust_create and not result.direct_node_front_door:
-            raise ValueError("sandbox.direct_node_rust_create requires sandbox.direct_node_front_door")
-        if not isinstance(result.direct_node_rust_exec, bool):
-            raise ValueError("sandbox.direct_node_rust_exec must be a boolean")
-        if result.direct_node_rust_exec and not (result.direct_node_front_door and result.direct_node_rust_create):
-            # noded serves execs from the node state its create pipeline owns.
-            raise ValueError("sandbox.direct_node_rust_exec requires sandbox.direct_node_front_door "
-                             "and sandbox.direct_node_rust_create")
-        if not isinstance(result.direct_node_rust_pause, bool):
-            raise ValueError("sandbox.direct_node_rust_pause must be a boolean")
-        if result.direct_node_rust_pause and not (result.direct_pause_tier and result.direct_node_rust_exec):
-            raise ValueError("sandbox.direct_node_rust_pause requires sandbox.direct_pause_tier "
-                             "and sandbox.direct_node_rust_exec")
-        if not isinstance(result.direct_node_rust_admission, bool):
-            raise ValueError("sandbox.direct_node_rust_admission must be a boolean")
-        if result.direct_node_rust_admission and not (
-                result.direct_node_front_door and result.direct_node_rust_create
-                and result.direct_node_rust_exec and result.direct_node_rust_pause):
-            raise ValueError("sandbox.direct_node_rust_admission requires sandbox.direct_node_front_door, "
-                             "sandbox.direct_node_rust_create, sandbox.direct_node_rust_exec "
-                             "and sandbox.direct_node_rust_pause")
+        for name in ("direct_ram_memory_backing", "direct_reflink_memory_restore",
+                     "direct_pause_tier_zswap", "direct_node_rust_admission"):
+            if not isinstance(getattr(result, name), bool):
+                raise ValueError(f"sandbox.{name} must be a boolean")
         grant = result.direct_workspace_initial_grant_mb
         if isinstance(grant, bool) or not isinstance(grant, int) or (grant and grant < 512):
             raise ValueError("sandbox.direct_workspace_initial_grant_mb must be 0 or at least 512")
@@ -914,7 +861,7 @@ class DeploymentConfig:
             raise ValueError(
                 "registry disk thresholds must satisfy target <= cleanup <= refuse"
             )
-        if result.sandbox.direct_split_memory_backing and result.snapshot_store.kind != "registry":
+        if result.snapshot_store.kind != "registry":
             raise ValueError("split memory backing requires registry checkpoint publication; S3 split checkpoints are unsupported")
         if result.gateway_port in {result.relay_port, result.registry_port} or (
             result.relay_port == result.registry_port
@@ -1059,7 +1006,8 @@ class DeploymentConfig:
         provider = self.provider.to_dict()
         if self.provider.kind == "ucloud":
             provider.pop("session_file", None)
-        sandbox = asdict(self.sandbox)
+        # A rollback to 0.10.0 reads a missing flag as false.
+        sandbox = {**asdict(self.sandbox), **dict.fromkeys(RETIRED_NODED_FLAGS, True)}
         sandbox["direct_network_allow_tcp"] = list(
             self.sandbox.direct_network_allow_tcp
         )

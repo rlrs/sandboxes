@@ -320,10 +320,6 @@ class DirectRunscWardenConfig:
     runtime_fingerprint: HibernationRuntimeFingerprint
     application_memory_root: Path | None = None
     reflink_memory_restore: bool = False
-    # C1.1: idle and model-wait parks may `runsc pause` in place.
-    pause_tier: bool = False
-    # Node-local model waits (local_wait.py); needs the pause tier.
-    local_model_waits: bool = False
     proc_root: Path = Path("/proc")
     network: str = "none"
     command_timeout_seconds: float = 60.0
@@ -601,7 +597,7 @@ class DirectRunscWarden:
                 command.append(f"--env={key}={value}")
             command.extend((sandbox.container_id, *argv))
             yield tuple(command)
-            if keep_paused and thawed is not None and self.config.pause_tier:
+            if keep_paused and thawed is not None:
                 try:  # Best effort: the answered read must not fail late.
                     self._pause_locked(sandbox, record)
                 except DirectWardenError:
@@ -942,53 +938,6 @@ class DirectRunscWarden:
             sandbox.memory, sandbox_id=sandbox.sandbox_id,
             sandbox_generation=sandbox.sandbox_generation,
         )
-
-    def flush_reclaimable_memory(self, sandbox: DirectSandbox) -> bool:
-        """Write dirty application pages without checkpointing the runtime.
-
-        The owned descriptor remains valid through concurrent lifecycle work;
-        never hold the lifecycle lock over storage I/O. The caller must recheck
-        its wait/cancellation and measured pressure before reclaiming pages.
-        """
-        if not self.config.reflink_memory_restore or sandbox.memory is None:
-            return False
-        if self.memory_backing is None:
-            raise DirectWardenError("split memory allocator is unavailable")
-        with self.memory_backing.read_lease(
-            sandbox.memory, sandbox_id=sandbox.sandbox_id,
-            sandbox_generation=sandbox.sandbox_generation,
-        ):
-            return self._flush_reclaimable_memory(sandbox)
-
-    def _flush_reclaimable_memory(self, sandbox: DirectSandbox) -> bool:
-        with self._locked(sandbox):
-            before = self._journal(sandbox).load()
-            if before is None or before.state != HibernationState.RUNNING:
-                return False
-            self._require_memory_allocation(sandbox)
-            if self.application_memory_mode(sandbox.sandbox_id, sandbox.sandbox_generation) != "file":
-                return False
-            path = self._active_memory_root(sandbox) / _ACTIVE_APPLICATION_MEMORY
-            fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
-            info = os.fstat(fd)
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
-                    or info.st_mode & 0o077):
-                os.close(fd)
-                raise DirectWardenError("application memory file is not privately owned")
-        try:
-            with self.telemetry.span("sandbox.memory.flush_for_reclaim"):
-                os.fdatasync(fd)
-            with self._locked(sandbox):
-                after = self._journal(sandbox).load()
-                if after != before:
-                    return False
-                try:
-                    current = path.lstat()
-                except FileNotFoundError:
-                    return False
-                return (current.st_dev, current.st_ino) == (info.st_dev, info.st_ino)
-        finally:
-            os.close(fd)
 
     def resume(
         self,
@@ -3110,8 +3059,6 @@ class DirectRunscWarden:
 
     def pause(self, sandbox: DirectSandbox) -> bool:
         """Pause a LIVE runtime in place; False when it is not RUNNING."""
-        if not self.config.pause_tier:
-            raise DirectWardenError("the pause tier is disabled on this node")
         with self._locked(sandbox):
             record = self._journal(sandbox).load()
             if record is None or record.state != HibernationState.RUNNING:

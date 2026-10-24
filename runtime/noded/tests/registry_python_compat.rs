@@ -73,13 +73,6 @@ def state(registry):
         "growth": [list(vars(i).values()) for i in registry.growth_intents()],
         "overlaps": [list(vars(o).values()) for o in registry.list_reflink_overlaps()],
     }
-
-def try_owner(path):
-    try:
-        DirectSandboxRegistry(path, owner=True).close()
-        return "acquired"
-    except DirectRegistryError as exc:
-        return str(exc)
 "#;
 
 /// Everything both implementations must agree on, in the Python script's shape.
@@ -319,28 +312,27 @@ fn rust_writes_and_python_reads_owns_and_continues() {
         .unwrap();
     let written = rust_state(&owner);
 
-    // Python reads the live owner's file, and its owner lock excludes Python's.
+    // Python reads the live owner's file, as the agent does.
     let read = run_python(
         &interpreter,
         r#"
 path = Path(args["path"])
 registry = DirectSandboxRegistry(path)
 cached = DirectSandboxRegistry(path, cached_reads=True)
-print(json.dumps({"state": state(registry), "cached": state(cached), "owner": try_owner(path)}))
+print(json.dumps({"state": state(registry), "cached": state(cached)}))
 "#,
         json!({"path": path}),
     );
     assert_eq!(read["state"], written);
     assert_eq!(read["cached"], written);
-    assert_eq!(read["owner"], "direct registry has another live owner");
 
-    // Python takes ownership and continues the state machine.
+    // Python continues the state machine.
     owner.close();
     let continued = run_python(
         &interpreter,
         r#"
 path = Path(args["path"])
-registry = DirectSandboxRegistry(path, hard_disk_capacity_mb=100000, owner=True)
+registry = DirectSandboxRegistry(path, hard_disk_capacity_mb=100000)
 before = state(registry)
 c = registry.get("c")
 registry.commit_owned("c", expected_revision=c.revision)
@@ -387,7 +379,7 @@ fn python_writes_and_rust_reads_and_continues() {
         r#"
 path = Path(args["path"])
 root = Path(args["root"])
-registry = DirectSandboxRegistry(path, hard_disk_capacity_mb=100000, owner=True)
+registry = DirectSandboxRegistry(path, hard_disk_capacity_mb=100000)
 registry.bind_runtime_compatibility("b" * 64)
 
 def spec(raw):
@@ -457,7 +449,7 @@ print(json.dumps(out))
         &interpreter,
         r#"
 path = Path(args["path"])
-registry = DirectSandboxRegistry(path, owner=True)
+registry = DirectSandboxRegistry(path)
 out = state(registry)
 try:
     registry.plan(spec=SandboxSpec.from_dict({"id": "p4", "image": "i", "memory_mb": 256, "cpus": 1e16}),
