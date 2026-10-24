@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.1 - 2026-10-24 (gateway; workers; builders)
 
 - **Sandbox workers only run immutable environments; their Docker image path
   is gone.** `immutable_environments.worker_enabled` is retired: a deployment
