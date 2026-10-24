@@ -1,7 +1,7 @@
-//! The pause tier's policy (phase 3a; `node_runtime.py` `_reclaim_paused_tick`,
-//! `_reclaim_paused`, `_escalate_paused`, `_idle_parking_loop`, `_idle_pause`;
-//! `pause_tier.py` `relief_plan`, `ReclaimBudget`; `resident_memory.py`;
-//! `warm_park.decide_resident_wait`). `crate::pause` is the mechanism.
+//! The pause tier's policy (phase 3a; ported from the agent's former Python
+//! `_reclaim_paused_tick`, `_escalate_paused`, `_idle_parking_loop`,
+//! `relief_plan`, `ReclaimBudget` and `warm_park.decide_resident_wait`, which
+//! this replaced). `crate::pause` is the mechanism.
 //!
 //! Two loops:
 //! - **Reclaim** (every 250 ms): re-derive the paused table from the markers
@@ -134,9 +134,6 @@ impl PauseMechanism for PauseTier {
     fn pause_checked(&self, sandbox: Sandbox, check: PauseCheck) -> BoxFuture<Result<bool, String>> {
         let tier = self.clone();
         Box::pin(async move {
-            if !tier.config().enabled {
-                return Err("the pause tier is disabled on this node".into());
-            }
             // A pause holds T exclusively; it never waits for the warden flock
             // behind an operation that runs a guest command under it.
             let Some(lock) = tier.try_lock(&sandbox).await.map_err(|error| error.to_string())? else { return Ok(false) };

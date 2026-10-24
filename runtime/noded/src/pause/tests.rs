@@ -147,7 +147,7 @@ impl Fake {
             command_timeout: Duration::from_secs(10),
             stop_timeout: Duration::from_secs(1),
         };
-        let mut config = PauseConfig::new(warden, true);
+        let mut config = PauseConfig::new(warden);
         config.cgroup_root = root.join("cgroup");
         config.zswap_enabled = root.join("zswap_enabled");
         let fake = Fake { dir, sandbox, config };
@@ -299,11 +299,8 @@ async fn a_keep_paused_read_thaws_and_pauses_again_under_one_warden_hold() {
 }
 
 #[tokio::test]
-async fn pause_requires_the_flag_and_a_running_journal() {
+async fn pause_requires_a_running_journal() {
     let fake = Fake::new(false);
-    let disabled = fake.tier_with(|config| config.enabled = false, Arc::new(prefetch::pread));
-    let error = disabled.pause(&fake.sandbox).await.unwrap_err();
-    assert!(error.to_string().contains("disabled"), "{error}");
     let tier = fake.tier();
     let unjournaled = Sandbox { generation: 2, ..fake.sandbox.clone() };
     assert!(!tier.pause(&unjournaled).await.unwrap()); // No journal.

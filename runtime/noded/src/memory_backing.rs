@@ -555,7 +555,7 @@ pub struct MemoryBackingConfig {
     pub hard_capacity_bytes: u64,
     /// `--application-memory-root` (tmpfs), when RAM backing is configured.
     pub active_root: Option<PathBuf>,
-    /// `--pause-tier`: the RAM root may be swappable.
+    /// The pause tier may swap the RAM root out.
     pub ram_swappable: bool,
 }
 

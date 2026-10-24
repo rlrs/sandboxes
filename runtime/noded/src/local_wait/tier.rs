@@ -1,5 +1,5 @@
 //! Local waits through the node's pause tier and the exec fence
-//! (`node_runtime.py` `pause_model_wait`, `_thaw_model_wait`,
+//! (ported from the agent's former `pause_model_wait`, `_thaw_model_wait` and
 //! `_local_wait_candidates`; phase-3 spec §6.2).
 //!
 //! - A pause takes T then A exclusively, both non-blocking, and skips when
@@ -114,9 +114,6 @@ impl TierActions {
     async fn pause_fenced(&self, wait: WaitCandidate, still_waiting: Recheck) -> Outcome {
         let sandbox = &wait.sandbox;
         let (id, generation) = (sandbox.sandbox_id.as_str(), sandbox.generation);
-        if !self.tier.config().enabled {
-            return Outcome::Failed("the pause tier is disabled on this node".into());
-        }
         let _fence = match self.fence.try_exclusive(id) {
             Ok(Some(held)) => held,
             Ok(None) => return Outcome::Busy,

@@ -901,7 +901,7 @@ async fn cancel_fifo_head_grants_next_without_revoking_active_owner() {
 
 // ---------------------------------------------------------------------------
 // tests/test_managed_growth.py:319-427, at the forecast level: the intent a
-// service call commits, a sampler pass, then what warm_park_demand bills.
+// service call commits, a sampler pass, then what reclaim demand bills.
 
 struct GrowthCase {
     observed: Observed,
