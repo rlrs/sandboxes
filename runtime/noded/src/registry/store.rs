@@ -388,7 +388,7 @@ impl Store {
         // A failing statement means changed DDL: full validation reports it.
         let mut row = query(&entry.connection).ok().flatten();
         if row.as_ref().is_none_or(|(stamp, _, _)| Some(stamp) != entry.stamp.as_ref()) {
-            schema::validate_schema(&entry.connection, None)?;
+            schema::validate_schema(&entry.connection)?;
             let stamp = schema::schema_stamp(&entry.connection)?;
             entry.stamp = Some(stamp.clone());
             *lock(&self.validated_stamp) = Some(stamp);

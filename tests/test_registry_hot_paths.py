@@ -9,7 +9,7 @@ import sqlite3
 import unittest
 import unittest.mock
 
-from sandboxes.direct_registry import DirectRegistryError, DirectSandboxRegistry
+from sandboxes.direct_registry import DirectRegistryError
 from tests import test_published_workspace_capacity as published
 
 TEST_TIER = "contract"
@@ -48,19 +48,6 @@ class RegistryHotPathTests(unittest.TestCase):
         )
         self.registry.reserve_workspace_for_mount("one", 1)
         self.assertEqual(self._ledger_reserved_mb(), self._json_reserved_mb())
-
-    def test_version7_upgrade_backfills_the_ledger(self):
-        expected = self._ledger_reserved_mb()
-        with closing(sqlite3.connect(self.registry.path)) as conn:
-            conn.execute("DROP TABLE registration_disk")
-            conn.execute("PRAGMA user_version=7")
-        reopened = DirectSandboxRegistry(
-            self.registry.path, hard_disk_capacity_mb=self.registry.hard_disk_capacity_mb
-        )
-        with reopened._transaction(write=False) as connection:
-            self.assertEqual(reopened._reserved_disk_bytes(connection) // 1024**2, expected)
-        with closing(sqlite3.connect(self.registry.path)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 9)
 
     def test_changed_schema_or_metadata_falls_back_to_validation(self):
         self.registry.get("one")

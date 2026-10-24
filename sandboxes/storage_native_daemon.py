@@ -748,21 +748,6 @@ class LinuxStorageHostOperations:
 
 
 class StorageNativeJournal:
-    _RETIREMENT_SCHEMA = """
-        CREATE TABLE retired_devices (
-            owner_id TEXT PRIMARY KEY,
-            device_id INTEGER NOT NULL,
-            volume_id TEXT NOT NULL,
-            virtual_size INTEGER NOT NULL CHECK(virtual_size > 0)
-        );
-    """
-    # Version 4 charges each active volume its grant plus local sealed layers
-    # instead of its virtual size. Older rows were formatted at full size and
-    # had no layer measurement, so their charge stays at the virtual size.
-    _CHARGE_MIGRATION = """
-        ALTER TABLE volumes ADD COLUMN charged_bytes INTEGER NOT NULL DEFAULT 0;
-        UPDATE volumes SET charged_bytes = virtual_size;
-    """
     _SCHEMA = f"""
         BEGIN IMMEDIATE;
         CREATE TABLE volumes (
@@ -787,7 +772,12 @@ class StorageNativeJournal:
         );
         INSERT INTO counters (name, next_value)
         VALUES ('accounting_id', 200000);
-        {_RETIREMENT_SCHEMA}
+        CREATE TABLE retired_devices (
+            owner_id TEXT PRIMARY KEY,
+            device_id INTEGER NOT NULL,
+            volume_id TEXT NOT NULL,
+            virtual_size INTEGER NOT NULL CHECK(virtual_size > 0)
+        );
         PRAGMA application_id = {_JOURNAL_APPLICATION_ID};
         PRAGMA user_version = {_JOURNAL_SCHEMA_VERSION};
         COMMIT;
@@ -839,19 +829,13 @@ class StorageNativeJournal:
                         raise StorageNativeNodeError(
                             "storage-native journal initialization failed"
                         ) from exc
-            elif application_id == _JOURNAL_APPLICATION_ID and schema_version in {2, 3}:
-                self._require_schema(connection, legacy=schema_version == 2, charged=False)
-                self._require_data(connection)
-                connection.executescript(
-                    "BEGIN IMMEDIATE;"
-                    + (self._RETIREMENT_SCHEMA if schema_version == 2 else "")
-                    + self._CHARGE_MIGRATION
-                    + f"PRAGMA user_version = {_JOURNAL_SCHEMA_VERSION}; COMMIT;"
+            elif application_id == _JOURNAL_APPLICATION_ID and schema_version != _JOURNAL_SCHEMA_VERSION:
+                # Versions 2 and 3 were migrated in place up to 0.10.0.
+                raise StorageNativeNodeError(
+                    f"storage-native journal schema version {schema_version} is unsupported; "
+                    f"this release reads only version {_JOURNAL_SCHEMA_VERSION}"
                 )
-            elif (
-                application_id != _JOURNAL_APPLICATION_ID
-                or schema_version != _JOURNAL_SCHEMA_VERSION
-            ):
+            elif application_id != _JOURNAL_APPLICATION_ID:
                 raise StorageNativeNodeError(
                     "storage-native journal schema is incompatible"
                 )
@@ -861,7 +845,6 @@ class StorageNativeJournal:
                 "CREATE INDEX IF NOT EXISTS volumes_live_inventory "
                 "ON volumes(volume_id) WHERE state != 'deleted'"
             )
-            connection.execute("DROP INDEX IF EXISTS volumes_live_capacity")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS volumes_live_charges "
                 "ON volumes(state, volume_id, charged_bytes) WHERE state != 'deleted'"
@@ -917,9 +900,7 @@ class StorageNativeJournal:
             connection.close()
 
     @staticmethod
-    def _require_schema(
-        connection: sqlite3.Connection, *, legacy: bool = False, charged: bool = True
-    ) -> None:
+    def _require_schema(connection: sqlite3.Connection) -> None:
         expected = {
             "volumes": (
                 "volume_id",
@@ -927,7 +908,7 @@ class StorageNativeJournal:
                 "virtual_size",
                 "accounting_id",
                 "record_json",
-                *(("charged_bytes",) if charged else ()),
+                "charged_bytes",
             ),
             "operations": (
                 "operation_id",
@@ -938,14 +919,13 @@ class StorageNativeJournal:
                 "error",
             ),
             "counters": ("name", "next_value"),
-        }
-        if not legacy:
-            expected["retired_devices"] = (
+            "retired_devices": (
                 "owner_id",
                 "device_id",
                 "volume_id",
                 "virtual_size",
-            )
+            ),
+        }
         tables = {
             str(row[0])
             for row in connection.execute(

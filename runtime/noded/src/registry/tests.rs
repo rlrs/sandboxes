@@ -827,37 +827,20 @@ fn a_shared_drain_read_never_misses_an_earlier_commit() {
 }
 
 #[test]
-fn version7_upgrade_backfills_the_ledger_and_version8_keeps_claims_fixed() {
-    for version in [7, 8] {
-        let dir = TempDir::new("upgrade");
-        let registry = Registry::new(dir.registry(), 0).unwrap();
-        let split = PlanRequest {
-            split_memory_backing: true,
-            initial_claim: Some(DiskClaim::new(1, 1).unwrap()),
-            ..request(parkable_spec("a"), 1)
-        };
-        registry.plan(split).unwrap();
-        plan(&registry, "b", 1).unwrap();
-        drop(registry);
-        let connection = raw(&dir.registry());
-        if version == 7 {
-            connection.execute_batch("DROP TABLE registration_disk; PRAGMA user_version = 7").unwrap();
-        } else {
-            connection
-                .execute_batch(&format!(
-                    "DROP TABLE registration_disk; {}; INSERT INTO registration_disk VALUES ('a', 1, 5184), ('b', 1, 2048); PRAGMA user_version = 8",
-                    "CREATE TABLE registration_disk (\n            sandbox_id TEXT PRIMARY KEY,\n            sandbox_generation INTEGER NOT NULL CHECK (sandbox_generation > 0),\n            reserved_mb INTEGER NOT NULL CHECK (reserved_mb >= 0)\n        ) STRICT"
-                ))
-                .unwrap();
-        }
-        drop(connection);
-        let upgraded = Registry::owner(dir.registry(), 0).unwrap();
-        let claims = upgraded.disk_claims_mb().unwrap();
-        assert_eq!((claims[&("a".to_string(), 1)], claims[&("b".to_string(), 1)]), (5184, 2048), "v{version}");
-        assert_eq!(upgraded.disk_claim("a", 1).unwrap(), None);
-        let (_, user_version) = schema::versions(&raw(&dir.registry())).unwrap();
-        assert_eq!(user_version, SCHEMA_VERSION);
-    }
+fn an_older_schema_version_is_refused_and_left_unchanged() {
+    let dir = TempDir::new("older");
+    let registry = Registry::new(dir.registry(), 0).unwrap();
+    plan(&registry, "a", 1).unwrap();
+    drop(registry);
+    raw(&dir.registry()).execute_batch("DROP TABLE registration_disk; PRAGMA user_version = 7").unwrap();
+    assert_eq!(
+        message(Registry::owner(dir.registry(), 0).and_then(|registry| registry.disk_claims_mb())),
+        "direct registry schema version 7 is unsupported; this release reads only version 9"
+    );
+    let connection = raw(&dir.registry());
+    assert_eq!(schema::versions(&connection).unwrap(), (schema::APPLICATION_ID, 7));
+    let rows: i64 = connection.query_row("SELECT COUNT(*) FROM registrations", [], |row| row.get(0)).unwrap();
+    assert_eq!(rows, 1);
 }
 
 #[test]

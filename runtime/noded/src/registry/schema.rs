@@ -1,5 +1,5 @@
-//! The SQLite file: DDL, identity, connection pragmas, creation, migration
-//! and validation, exactly as `DirectSandboxRegistry` does them. Python
+//! The SQLite file: DDL, identity, connection pragmas, creation and
+//! validation, exactly as `DirectSandboxRegistry` does them. Python
 //! compares the stored `sqlite_schema.sql` text with its own literal, so the
 //! DDL below is that literal byte for byte and is split the same way.
 
@@ -16,8 +16,6 @@ use super::spec::is_digest;
 
 pub const APPLICATION_ID: i64 = 0x5543_5247;
 pub const SCHEMA_VERSION: i64 = 9;
-/// Legacy `user_version`s an opener migrates in place.
-pub const LEGACY_VERSIONS: [i64; 6] = [3, 4, 5, 6, 7, 8];
 pub const BUSY_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Python's `DirectSandboxRegistry._SCHEMA`, verbatim.
@@ -96,9 +94,6 @@ pub const SCHEMA: &str = r#"
         );
     "#;
 
-/// `registration_disk` as schema version 8 created it.
-const LEGACY_V8_REGISTRATION_DISK: &str = "CREATE TABLE registration_disk (\n            sandbox_id TEXT PRIMARY KEY,\n            sandbox_generation INTEGER NOT NULL CHECK (sandbox_generation > 0),\n            reserved_mb INTEGER NOT NULL CHECK (reserved_mb >= 0)\n        ) STRICT";
-
 /// Schema stamp, metadata row and this connection's data version in one
 /// statement, so one snapshot answers all of them. A connection's data
 /// version moves on every other connection's commit, never its own.
@@ -123,33 +118,11 @@ fn statements() -> impl Iterator<Item = &'static str> {
 }
 
 /// `{name: statement}` for every CREATE, as `sqlite_schema` must hold it.
-fn expected_schema(legacy_version: Option<i64>) -> BTreeMap<String, String> {
-    let mut expected: BTreeMap<String, String> = statements()
+fn expected_schema() -> BTreeMap<String, String> {
+    statements()
         .filter(|statement| statement.starts_with("CREATE "))
         .map(|statement| (statement.split_whitespace().nth(2).unwrap_or_default().to_owned(), statement.to_owned()))
-        .collect();
-    match legacy_version {
-        Some(8) => {
-            expected.insert("registration_disk".into(), LEGACY_V8_REGISTRATION_DISK.into());
-        }
-        Some(_) => {
-            expected.remove("registration_disk");
-        }
-        None => {}
-    }
-    if let Some(version) = legacy_version.filter(|version| *version < 7) {
-        expected.remove("workspace_capacity");
-        if version < 6 {
-            expected.remove("reflink_overlaps");
-        }
-        if version < 5 {
-            expected.remove("managed_growth");
-        }
-        if version == 3 {
-            expected.remove("relay_wake_fences");
-        }
-    }
-    expected
+        .collect()
 }
 
 /// `_connect`'s connection: busy timeout 30 s, autocommit, FULL sync.
@@ -177,17 +150,17 @@ fn journal_mode(connection: &Connection) -> Result<String> {
 }
 
 /// `_validate_schema`: identity, WAL, and exactly the expected objects.
-pub fn validate_schema(connection: &Connection, legacy_version: Option<i64>) -> Result<()> {
+pub fn validate_schema(connection: &Connection) -> Result<()> {
     let mut statement = connection.prepare(
         "SELECT name, sql FROM sqlite_schema WHERE type IN ('table', 'index', 'view', 'trigger') AND name NOT LIKE 'sqlite_%'",
     )?;
     let actual = statement
         .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    let expected = expected_schema(legacy_version);
+    let expected = expected_schema();
     let same_objects = actual.len() == expected.len()
         && actual.iter().all(|(name, sql)| sql.as_ref().is_some_and(|sql| expected.get(name) == Some(sql)));
-    if versions(connection)? != (APPLICATION_ID, legacy_version.unwrap_or(SCHEMA_VERSION))
+    if versions(connection)? != (APPLICATION_ID, SCHEMA_VERSION)
         || journal_mode(connection)? != "wal"
         || !same_objects
     {
@@ -213,10 +186,17 @@ fn enable_wal(connection: &Connection) -> Result<String> {
     }
 }
 
-/// `_ensure_schema`: create an empty file, migrate a legacy one, validate.
+/// `_ensure_schema`: create an empty file, refuse an older one, validate.
 pub fn ensure_schema(connection: &Connection) -> Result<()> {
-    if versions(connection)? == (APPLICATION_ID, SCHEMA_VERSION) {
-        return validate_schema(connection, None);
+    let (application_id, version) = versions(connection)?;
+    if (application_id, version) == (APPLICATION_ID, SCHEMA_VERSION) {
+        return validate_schema(connection);
+    }
+    if application_id == APPLICATION_ID {
+        // Versions before 9 were migrated in place up to 0.10.0.
+        return Err(RegistryError::registry(format!(
+            "direct registry schema version {version} is unsupported; this release reads only version {SCHEMA_VERSION}"
+        )));
     }
     if enable_wal(connection)? != "wal" {
         return Err(RegistryError::registry("direct registry cannot enable durable journaling"));
@@ -226,10 +206,6 @@ pub fn ensure_schema(connection: &Connection) -> Result<()> {
         .query_row("SELECT 1 FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' LIMIT 1", [], |_| Ok(()))
         .optional()?
         .is_some();
-    let (application_id, version) = versions(connection)?;
-    if application_id == APPLICATION_ID && LEGACY_VERSIONS.contains(&version) {
-        migrate(connection, version)?;
-    }
     if versions(connection)? == (0, 0) && !has_schema {
         for statement in statements() {
             connection.execute_batch(statement)?;
@@ -238,51 +214,8 @@ pub fn ensure_schema(connection: &Connection) -> Result<()> {
             "PRAGMA application_id = {APPLICATION_ID}; PRAGMA user_version = {SCHEMA_VERSION}"
         ))?;
     }
-    validate_schema(connection, None)?;
+    validate_schema(connection)?;
     connection.execute_batch("COMMIT")?;
-    Ok(())
-}
-
-/// Versions 3 to 8: create the missing tables and give every registration
-/// a fixed disk claim (version 8's ledger is rebuilt with dynamic columns).
-fn migrate(connection: &Connection, version: i64) -> Result<()> {
-    validate_schema(connection, Some(version))?;
-    if version == 8 {
-        connection.execute_batch("DROP TABLE registration_disk")?;
-    }
-    let mut missing = vec!["registration_disk"];
-    if version < 7 {
-        missing.push("workspace_capacity");
-    }
-    if version < 6 {
-        missing.push("reflink_overlaps");
-    }
-    if version < 5 {
-        missing.push("managed_growth");
-    }
-    if version == 3 {
-        missing.push("relay_wake_fences");
-    }
-    for statement in statements() {
-        if statement.starts_with("CREATE TABLE ")
-            && statement.split_whitespace().nth(2).is_some_and(|name| missing.contains(&name))
-        {
-            connection.execute_batch(statement)?;
-        }
-    }
-    let rows = {
-        let mut statement = connection.prepare("SELECT sandbox_id, image_id, record_json FROM registrations")?;
-        statement
-            .query_map([], |row| {
-                Ok((row.get::<_, SqlValue>(0)?, row.get::<_, SqlValue>(1)?, row.get::<_, SqlValue>(2)?))
-            })?
-            .collect::<rusqlite::Result<Vec<(SqlValue, SqlValue, SqlValue)>>>()?
-    };
-    for (sandbox_id, image_id, encoded) in rows {
-        let record = decode_row(ValueRef::from(&sandbox_id), ValueRef::from(&image_id), ValueRef::from(&encoded))?;
-        write_disk_claim(connection, &record)?;
-    }
-    connection.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION}"))?;
     Ok(())
 }
 
@@ -367,17 +300,11 @@ mod tests {
             ("workspace_capacity", 304, "5e37129acb54c21ca9c0f905cd2ae903d10423f8826af21601035298febea276"),
             ("registration_disk", 432, "209e01cda8912f78fe2795638c0fa42bc100f2a6c10ba23645e46fcde7baf252"),
         ];
-        let expected = expected_schema(None);
+        let expected = expected_schema();
         assert_eq!(expected.len(), golden.len());
         for (name, bytes, digest) in golden {
             assert_eq!((expected[name].len(), sha256(&expected[name]).as_str()), (bytes, digest), "{name}");
         }
-        let legacy = &expected_schema(Some(8))["registration_disk"];
-        assert_eq!(
-            (legacy.len(), sha256(legacy).as_str()),
-            (236, "c32f3fa976b629e60c9fb66606c9416ecf9ded4a7a26e6740417942936c7165c")
-        );
-        assert_eq!(expected_schema(Some(3)).len(), 5);
     }
 
     #[test]
@@ -387,7 +314,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let connection = open(&dir.join("registry.sqlite")).unwrap();
         ensure_schema(&connection).unwrap();
-        validate_schema(&connection, None).unwrap();
+        validate_schema(&connection).unwrap();
         let stamp = schema_stamp(&connection).unwrap();
         assert_eq!((stamp.1, stamp.2, stamp.3.as_str()), (APPLICATION_ID, SCHEMA_VERSION, "wal"));
         let meta = metadata(&connection).unwrap();
@@ -398,7 +325,7 @@ mod tests {
         assert_eq!(connection.query_row("PRAGMA synchronous", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
         assert_eq!(connection.query_row("PRAGMA trusted_schema", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
         connection.execute_batch("CREATE TABLE extra (x)").unwrap();
-        assert_eq!(validate_schema(&connection, None).unwrap_err().message(), "direct registry schema is invalid");
+        assert_eq!(validate_schema(&connection).unwrap_err().message(), "direct registry schema is invalid");
         drop(connection);
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -26,6 +26,8 @@ from opentelemetry.trace import get_current_span
 from .checkpoint_components import MemoryBackingRef
 from .durable_batch import DurableSqliteBatch
 
+_JOURNAL_VERSION = 3
+
 
 @dataclass(frozen=True)
 class MemoryBackingLease:
@@ -290,13 +292,22 @@ class MemoryBackingStore:
         self.quota.validate_root(root)
         with closing(self._connect()) as conn:
             conn.execute("BEGIN IMMEDIATE")
-            if conn.execute("PRAGMA user_version").fetchone()[0] not in {0, 1, 2, 3}:
-                raise MemoryBackingError("unsupported memory backing journal version")
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            fresh = version == 0 and not conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
+            if version != _JOURNAL_VERSION and not fresh:
+                # Versions before 3 were migrated in place up to 0.10.0.
+                raise MemoryBackingError(
+                    f"memory backing journal version {version} is unsupported; "
+                    f"this release reads only version {_JOURNAL_VERSION}"
+                )
+            # quota_bytes is the incarnation's identity-bearing ceiling.
+            # limit_bytes is its current project bhard and ledger charge.
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS allocations ("
                 "allocation_id TEXT PRIMARY KEY, sandbox_id TEXT NOT NULL, "
                 "generation INTEGER NOT NULL, project_id INTEGER UNIQUE NOT NULL, "
-                "quota_bytes INTEGER NOT NULL, state TEXT NOT NULL)"
+                "quota_bytes INTEGER NOT NULL, state TEXT NOT NULL, "
+                "active_mode TEXT NOT NULL DEFAULT 'file', limit_bytes INTEGER NOT NULL DEFAULT -1)"
             )
             conn.execute("CREATE TABLE IF NOT EXISTS counter (value INTEGER NOT NULL)")
             conn.execute("CREATE TABLE IF NOT EXISTS features (name TEXT PRIMARY KEY)")
@@ -308,23 +319,9 @@ class MemoryBackingStore:
                 "project_id INTEGER UNIQUE NOT NULL, state TEXT NOT NULL, "
                 "PRIMARY KEY(allocation_id,hibernation_generation))"
             )
-            columns = {row[1] for row in conn.execute("PRAGMA table_info(allocations)")}
-            if "active_mode" not in columns:
-                # This journal predates owner-local backing placement. Its old
-                # layout was selected once for the entire worker at bootstrap.
-                conn.execute("ALTER TABLE allocations ADD COLUMN active_mode TEXT NOT NULL DEFAULT 'file'")
-                if active_root is not None:
-                    conn.execute("UPDATE allocations SET active_mode='ram'")
-            if "limit_bytes" not in columns:
-                # quota_bytes is the incarnation's identity-bearing ceiling.
-                # limit_bytes is its current project bhard and ledger charge.
-                conn.execute("ALTER TABLE allocations ADD COLUMN limit_bytes INTEGER NOT NULL DEFAULT -1")
-                conn.execute("UPDATE allocations SET limit_bytes=quota_bytes WHERE limit_bytes<0")
             if conn.execute("SELECT COUNT(*) FROM counter").fetchone()[0] == 0:
                 conn.execute("INSERT INTO counter VALUES (600000)")
-            # Old readers cannot interpret per-owner placement or a limit
-            # below the ceiling. Fence them before either can change.
-            conn.execute("PRAGMA user_version=3")
+            conn.execute(f"PRAGMA user_version={_JOURNAL_VERSION}")
             conn.commit()
             for sandbox_id, generation, mode in conn.execute(
                 "SELECT sandbox_id,generation,active_mode FROM allocations WHERE state!='deleted'"

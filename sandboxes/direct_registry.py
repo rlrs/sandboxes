@@ -2028,54 +2028,36 @@ class DirectSandboxRegistry:
 
     @classmethod
     def _ensure_schema(cls, connection: sqlite3.Connection) -> None:
-        if cls._versions(connection) != _DIRECT_REGISTRY_IDENTITY:
-            if cls._enable_wal(connection) != ("wal",):
-                raise DirectRegistryError(
-                    "direct registry cannot enable durable journaling"
-                )
-            connection.execute("BEGIN IMMEDIATE")
-            has_schema = connection.execute(
-                "SELECT 1 FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' LIMIT 1"
-            ).fetchone()
-            version = cls._versions(connection)
-            if version in {(_DIRECT_REGISTRY_APPLICATION_ID, old) for old in (3, 4, 5, 6, 7, 8)}:
-                cls._validate_schema(connection, legacy_version=version[1])
-                if version[1] == 8:
-                    # Rebuilt below with dynamic-claim columns. Existing
-                    # registrations keep their fixed lifetime claim.
-                    connection.execute("DROP TABLE registration_disk")
-                missing = {"registration_disk"}
-                if version[1] < 7:
-                    missing.add("workspace_capacity")
-                if version[1] < 6:
-                    missing.add("reflink_overlaps")
-                if version[1] < 5:
-                    missing.add("managed_growth")
-                if version[1] == 3:
-                    missing.add("relay_wake_fences")
-                for raw in cls._SCHEMA.split(";"):
-                    statement = raw.strip()
-                    if statement.startswith("CREATE TABLE ") and statement.split()[2] in missing:
-                        connection.execute(statement)
-                for row in connection.execute(
-                    "SELECT sandbox_id, image_id, record_json FROM registrations"
-                ).fetchall():
-                    cls._write_disk_claim(connection, cls._decode(row))
-                connection.execute(f"PRAGMA user_version = {_DIRECT_REGISTRY_SCHEMA_VERSION}")
-            if cls._versions(connection) == (0, 0) and not has_schema:
-                for statement in cls._SCHEMA.split(";"):
-                    if statement.strip():
-                        connection.execute(statement)
-                connection.execute(
-                    f"PRAGMA application_id = {_DIRECT_REGISTRY_APPLICATION_ID}"
-                )
-                connection.execute(
-                    f"PRAGMA user_version = {_DIRECT_REGISTRY_SCHEMA_VERSION}"
-                )
+        version = cls._versions(connection)
+        if version == _DIRECT_REGISTRY_IDENTITY:
             cls._validate_schema(connection)
-            connection.commit()
-        else:
-            cls._validate_schema(connection)
+            return
+        if version[0] == _DIRECT_REGISTRY_APPLICATION_ID:
+            # Versions before 9 were migrated in place up to 0.10.0.
+            raise DirectRegistryError(
+                f"direct registry schema version {version[1]} is unsupported; "
+                f"this release reads only version {_DIRECT_REGISTRY_SCHEMA_VERSION}"
+            )
+        if cls._enable_wal(connection) != ("wal",):
+            raise DirectRegistryError(
+                "direct registry cannot enable durable journaling"
+            )
+        connection.execute("BEGIN IMMEDIATE")
+        has_schema = connection.execute(
+            "SELECT 1 FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' LIMIT 1"
+        ).fetchone()
+        if cls._versions(connection) == (0, 0) and not has_schema:
+            for statement in cls._SCHEMA.split(";"):
+                if statement.strip():
+                    connection.execute(statement)
+            connection.execute(
+                f"PRAGMA application_id = {_DIRECT_REGISTRY_APPLICATION_ID}"
+            )
+            connection.execute(
+                f"PRAGMA user_version = {_DIRECT_REGISTRY_SCHEMA_VERSION}"
+            )
+        cls._validate_schema(connection)
+        connection.commit()
 
     @staticmethod
     def _enable_wal(connection: sqlite3.Connection) -> tuple[Any, ...] | None:
@@ -2101,32 +2083,12 @@ class DirectSandboxRegistry:
         )
 
     @classmethod
-    def _validate_schema(
-        cls, connection: sqlite3.Connection, *, legacy_version: int | None = None
-    ) -> None:
+    def _validate_schema(cls, connection: sqlite3.Connection) -> None:
         expected = {
             statement.split()[2]: statement
             for raw in cls._SCHEMA.split(";")
             if (statement := raw.strip()).startswith("CREATE ")
         }
-        if legacy_version == 8:
-            expected["registration_disk"] = (
-                "CREATE TABLE registration_disk (\n"
-                "            sandbox_id TEXT PRIMARY KEY,\n"
-                "            sandbox_generation INTEGER NOT NULL CHECK (sandbox_generation > 0),\n"
-                "            reserved_mb INTEGER NOT NULL CHECK (reserved_mb >= 0)\n"
-                "        ) STRICT"
-            )
-        elif legacy_version is not None:
-            expected.pop("registration_disk")
-        if legacy_version is not None and legacy_version < 7:
-            expected.pop("workspace_capacity")
-            if legacy_version < 6:
-                expected.pop("reflink_overlaps")
-            if legacy_version < 5:
-                expected.pop("managed_growth")
-            if legacy_version == 3:
-                expected.pop("relay_wake_fences")
         actual = dict(
             connection.execute(
                 "SELECT name, sql FROM sqlite_schema "
@@ -2134,12 +2096,7 @@ class DirectSandboxRegistry:
             )
         )
         if (
-            cls._versions(connection)
-            != (
-                (_DIRECT_REGISTRY_APPLICATION_ID, legacy_version)
-                if legacy_version is not None
-                else _DIRECT_REGISTRY_IDENTITY
-            )
+            cls._versions(connection) != _DIRECT_REGISTRY_IDENTITY
             or connection.execute("PRAGMA journal_mode").fetchone() != ("wal",)
             or actual != expected
         ):

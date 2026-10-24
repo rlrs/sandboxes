@@ -13,7 +13,7 @@ from unittest.mock import patch
 from tests import test_direct_provisioner as fixtures
 from tests.admission_backends import AdmissionBackendCase
 from sandboxes import pause_tier
-from sandboxes.direct_registry import DirectSandboxRegistry, DirectRegistryConflictError
+from sandboxes.direct_registry import DirectRegistryConflictError
 from sandboxes.direct_service import DirectSandboxService
 from sandboxes.managed_process import ManagedProcessStart
 from sandboxes.hibernation import HibernationManifest, HibernationFileRole, LocalHibernationArtifactFile
@@ -649,22 +649,6 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.assertEqual(restarted.reclaim_demand()[1].physical_bytes, 0)
         finally:
             restarted.stop()
-
-    def test_previous_registry_v4_migrates_preserving_registration(self):
-        # An exact former schema with no growth rows, not hand-written SQLite.
-        path = Path(self.tmp.name) / 'legacy.sqlite'
-        legacy = DirectSandboxRegistry(path)
-        record = legacy.plan(spec=self.fixture.spec(), sandbox_generation=1,
-                             operation_id='create:legacy', runtime_compatibility_sha256='b'*64)
-        with closing(sqlite3.connect(path)) as conn:
-            conn.execute('DROP TABLE managed_growth')
-            conn.execute('DROP TABLE reflink_overlaps')
-            conn.execute('DROP TABLE workspace_capacity')
-            conn.execute('DROP TABLE registration_disk')
-            conn.execute('PRAGMA user_version=4')
-        reopened = DirectSandboxRegistry(path)
-        self.assertEqual(reopened.get('sandbox'), record)
-        self.assertEqual(reopened.growth_intents(), ())
 
 
 class NodedManagedGrowthTests(ManagedGrowthTests):

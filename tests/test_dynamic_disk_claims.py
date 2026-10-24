@@ -5,10 +5,8 @@ Workspace grants and park-time checkpoint space move a registration's claim;
 fixed (legacy and upgraded) registrations keep their lifetime claim.
 """
 
-from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import sqlite3
 import unittest
 
 from sandboxes.direct_registry import (
@@ -102,29 +100,6 @@ class DynamicDiskClaimTests(unittest.TestCase):
         self.assertIsNone(self.registry.disk_claim("legacy", 1))
         self.assertIsNone(self.registry.update_disk_claim("legacy", 1, workspace_mb=1))
         self.assertEqual(self._reserved_mb(), _spec("legacy").requested_resources().disk_mb)
-
-    def test_version8_upgrade_keeps_each_registration_fixed(self):
-        self.registry.hard_disk_capacity_mb = 10**6
-        self._plan("one")
-        self.registry.plan(spec=_spec("two"), sandbox_generation=1, operation_id="create:two",
-                           runtime_compatibility_sha256="b" * 64, split_memory_backing=True)
-        with closing(sqlite3.connect(self.registry.path)) as conn, conn:
-            conn.execute("DROP TABLE registration_disk")
-            conn.execute(
-                "CREATE TABLE registration_disk (\n"
-                "            sandbox_id TEXT PRIMARY KEY,\n"
-                "            sandbox_generation INTEGER NOT NULL CHECK (sandbox_generation > 0),\n"
-                "            reserved_mb INTEGER NOT NULL CHECK (reserved_mb >= 0)\n"
-                "        ) STRICT"
-            )
-            conn.execute("PRAGMA user_version=8")
-        reopened = DirectSandboxRegistry(self.registry.path, hard_disk_capacity_mb=10**6)
-        # Upgraded registrations were created with full-size backing.
-        full = _spec("one").requested_resources().disk_mb
-        self.assertEqual(reopened.disk_claims_mb(), {("one", 1): full, ("two", 1): full})
-        self.assertIsNone(reopened.disk_claim("one", 1))
-        with closing(sqlite3.connect(self.registry.path)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 9)
 
 
 if __name__ == "__main__":
