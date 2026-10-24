@@ -222,15 +222,9 @@ impl Engine {
         }).collect()
     }
 
-    /// A pause just landed (Python's park path): the wait starts now, with
-    /// the relay's predicted remaining wait when it gave one.
-    pub fn record_pause(&self, key: Key, expected_wait_seconds: Option<f64>, local_request_id: &str) {
-        let now = self.clock.monotonic();
-        let wait = PausedWait {
-            expected_until: expected_wait_seconds.map(|seconds| now + seconds),
-            local_request_id: local_request_id.to_string(),
-            ..PausedWait::new(now)
-        };
+    /// A pause just landed: the wait starts now.
+    pub fn record_pause(&self, key: Key, local_request_id: &str) {
+        let wait = PausedWait { local_request_id: local_request_id.to_string(), ..PausedWait::new(self.clock.monotonic()) };
         lock(&self.table).insert(key, wait);
     }
 

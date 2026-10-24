@@ -225,7 +225,6 @@ class PublishedGrowthTests(unittest.TestCase):
         observed = sample(current=2 << 30)
         publish(self.path, 4, {self.key: observed})
         self.service.refresh_resident_memory()
-        self.assertEqual(self.service.resident_memory_sample(*self.key), observed)
         self.assertEqual(self.service.cached_resident_memory_sample(*self.key), observed)
 
     def test_a_park_forgets_an_observation_a_late_pass_still_carries(self) -> None:

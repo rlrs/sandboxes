@@ -387,9 +387,9 @@ impl PausePolicyHandle {
         self.engine.status()
     }
 
-    /// Local waits: a pause just landed, with the relay's predicted wait.
-    pub fn record_pause(&self, sandbox_id: &str, generation: u64, expected_wait_seconds: Option<f64>, local_request_id: &str) {
-        self.engine.record_pause((sandbox_id.to_string(), generation), expected_wait_seconds, local_request_id);
+    /// Local waits: a pause just landed.
+    pub fn record_pause(&self, sandbox_id: &str, generation: u64, local_request_id: &str) {
+        self.engine.record_pause((sandbox_id.to_string(), generation), local_request_id);
     }
 
     /// Local waits: never escalate a wait whose call was answered.

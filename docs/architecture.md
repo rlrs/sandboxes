@@ -269,11 +269,11 @@ and costs more to come back from.
 | Parked and published | checkpoint also in object storage | parked | restore, possibly on another node |
 
 - **Pause tier** (needs swap, `sandbox.swap_gb`). Idle sandboxes and model
-  waits pause in place with `runsc pause`; a relay wait whose hint predicts a
-  long wait hibernates instead. Under pressure noded reclaims paused memory
-  to swap and escalates a stalled reclaim to a hibernate. Pausing changes no
-  ownership; any exec, file operation or wake thaws. There is no model-wait
-  timeout and no fixed sandbox cap.
+  waits pause in place with `runsc pause`; an explicit park hibernates. Under
+  pressure noded reclaims paused memory to swap and escalates a stalled
+  reclaim to a hibernate. Pausing changes no ownership; any exec, file
+  operation or wake thaws. There is no model-wait timeout and no fixed
+  sandbox cap.
 - **Park** reserves checkpoint disk (or refuses with `park_deferred`),
   captures memory, Sentry state and filesystem writes, seals the workspace
   into an immutable layer, and commits a single COMPLETE pointer. A failure
@@ -342,9 +342,9 @@ accepted answer into an error.
 1. Call accepted: the relay records a park obligation and asks the gateway to
    park, fenced by request and generation. The gateway marks the program state
    `model_wait`.
-2. The node pauses the sandbox in place, or checkpoints it when a hint
-   predicts a long wait. A checkpoint drops the agent's connection; its retry
-   reattaches after restore.
+2. The node pauses the sandbox in place. If memory pressure escalates the
+   pause to a checkpoint, the agent's connection drops; its retry reattaches
+   after restore.
 3. Answer committed: the relay records and dispatches a wake. A resident
    sandbox ignores it; a parked one restores locally or migrates. A durable
    wake fence stops a delayed park acknowledgement from undoing the wake.

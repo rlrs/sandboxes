@@ -319,7 +319,6 @@ def pause_config(service: Any) -> dict[str, Any]:
             "swap_reserve_fraction": pause_tier.SWAP_RESERVE_FRACTION,
             "zswap_share_of_bound": pause_tier.ZSWAP_SHARE_OF_BOUND,
             "escalation_concurrency": pause_tier.ESCALATION_CONCURRENCY,
-            "transfer_break_even_seconds": pause_tier.TRANSFER_BREAK_EVEN_SECONDS,
         },
         "local_waits": {
             "enabled": bool(endpoints),

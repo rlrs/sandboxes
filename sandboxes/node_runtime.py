@@ -15,7 +15,6 @@ from .direct_service import DirectSandboxService
 from .exec_fence import ExecFence
 from .models import ResidentWaitMetrics
 from .pause_handoff import AGENT_DEMAND_FILE, RESIDENT_FILE, STATUS_FILE, DemandPublisher, NodedStatus, noded_directory
-from .pause_tier import advised_wait_seconds, park_tier
 from .managed_process import (
     ManagedProcessLogChunk,
     ManagedProcessRecord,
@@ -550,7 +549,6 @@ class DirectNodeRuntime:
         background: bool = False,
         relay_request_id: str | None = None,
         generation: int | None = None,
-        resource_phase: dict | None = None,
         escalate: bool = False,
     ) -> tuple[SandboxRecord, int]:
         if not isinstance(operation_id, str) or not OPERATION_ID_RE.fullmatch(
@@ -567,17 +565,9 @@ class DirectNodeRuntime:
             observe_wait = getattr(self.service, "observe_managed_wait", None)
             if observe_wait is not None:
                 observe_wait(sandbox_id, generation, relay_request_id)
-        if resource_phase is not None and (relay_request_id is None or generation is None):
-            raise ValueError("resource phase requires a generation-bound relay park")
-        # The pause tier: pause in place, or hibernate now.
-        expected = advised_wait_seconds(resource_phase, time.time())
-        sample = self.service.resident_memory_sample(sandbox_id, generation)
-        resident = sample.current_bytes if sample is not None else 0
-        pause = park_tier(
-            "relay" if relay_request_id is not None else "explicit",
-            expected_wait_seconds=expected, resident_bytes=resident,
-            footprint_bytes=resident + (sample.swap_bytes if sample is not None else 0),
-        ) == "pause"
+        # The pause tier: a model wait pauses in place; an explicit API park
+        # (durable park, drain and offload moves) hibernates now.
+        pause = relay_request_id is not None
         try:
             # Join a concurrent park/wake and then re-evaluate the stable
             # runtime state. This makes exact replays and crossed lifecycle
@@ -592,15 +582,8 @@ class DirectNodeRuntime:
                 if relay_request_id is not None and self.service.provisioner.registry.relay_wake_fence(
                         sandbox_id, generation, relay_request_id):
                     raise SandboxConflictError("relay park was superseded by durable wake")
-                try:
-                    record = self.service.park(sandbox_id, operation_id=operation_id,
-                                               background=background, pause=pause)
-                except WarmParkDeferred:
-                    if pause or relay_request_id is None:
-                        raise
-                    # No capture space for a long predicted wait: pause it.
-                    record = self.service.park(sandbox_id, operation_id=operation_id,
-                                               background=background, pause=True)
+                record = self.service.park(sandbox_id, operation_id=operation_id,
+                                           background=background, pause=pause)
                 activity_revision = self.service.advance_lifecycle_activity_revision()
                 return record, activity_revision
         except WarmParkDeferred as exc:

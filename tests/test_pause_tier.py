@@ -22,16 +22,13 @@ from sandboxes.node_agent import NodeAgentHandler
 from sandboxes.node_runtime import DirectNodeRuntime
 from sandboxes.pause_tier import (
     PREFETCH_MIN_SWAP_BYTES,
-    TRANSFER_BREAK_EVEN_SECONDS,
     PauseStats,
     cgroup_swap_bytes,
     memory_pieces,
-    park_tier,
     prefetch,
     ZSWAP_SHARE_OF_BOUND,
     cap_zswap,
 )
-from sandboxes.sandbox import WarmParkDeferred
 
 GIB = 1024**3
 MIB = 1024**2
@@ -39,14 +36,6 @@ INF = float("inf")
 
 
 class PausePolicyTests(unittest.TestCase):
-    def test_explicit_parks_hibernate_and_idle_or_unhinted_waits_pause(self):
-        self.assertEqual(park_tier("explicit"), "hibernate")
-        self.assertEqual(park_tier("idle", expected_wait_seconds=1e9,
-                                   resident_bytes=GIB, footprint_bytes=GIB), "pause")
-        self.assertEqual(park_tier("relay", resident_bytes=GIB, footprint_bytes=GIB), "pause")
-        with self.assertRaises(ValueError):
-            park_tier("drain")
-
     def test_zswap_holds_at_most_a_fixed_share_of_a_paused_cgroups_bound(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -433,33 +422,19 @@ class PauseNodeRuntimeTests(unittest.TestCase):
         service = SimpleNamespace(
             warden=warden, provisioner=SimpleNamespace(registry=registry),
             open_admission=lambda: None, park=park,
-            resident_memory_sample=lambda *_: SimpleNamespace(current_bytes=GIB, swap_bytes=0),
             advance_lifecycle_activity_revision=lambda: 7,
         )
         return DirectNodeRuntime(service), service, parks
 
-    def test_refused_capture_of_a_long_relay_wait_pauses_instead(self):
+    def test_relay_parks_pause_in_place_and_explicit_parks_hibernate(self):
         runtime, service, parks = self._runtime()
-        now = time.time()
-        long_hint = {"phase": "model_wait", "evaluated_at": now, "expires_at": now + 3600,
-                     "expected_remaining_wait_seconds": 2 * TRANSFER_BREAK_EVEN_SECONDS}
-        park = service.park
-
-        def refuse_capture(sandbox_id, *, operation_id, background, pause):
-            if not pause:
-                parks.append(("refused", False))
-                raise WarmParkDeferred(5.0)  # No disk for the capture.
-            return park(sandbox_id, operation_id=operation_id, background=background, pause=pause)
-
-        service.park = refuse_capture
         record, _ = runtime.park_with_activity_revision(
-            "agent", operation_id="relay-park:1", generation=1, relay_request_id="r1",
-            resource_phase=long_hint)
+            "agent", operation_id="relay-park:1", generation=1, relay_request_id="r1")
         self.assertEqual(record.state, "running")
-        self.assertEqual(parks, [("refused", False), ("relay-park", True)])
         self.assertEqual(service.warden.paused, {("agent", 1)})
-        with self.assertRaises(WarmParkDeferred):  # An explicit park still needs a capture.
-            runtime.park_with_activity_revision("agent", operation_id="park:2")
+        record, _ = runtime.park_with_activity_revision("agent", operation_id="park:2")
+        self.assertEqual(record.state, "parked")
+        self.assertEqual(parks, [("relay-park", True), ("park", False)])
 
 
 if __name__ == "__main__":
