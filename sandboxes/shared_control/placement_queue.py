@@ -28,7 +28,6 @@ from ..models import utc_now
 from ..sandbox import SandboxSpec, sandbox_spec_fingerprint
 from .database import PostgresDatabase
 from .model import cancel_until_done
-from .routing_repository import ROUTING_ADDITIVE_DDL
 
 LOGGER = logging.getLogger(__name__)
 COMMAND_HEADER = "X-UCloud-Placement-Command"
@@ -138,7 +137,6 @@ class PlacementQueue(PostgresDatabase):
     schema_prefix = "ucloud_routing"
     schema_file = "routing_schema.sql"
     version_table = "routing_schema_version"
-    additive_ddl = ROUTING_ADDITIVE_DDL
 
     def completion_reader(self):
         """Give batched completion reads one connection outside enqueue admission."""

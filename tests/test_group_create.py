@@ -224,7 +224,7 @@ class PostgresGroupFenceTests(GroupIntentFences, unittest.TestCase):
         self.store = PostgresRoutingStore(Path(self.temp.name) / "routes", dsn=DSN, schema=self.schema,
                                           max_connections=4)
         self.store.migrate()
-        self.store.migrate()  # The additive statements are idempotent.
+        self.store.migrate()  # Migrating an existing schema changes nothing.
 
     def tearDown(self):
         import psycopg

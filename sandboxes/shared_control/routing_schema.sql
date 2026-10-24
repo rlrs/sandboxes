@@ -4,7 +4,7 @@ INSERT INTO routing_schema_version VALUES (true, 1);
 CREATE TABLE gateway_commands (
     command_id uuid PRIMARY KEY,
     command_key text NOT NULL CHECK(command_key ~ '^[0-9a-f]{64}$'),
-    kind text NOT NULL CHECK(kind IN ('create','wake')),
+    kind text NOT NULL CHECK(kind IN ('create','wake','group')),
     sandbox_id text NOT NULL,
     path text NOT NULL,
     headers jsonb NOT NULL,
@@ -77,6 +77,9 @@ CREATE INDEX IF NOT EXISTS sandboxes_job_id
 CREATE INDEX IF NOT EXISTS sandboxes_node_url
                 ON sandboxes(node_url);
 
+-- Unused since exec sessions are routed by their signed prefix. Gateways up to
+-- 0.10.0 delete a sandbox's rows on detach, migration, owner loss and delete;
+-- drop the table and its index once no 0.10.0 process can share the schema.
 CREATE TABLE IF NOT EXISTS exec_sessions (
                     session_id TEXT PRIMARY KEY,
                     sandbox_id TEXT NOT NULL,
@@ -233,3 +236,12 @@ CREATE INDEX sandbox_migrations_destination_job_id ON sandbox_migrations(destina
 CREATE INDEX sandbox_migrations_destination_node_url ON sandbox_migrations(destination_node_url) WHERE phase!='complete';
 
 CREATE TABLE worker_capacity_revisions(identity text PRIMARY KEY,revision bigint NOT NULL);
+
+CREATE TABLE sandbox_groups (
+    group_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, spec_json TEXT NOT NULL,
+    member_count INTEGER NOT NULL CHECK (member_count > 0),
+    state TEXT NOT NULL CHECK (state IN ('active', 'deleted')),
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE sandbox_group_members (
+    sandbox_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, generation INTEGER NOT NULL);
+CREATE INDEX sandbox_group_members_group ON sandbox_group_members(group_id);

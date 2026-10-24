@@ -32,6 +32,16 @@
     initialized by this release keep running; roll them back by
     re-initializing them with the 0.10.0 bundle.
 
+- **Schema setup no longer patches existing schemas.** The routing and relay
+  PostgreSQL schemas are created whole from their schema files, which now hold
+  `sandbox_groups`, `sandbox_group_members` and the `group` command kind; the
+  gateway's image-recipe tables are created with `oci`, `kind`, `base`,
+  `environment` and `source`. `migrate` on an existing schema, and opening an
+  existing recipe store, no longer add these; production's schemas and recipe
+  store already have every one. A deployment that has not yet run 0.10.0's
+  `migrate` and gateway must upgrade to 0.10.0 first. **Rollback** to 0.10.0
+  needs nothing: its migrations add only what is missing, and a schema created
+  by this release has all of it.
 - **Parked-wake consolidation is gone.** A parked sandbox wakes on its owner
   when it fits there, and moves only when it does not; drain-on-park packs the
   fleet instead. Production runs with `policy.parked_wake_consolidation_enabled`
