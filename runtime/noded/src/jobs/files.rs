@@ -394,6 +394,22 @@ impl JobRecord {
         if stream == "stderr" { self.state.stderr_bytes } else { self.state.stdout_bytes }
     }
 
+    /// The record a log chunk carries. The record counted the log just
+    /// before the chunk's own open, and the job may have written in between;
+    /// while it runs, the stream's count is the size the chunk was read
+    /// against, so the data never runs past the record that comes with it.
+    /// Once terminal, the persisted counts stand: the logs no longer grow.
+    pub fn read_against(mut self, stream: &str, size: u64) -> JobRecord {
+        if !self.terminal() {
+            if stream == "stderr" {
+                self.state.stderr_bytes = size;
+            } else {
+                self.state.stdout_bytes = size;
+            }
+        }
+        self
+    }
+
     /// `ManagedProcessRecord.to_dict()`, in its key order, plus `cursor`.
     pub fn to_json(&self) -> Value {
         let state = &self.state;
@@ -488,6 +504,24 @@ mod tests {
             crate::exec::json::dumps(&record.to_json()),
             r#"{"sandbox_id":"sb","sandbox_generation":3,"job_id":"job-1","spec_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","state":"running","pid":42,"started_at":"2026-10-11T20:00:00.12345678Z","completed_at":"","exit_code":null,"signal":0,"stdout_bytes":0,"stderr_bytes":0,"stdout_truncated":false,"stderr_truncated":false,"sequence":2,"updated_at":"2026-10-11T20:00:02.000001+00:00","cursor":"2.0.0"}"#
         );
+    }
+
+    #[test]
+    fn a_chunks_record_counts_the_log_it_was_read_from() {
+        let record = |state: &str| JobRecord {
+            sandbox_id: "sb".into(),
+            sandbox_generation: 3,
+            state: JobState::parse(state.as_bytes()).unwrap(),
+            updated_at: "2026-10-11T20:00:02.000001+00:00".into(),
+        };
+        // The job wrote one byte between the record's read and the chunk's.
+        let running = record(GO_RUNNING).read_against("stdout", 1);
+        assert_eq!((running.state.stdout_bytes, running.state.stderr_bytes, running.cursor()), (1, 0, "2.1.0".into()));
+        let running = record(GO_RUNNING).read_against("stderr", 4);
+        assert_eq!((running.state.stdout_bytes, running.state.stderr_bytes), (0, 4));
+        // Terminal: the persisted counts stand.
+        let exited = GO_RUNNING.replace(r#""state":"running""#, r#""state":"exited","exit_code":0"#).replace(r#""stdout_bytes":0"#, r#""stdout_bytes":7"#);
+        assert_eq!(record(&exited).read_against("stdout", 9).state.stdout_bytes, 7);
     }
 
     #[test]

@@ -324,11 +324,14 @@ fn read_pass(
             return Err(PassError::NotFound);
         }
         let ReadKind::Logs { stream, offset, limit } = kind else { return Ok(Pass { record, chunk: None }) };
-        let chunk = match dir.log(stream).map_err(PassError::Read)? {
+        let (record, chunk) = match dir.log(stream).map_err(PassError::Read)? {
             // The supervisor's answer for a log it never opened.
-            None => (*offset, Vec::new(), *offset, false),
+            None => (record, (*offset, Vec::new(), *offset, false)),
             Some(log) if *offset > log.size => return Err(PassError::OffsetBeyond),
-            Some(log) => (*offset, log.read(*offset, *limit).map_err(|error| PassError::Read(ReadError::Io(error)))?, log.size, true),
+            Some(log) => {
+                let data = log.read(*offset, *limit).map_err(|error| PassError::Read(ReadError::Io(error)))?;
+                (record.read_against(stream, log.size), (*offset, data, log.size, true))
+            }
         };
         Ok(Pass { record, chunk: Some(chunk) })
     })();

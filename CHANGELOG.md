@@ -178,6 +178,13 @@
   the accept loop was busy, had SYNs dropped: those clients waited 1, 3, 7 s for
   retransmits and could pass the gateway's 5 s connect timeout. The held
   job-read test hit this in CI (2995 of 3000 reads held at its deadline).
+- **A ucloud-noded log chunk's `job` record counts the bytes the chunk was read
+  from.** The record sized the running job's log, then the chunk opened it
+  again, so output written in between could come back as data past the
+  record's `stdout_bytes`/`stderr_bytes` (and its `cursor`), which the gateway
+  cached as the job's state. Held reads never returned early; the held
+  job-read test hit this in CI (a logs read answered with the byte it waited
+  for and `stdout_bytes` 0).
 - **Buffered worker RPCs never reuse a connection the gateway asked to close**
   (RFC 9112 9.6). aiohttp pooled such a connection unless the answer also said
   `Connection: close`. ucloud-noded and the Python agent always say so, so
