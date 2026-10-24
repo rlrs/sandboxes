@@ -16,10 +16,12 @@ coalesced duplicates), which needs ``queue_placement``.
 
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import threading
 import unittest
 
 from tests.harness import LocalFleet
+from tests.harness.assembly import fixed_metrics
 from sandboxes import routing
 
 TEST_TIER = "contract"
@@ -32,6 +34,12 @@ class CreateBurstTests(unittest.TestCase):
     def test_burst_reselects_around_a_closed_worker_without_overbooking(self):
         with LocalFleet(nodes=3) as fleet:
             closed, *open_nodes = fleet.nodes
+            # The open workers rank behind (CPU alone defers nothing at the
+            # worker), so creates try the closed one first until enough are in
+            # flight there; the first create's choice sees none.
+            for node in open_nodes:
+                node.sample_metrics = lambda: replace(fixed_metrics(), cpu_percent=90.0)
+            fleet.heartbeat()
             # Closed at the worker only; the gateway still samples it.
             self.assertEqual(closed.drain("burst").status, 200)
 
@@ -59,8 +67,10 @@ class CreateBurstTests(unittest.TestCase):
             placed = Counter(fleet.route(name).job_id for name in burst)
             self.assertLessEqual(set(placed), {node.job_id for node in open_nodes})
             self.assertLessEqual(max(placed.values(), default=0), PER_NODE)
-            # Creates first placed on the closed worker came back reselected.
-            self.assertTrue(any(fleet.route(name).generation == 2 for name in burst))
+            # Creates first tried on the closed worker came back reselected,
+            # each rejection a new generation: 2, or 3 if an open worker also
+            # deferred it.
+            self.assertTrue(any(fleet.route(name).generation > 1 for name in burst))
 
             # Once the gateway knows, the client's retries fill the open
             # workers exactly; the rest find nothing that fits.
