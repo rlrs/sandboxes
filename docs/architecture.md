@@ -75,8 +75,8 @@ flowchart LR
   on the node (OCI bundles, cgroups, `runsc` processes, network namespaces,
   lifecycle journals, the node registry) and it sends heartbeats.
 - `ucloud-sandbox-noded`, the Rust daemon `ucloud-noded`
-  ([runtime/noded](../runtime/noded)), which behind flags takes over the
-  port, creates, execs, the pause tier and admission (see
+  ([runtime/noded](../runtime/noded)), which owns the port, creates, execs
+  and the pause tier, and behind a flag admission (see
   [below](#the-python-agent-and-ucloud-noded)).
 - `ucloud-storage-native`: writable volumes, memory backing, checkpoint
   publication.
@@ -268,14 +268,12 @@ and costs more to come back from.
 | Parked | checkpoint on local disk | parked | restore, via restore admission |
 | Parked and published | checkpoint also in object storage | parked | restore, possibly on another node |
 
-- **Resident waits (default).** For a relay model wait the node stays
-  running and answers `409 park_deferred` while memory headroom exists; under
-  pressure it checkpoints the waits likely to stay idle longest. There is no
-  model-wait timeout and no fixed sandbox cap.
-- **Pause tier** (`sandbox.direct_pause_tier`, off; needs swap) pauses waits
-  in place with `runsc pause`, reclaims their memory to swap under pressure,
-  and escalates a stalled reclaim to a hibernate. Pausing changes no
-  ownership; any exec, file operation or wake thaws.
+- **Pause tier** (needs swap, `sandbox.swap_gb`). Idle sandboxes and model
+  waits pause in place with `runsc pause`; a relay wait whose hint predicts a
+  long wait hibernates instead. Under pressure noded reclaims paused memory
+  to swap and escalates a stalled reclaim to a hibernate. Pausing changes no
+  ownership; any exec, file operation or wake thaws. There is no model-wait
+  timeout and no fixed sandbox cap.
 - **Park** reserves checkpoint disk (or refuses with `park_deferred`),
   captures memory, Sentry state and filesystem writes, seals the workspace
   into an immutable layer, and commits a single COMPLETE pointer. A failure
@@ -284,11 +282,9 @@ and costs more to come back from.
 
 ### Memory and disk
 
-Memory backing flags (all off by default) move a sandbox's memory file out of
-its storage volume into an XFS project-quota directory
-(`direct_split_memory_backing`) or a bounded tmpfs
-(`direct_ram_memory_backing`). With split backing, disk claims follow
-demonstrated use: a workspace filesystem starts at 512 MiB and grows online
+A parkable sandbox's memory file lives outside its storage volume, in an XFS
+project-quota directory, or with `direct_ram_memory_backing` (off by default)
+in a bounded tmpfs. Disk claims follow demonstrated use: a workspace filesystem starts at 512 MiB and grows online
 toward `disk_mb`, and a running RAM-backed sandbox's checkpoint claim is
 64 MiB until a park reserves a strict upper bound of its capture (running out
 of space mid-capture could lose it). RAM rather than disk then limits density.
@@ -299,17 +295,17 @@ cold-offloads old published parks; after that, work is refused.
 
 The node side began as one Python process, and under create bursts the
 interpreter lock was the bound (doubling create slots changed nothing).
-`ucloud-noded` takes over the node in slices, each behind the same HTTP
-contract and on-disk files, so each slice rolls back by turning its flag off.
-Each flag requires the ones above it; all default off.
-
-| `sandbox.` flag | What moves to noded |
-| --- | --- |
-| `direct_node_front_door` | The node's TCP port; it proxies to the agent's Unix socket. |
-| `direct_node_rust_create` | Node registry ownership and the create pipeline; managed-job status and log reads. Unsupported creates (relay egress, DNS-named egress, migration imports) go to the agent unchanged. |
-| `direct_node_rust_exec` | Execs on running, unpaused sandboxes; managed-job start and signal. |
-| `direct_node_rust_pause` | The pause tier, thaw-on-exec, reclaim and node-local model waits. |
-| `direct_node_rust_admission` | The transition ledger, slots, growth forecasts and resident sampling. |
+`ucloud-noded` took over the node in slices, each behind the same HTTP
+contract and on-disk files. It owns the node's TCP port and proxies the rest
+to the agent's Unix socket; the node registry and the create pipeline
+(unsupported creates, such as relay egress, DNS-named egress and migration
+imports, go to the agent unchanged); execs on running sandboxes and
+managed-job reads, start and signal; and the pause tier: thaw-on-exec, idle
+pauses, paused reclaim, escalation decisions and node-local model waits. One
+slice is still behind a flag, off by default: `sandbox.direct_node_rust_admission`
+moves the transition ledger, slots, growth forecasts and resident sampling.
+The flags of the other slices are retired; deployment files may still name
+them, as true only.
 
 Always in the Python agent: heartbeats; park, wake, migration and delete
 with their lifecycle locks; the drain row; workspace growth. The processes
@@ -346,9 +342,8 @@ accepted answer into an error.
 1. Call accepted: the relay records a park obligation and asks the gateway to
    park, fenced by request and generation. The gateway marks the program state
    `model_wait`.
-2. The node decides what that means: usually it stays resident (409
-   `park_deferred`, the relay keeps retrying); under pressure it pauses or
-   checkpoints. A checkpoint drops the agent's connection; its retry
+2. The node pauses the sandbox in place, or checkpoints it when a hint
+   predicts a long wait. A checkpoint drops the agent's connection; its retry
    reattaches after restore.
 3. Answer committed: the relay records and dispatches a wake. A resident
    sandbox ignores it; a parked one restores locally or migrates. A durable
@@ -358,8 +353,7 @@ Obligations are PostgreSQL rows claimed by relay dispatchers, never held in
 a transaction across a gateway call, so no crash loses an accepted answer or
 strands a parked sandbox.
 
-**Node-local model waits** (`sandbox.direct_local_model_waits`, off; needs
-the pause tier) skip the relay and gateway in the common case: the node reads
+**Node-local model waits** skip the relay and gateway in the common case: the node reads
 only TCP headers of plaintext relay flows on the private network, pauses an
 idle sandbox whose request has gone out, and thaws it on the answer's first
 packet (about 10 ms). A durable backup wake fires after 5 s unless the guest
