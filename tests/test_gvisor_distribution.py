@@ -87,13 +87,16 @@ class GvisorDistributionTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     distribution_files(runsc, GVISOR_COMMIT)
 
-    def test_new_pin_requires_manifest_legacy_does_not(self):
+    def test_only_the_pinned_commit_with_its_manifest_is_accepted(self):
         with tempfile.TemporaryDirectory() as directory:
             runsc = Path(directory) / "runsc"
-            runsc.write_bytes(b"legacy")
-            self.assertEqual(distribution_files(runsc, "9" * 40), [])
-            with self.assertRaises(FileNotFoundError):
+            runsc.write_bytes(b"runsc")
+            with self.assertRaisesRegex(ValueError, "build manifest"):
                 distribution_files(runsc, GVISOR_COMMIT)
+            runsc = self.fixture(Path(directory))
+            for check in (distribution_files, installed_sidecar_fingerprints):
+                with self.subTest(check=check.__name__), self.assertRaisesRegex(ValueError, "pinned"):
+                    check(runsc, "9" * 40)
 
     def test_companion_change_changes_installed_checkpoint_identity(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -105,8 +108,6 @@ class GvisorDistributionTests(unittest.TestCase):
             after = installed_sidecar_fingerprints(runsc, GVISOR_COMMIT)
             self.assertEqual(runsc.read_bytes(), original_runsc)
             self.assertNotEqual(before, after)
-            with self.assertRaisesRegex(ValueError, "legacy"):
-                installed_sidecar_fingerprints(runsc, "9" * 40)
 
     def test_node_fences_same_runsc_with_changed_companion(self):
         from sandboxes.direct_runtime import boot_config_sha256

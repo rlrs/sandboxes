@@ -47,7 +47,7 @@ before = time.monotonic()
 sampled = {}
 for case in request["cases"]:
     sample = sampler.sample((case["name"], 1), pid=case["pid"], start_time_ticks=case["ticks"],
-                            container_id=case["container_id"], expected_path=case["expected_path"])
+                            expected_path=case["expected_path"])
     sampled[case["name"]] = None if sample is None else dataclasses.asdict(sample)
 published = PublishedResidentMemory(Path(request["resident_path"]), ResidentMemorySampler(
     cgroup_root=Path(request["cgroup_root"]), proc_root=Path(request["proc_root"])))
@@ -81,8 +81,8 @@ struct Case {
     name: &'static str,
     /// `/proc/<pid>/cgroup`; `{c}` is the container's cgroup path.
     membership: &'static str,
-    /// The OCI config's path (`{c}` as above), or none (legacy).
-    expected: Option<&'static str>,
+    /// The OCI config's path (`{c}` as above).
+    expected: &'static str,
     /// The sentry's start ticks on disk (the caller expects 456).
     ticks: u64,
     files: &'static [(&'static str, &'static str)],
@@ -93,7 +93,7 @@ struct Case {
 const STAT: &str = "shmem 0\nanon 100\nfile 800\nfile_dirty 50\nfile_writeback 20\nworkingset_refault_file 7\n";
 
 fn cases() -> Vec<Case> {
-    let case = |name, files, accepted| Case { name, membership: "0::{c}", expected: Some("{c}"), ticks: 456, files, accepted };
+    let case = |name, files, accepted| Case { name, membership: "0::{c}", expected: "{c}", ticks: 456, files, accepted };
     vec![
         case("base", &[("memory.current", "1000"), ("memory.stat", STAT)], true),
         case("peak-and-swap", &[("memory.current", "1000"), ("memory.peak", "900"), ("memory.swap.current", "400"), ("memory.stat", STAT)], true),
@@ -128,10 +128,9 @@ fn cases() -> Vec<Case> {
         case("three-field-stat-line", &[("memory.current", "1000"), ("memory.stat", "shmem 0 1\nanon 100\nfile 800\nfile_dirty 50\nfile_writeback 20\nworkingset_refault_file 7\n")], false),
         case("blank-stat-line", &[("memory.current", "1000"), ("memory.stat", "shmem 0\n\nanon 100\nfile 800\nfile_dirty 50\nfile_writeback 20\nworkingset_refault_file 7\n")], false),
         Case { ticks: 999, ..case("pid-reused", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
-        Case { expected: Some("/another/runtime"), ..case("not-the-oci-cgroup", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
-        Case { expected: None, ..case("legacy-by-container-id", &[("memory.current", "1000"), ("memory.stat", STAT)], true) },
-        Case { expected: None, membership: "0::/ucloud-sandboxes", ..case("legacy-shared-parent", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
-        Case { membership: "0::/ucloud-sandboxes/../{c}", expected: None, ..case("dot-dot", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
+        Case { expected: "/another/runtime", ..case("not-the-oci-cgroup", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
+        Case { membership: "0::/ucloud-sandboxes", ..case("shared-parent", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
+        Case { membership: "0::/ucloud-sandboxes/../{c}", ..case("dot-dot", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
         Case { membership: "0::/x{c}\n0::{c}\n", ..case("two-unified", &[("memory.current", "1000"), ("memory.stat", STAT)], false) },
         Case { membership: "12:memory:/legacy\n0::{c}\n", ..case("v1-lines-beside-unified", &[("memory.current", "1000"), ("memory.stat", STAT)], true) },
     ]
@@ -161,8 +160,8 @@ fn the_daemon_samples_and_publishes_exactly_what_the_agent_would() {
         std::fs::write(process.join("stat"), format!("{pid} (runsc-sandbox) S {}{} 0", "0 ".repeat(18), case.ticks)).unwrap();
         std::fs::write(process.join("cgroup"), case.membership.replace("{c}", &path)).unwrap();
         requests.push(json!({
-            "name": case.name, "pid": pid, "ticks": 456, "container_id": container,
-            "expected_path": case.expected.map(|expected| expected.replace("{c}", &path)),
+            "name": case.name, "pid": pid, "ticks": 456,
+            "expected_path": case.expected.replace("{c}", &path),
         }));
     }
     // A runtime whose cgroup is a link out of the trusted root.
@@ -176,7 +175,7 @@ fn the_daemon_samples_and_publishes_exactly_what_the_agent_would() {
     std::fs::create_dir_all(proc.join("999")).unwrap();
     std::fs::write(proc.join("999/stat"), format!("999 (runsc-sandbox) S {}456 0", "0 ".repeat(18))).unwrap();
     std::fs::write(proc.join("999/cgroup"), format!("0::/ucloud-sandboxes/{escaping}")).unwrap();
-    requests.push(json!({"name": "escaping", "pid": 999, "ticks": 456, "container_id": escaping, "expected_path": format!("/ucloud-sandboxes/{escaping}")}));
+    requests.push(json!({"name": "escaping", "pid": 999, "ticks": 456, "expected_path": format!("/ucloud-sandboxes/{escaping}")}));
 
     // The daemon first, then the agent on the same trees.
     let clock = Arc::new(SystemClock::new());
@@ -190,8 +189,7 @@ fn the_daemon_samples_and_publishes_exactly_what_the_agent_would() {
             &(name.clone(), 1),
             request["pid"].as_u64().unwrap() as u32,
             456,
-            request["container_id"].as_str().unwrap(),
-            request["expected_path"].as_str(),
+            request["expected_path"].as_str().unwrap(),
         );
         if let Some(sample) = &sample {
             published.push(((name, 1), sample.clone()));

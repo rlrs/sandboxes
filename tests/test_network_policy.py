@@ -386,31 +386,6 @@ class RelayNetworkLifecycleTests(unittest.TestCase):
         self.assertIn(f"s{lease.slot}_guard", rebuild)
         self.assertIn(f"s{self.manager.lease('second', 1).slot}_guard", rebuild)
 
-    def test_rebuild_retires_per_sandbox_tables_and_interface_accepts(self):
-        lease = self.create()
-        runner = self.manager.runner
-        runner.reset_mock()
-        legacy = ("FORWARD", "-i", lease.host_interface, "-j", "ACCEPT")
-        with (
-            patch.object(
-                self.manager, "_iptables_snapshot", return_value={("filter", "-A", *legacy)}
-            ),
-            patch.object(self.manager, "_command_ok", return_value=False),
-        ):
-            self.manager._refresh_relay_policies(force=True)
-        rebuild = self.nft.call_args.args[0]
-        self.assertIn(f"delete table inet ucloud_relay_{lease.slot}\n", rebuild)
-        # Legacy tables go in the same transaction as the shared table.
-        self.assertLess(rebuild.index("table inet ucloud_relay {"),
-                        rebuild.index(f"delete table inet ucloud_relay_{lease.slot}"))
-        commands = [call.args[0] for call in runner.call_args_list]
-        accept = next(i for i, c in enumerate(commands) if "mark" in c)
-        self.assertEqual(
-            commands[accept][:4], ("iptables", "-I", "FORWARD", "1")
-        )
-        self.assertIn("0x1000000/0x1000000", commands[accept])
-        self.assertEqual(commands[accept + 1], ("iptables", "-D", *legacy))
-
 
 class RelayNetworkFilesTests(unittest.TestCase):
     def test_hostname_mapping_preserves_tls_name_and_avoids_public_dns(self):

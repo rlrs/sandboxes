@@ -522,7 +522,6 @@ class HibernationArtifactStore:
 
     MANIFEST_NAME = "manifest.json"
     COMPLETE_NAME = "COMPLETE"
-    LOCK_NAME = ".store.lock"
 
     def __init__(
         self,
@@ -891,8 +890,7 @@ class HibernationArtifactStore:
             str(generation.parent.relative_to(self.root)).encode()
         ).hexdigest() + ".lock"
         try:
-            with (self._lock_file(root_fd, self.LOCK_NAME, fcntl.LOCK_SH),
-                  self._lock_file(root_fd, lock_name, fcntl.LOCK_EX)):
+            with self._lock_file(root_fd, lock_name, fcntl.LOCK_EX):
                 if not os.path.lexists(generation):
                     return
                 self._require_generation_path(generation)
@@ -1045,15 +1043,10 @@ class HibernationArtifactStore:
         self._ensure_directory(self.root, create=True)
         root_fd = self._open_directory(self.root)
         try:
-            # Retain shared admission through the original lock so an older
-            # process using its root-wide exclusive lock remains compatible.
             # Keep incarnation locks in the stable root and never unlink them:
             # waiters must retain one inode even when generations are deleted
             # or their storage-native mount is detached and reattached.
-            with (
-                self._lock_file(root_fd, self.LOCK_NAME, fcntl.LOCK_SH),
-                self._lock_file(root_fd, lock_name, fcntl.LOCK_EX),
-            ):
+            with self._lock_file(root_fd, lock_name, fcntl.LOCK_EX):
                 yield
         finally:
             os.close(root_fd)

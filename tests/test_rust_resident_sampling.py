@@ -150,7 +150,7 @@ class PublishedResidentMemoryTests(unittest.TestCase):
         self.published.load()
         own = sample(current=1 << 29)
         with patch.object(self.own, "sample", side_effect=lambda key, **_: self.own._samples.setdefault(key, own)):
-            self.assertEqual(self.published.sample(self.key, pid=10, start_time_ticks=20, container_id="c"), own)
+            self.assertEqual(self.published.sample(self.key, pid=10, start_time_ticks=20, expected_path="/c"), own)
         self.assertEqual(self.published.get(self.key), own)  # Newer than noded's.
         newer = sample(current=3 << 29)
         publish(self.path, 2, {self.key: newer})
@@ -159,7 +159,7 @@ class PublishedResidentMemoryTests(unittest.TestCase):
         # A failed measurement is unknown until a later observation, as the
         # sampler drops its own.
         with patch.object(self.own, "sample", return_value=None):
-            self.assertIsNone(self.published.sample(self.key, pid=10, start_time_ticks=20, container_id="c"))
+            self.assertIsNone(self.published.sample(self.key, pid=10, start_time_ticks=20, expected_path="/c"))
         self.assertIsNone(self.published.get(self.key))
         self.assertIs(self.published.cgroup_root, self.own.cgroup_root)
 

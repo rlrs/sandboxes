@@ -275,7 +275,7 @@
  },
  "test_heartbeat_sender.py": {
   "clock": 10,
-  "private": 6,
+  "private": 5,
   "sleep": 7,
   "test_import": 1
  },
@@ -438,8 +438,8 @@
  },
  "test_network_policy.py": {
   "new": 3,
-  "private": 14,
-  "private_patch": 8
+  "private": 13,
+  "private_patch": 6
  },
  "test_node_agent.py": {
   "private": 3

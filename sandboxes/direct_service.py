@@ -2293,16 +2293,16 @@ class DirectSandboxService:
             try:
                 config = json.loads((sandbox.bundle / "config.json").read_text())
                 path = config.get("linux", {}).get("cgroupsPath")
-                if path is not None and not isinstance(path, str):
-                    return None
                 self._resident_cgroup_paths[key] = path
             except (OSError, ValueError, TypeError):
                 return None
+        # Every bundle names its incarnation's cgroup; never guess one.
+        if not isinstance(path, str):
+            return None
         return self._resident_memory.sample(
             key,
             pid=lifecycle.sentry_pid,
             start_time_ticks=lifecycle.sentry_start_time_ticks,
-            container_id=sandbox.container_id,
             expected_path=path,
         )
 

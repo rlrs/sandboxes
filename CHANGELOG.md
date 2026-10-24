@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **Workers no longer clean up after releases older than the move to UCloud.**
+  Every production worker was first set up on UCloud, and none carries the
+  leftovers, so these one-off cleanups are gone: per-sandbox
+  `ucloud_relay_<slot>` nftables tables and per-interface `FORWARD -i <if> -j
+  ACCEPT` rules (relay networking), the `ucloud-sandbox-heartbeat` timer and
+  service (vm_init), and the shared lock on the hibernation store's root-wide
+  `.store.lock`. Other cleanups that went with them:
+  - Only the pinned gVisor (`GVISOR_COMMIT`) with its build manifest and
+    companion binaries is accepted: deploy validation and the agent refuse any
+    other `sandbox.direct_runsc_commit`. Production runs the pin, so checkpoint
+    fingerprints do not change.
+  - Resident-memory sampling (agent and noded) reads only the cgroup a bundle's
+    `linux.cgroupsPath` names; a bundle without one is not sampled. Bundles
+    from 0.10.0 and this release always name one.
+  - `.ucloud-overlay.json` is always written and read as schema 2; Docker-store
+    bundles used to be written as schema 1. Production workers use host-EROFS
+    environments, which were already schema 2. On a Docker-store host, wake or
+    delete parked sandboxes before upgrading.
+  - Rollback to 0.10.0 needs nothing: 0.10.0 reads schema-2 bundles and still
+    runs the old cleanups, which find nothing to do.
+
 - **Workers always run behind ucloud-noded, with the pause tier, node-local
   model waits and split memory backing.** `sandbox.direct_node_front_door`,
   `direct_node_rust_create`, `direct_node_rust_exec`, `direct_node_rust_pause`,
