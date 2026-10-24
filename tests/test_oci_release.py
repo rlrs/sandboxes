@@ -106,7 +106,7 @@ class OciReleaseTests(unittest.TestCase):
         db.close()
         for owner, name in (("image-pool:a", "a"), ("sandbox-route:v1:x", "a"), ("prepared-build:v1:y", "d")):
             usage.acquire_reference(f"ucloud-managed/{name}", "v1", owner, digest=images[name])
-        state = SimpleNamespace(prepared={}, image_warmups={"w": SimpleNamespace(image="r:5000/ucloud-managed/f:v1")},
+        state = SimpleNamespace(prepared={"p": SimpleNamespace(image="r:5000/ucloud-managed/f:v1")},
                                 sandboxes={"old": SimpleNamespace(spec={"image": f"r:5000/ucloud-managed/e:v1@{images['e']}"}),
                                            "new": SimpleNamespace(spec={"image": f"r:5000/ucloud-managed/a@{images['a']}",
                                                                         "environment_root": self.new})})

@@ -50,13 +50,12 @@ def at(hours_ago: float):
 
 class FakeRoutingStore:
     def __init__(self, *, dependencies=(), routes=(), migrations=(), incomplete=False,
-                 prepared=(), warmups=()):
+                 prepared=()):
         self.dependencies = list(dependencies)
         self.routes = list(routes)
         self.migrations = list(migrations)
         self.incomplete = incomplete
         self.prepared = list(prepared)
-        self.warmups = list(warmups)
 
     def storage_snapshot_dependencies_readonly(self, *, require_complete=False):
         if require_complete and self.incomplete:
@@ -74,7 +73,6 @@ class FakeRoutingStore:
         return SimpleNamespace(
             sandboxes={route.sandbox_id: route for route in self.routes},
             prepared={str(index): item for index, item in enumerate(self.prepared)},
-            image_warmups={str(index): item for index, item in enumerate(self.warmups)},
         )
 
 
@@ -392,10 +390,12 @@ class LruEvictionTests(unittest.TestCase):
             {"live": 2, "leased": 1, "grace": 1, "age_unknown": 1},
         )
 
-    def test_prepared_capacity_and_warmups_keep_their_images(self) -> None:
+    def test_prepared_capacity_keeps_its_images(self) -> None:
         store = FakeRoutingStore(
-            prepared=[SimpleNamespace(image="registry:5000/ucloud-managed/p:latest")],
-            warmups=[SimpleNamespace(image=f"registry:5000/ucloud-managed/w@{digest('7')}")],
+            prepared=[
+                SimpleNamespace(image="registry:5000/ucloud-managed/p:latest"),
+                SimpleNamespace(image=f"registry:5000/ucloud-managed/w@{digest('7')}"),
+            ],
         )
         live = routing_image_identities(store)
         self.assertIn("ucloud-managed/p:latest", live)

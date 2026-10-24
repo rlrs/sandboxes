@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS prepared_builders (
                     expires_at TEXT NOT NULL
                 );
 
+-- Unused since image warmups were removed. Kept so a gateway rolled back to
+-- 0.10.0, which reads it on every heartbeat, still finds it; drop it later.
 CREATE TABLE IF NOT EXISTS image_warmups (
                     warmup_id TEXT PRIMARY KEY,
                     image TEXT NOT NULL,

@@ -1973,14 +1973,11 @@ class ControlPlaneTests(unittest.TestCase):
             self.assertEqual(response.payload["error_code"], "heartbeat_storage_busy")
             self.assertEqual(recovered.status, 200)
 
-    def test_only_an_accepted_heartbeat_schedules_image_warmups(self):
+    def test_a_retired_boot_heartbeat_is_answered_with_the_stored_state(self):
         with _temporary_root() as root:
             server = _gateway_server(self, root)
             boot = build_heartbeat(job_id="job-1", node_id="node-1", node_epoch="boot-1")
-            with (
-                patch.object(server.RequestHandlerClass, "_schedule_image_warmups") as warmups,
-                _running_server(server) as server_url,
-            ):
+            with _running_server(server) as server_url:
                 endpoint = f"{server_url}/v1/nodes/heartbeat"
                 first = post_heartbeat(endpoint, boot)
                 restarted = post_heartbeat(endpoint, replace(boot, node_epoch="boot-2"))
@@ -1988,7 +1985,6 @@ class ControlPlaneTests(unittest.TestCase):
                 retired = post_heartbeat(endpoint, boot)
         self.assertEqual([first.status, restarted.status, retired.status], [200, 200, 200])
         self.assertEqual(retired.payload["node"]["node_epoch"], "boot-2")
-        self.assertEqual(warmups.call_count, 2)
 
     def test_gateway_stamps_heartbeat_receipt_time_and_enforces_deployment(
         self,
@@ -3756,40 +3752,6 @@ class ControlPlaneTests(unittest.TestCase):
             [call.args[0] for call in sleeper.call_args_list],
             [0.25, 0.5],
         )
-
-    def test_active_prepared_warmup_gates_matching_create_admission(self) -> None:
-        with _temporary_root() as raw_path:
-            store = routing_store_for(self, raw_path / "routes.sqlite")
-            store.upsert_image_warmup(
-                "prepare-1",
-                "busybox:latest",
-                ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024),
-                count=1,
-                ttl_seconds=60,
-            )
-            handler = object.__new__(control_plane.ControlPlaneHandler)
-            handler.routing_store = store
-            handler.services = gateway_services()
-            handler.services.registry_refs.requires_digest_identity = lambda _image: False
-            handler.services.fleet.ready_sandbox_heartbeats = lambda **_kwargs: []
-            handler.services.placement.routes = lambda: []
-            requested = ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024)
-            with control_plane._IMAGE_WARMUP_TASKS_GUARD:
-                control_plane._IMAGE_WARMUP_TASKS.add(("prepare-1", "node-1"))
-            try:
-                matching = handler._active_image_warmup_for_image(
-                    "busybox:latest", requested
-                )
-                unrelated = handler._active_image_warmup_for_image(
-                    "alpine:latest", requested
-                )
-            finally:
-                with control_plane._IMAGE_WARMUP_TASKS_GUARD:
-                    control_plane._IMAGE_WARMUP_TASKS.discard(("prepare-1", "node-1"))
-
-        self.assertIsNotNone(matching)
-        self.assertEqual(matching.warmup_id, "prepare-1")
-        self.assertIsNone(unrelated)
 
     def test_atomic_allocation_spec_conflict_never_dispatches_to_node(self) -> None:
         class CountingNode(BaseHTTPRequestHandler):

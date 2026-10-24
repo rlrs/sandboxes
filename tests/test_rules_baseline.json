@@ -93,9 +93,9 @@
   "test_import": 1
  },
  "test_control_plane.py": {
-  "new": 10,
-  "private": 54,
-  "private_patch": 7
+  "new": 9,
+  "private": 48,
+  "private_patch": 6
  },
  "test_control_state_cache.py": {
   "new": 1,

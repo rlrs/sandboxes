@@ -1298,11 +1298,6 @@ def build_metrics_snapshot(
     pending_builds = [
         item for item in routing_state.image_builds.values() if not item.is_expired(now)
     ]
-    image_warmups = [
-        item
-        for item in routing_state.image_warmups.values()
-        if not item.is_expired(now)
-    ]
     scale_events = [
         event
         for event in events
@@ -1398,10 +1393,6 @@ def build_metrics_snapshot(
         "images": {
             "pending_builds": len(pending_builds),
             "oldest_pending_build_seconds": _oldest_age_seconds(pending_builds),
-            "pending_warmups": len(image_warmups),
-            "oldest_warmup_seconds": _oldest_age_seconds(image_warmups),
-            "next_warmup_expiration_seconds": _next_expiration_seconds(image_warmups),
-            "warmups": [item.to_dict() for item in image_warmups],
         },
         "builders": {
             "prepared": len(prepared_builders),

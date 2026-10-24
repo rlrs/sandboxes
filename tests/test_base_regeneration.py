@@ -134,7 +134,7 @@ class ReleaseAndBuildTests(unittest.TestCase):
         keys = [self.released(name, build_input=name != "d") for name in "abcd"]
         receipts = {keys[0]: self.receipt(keys[0]), keys[1]: self.receipt(keys[1], root=D["3"]),
                     keys[3]: self.receipt(keys[3])}
-        routes = SimpleNamespace(load=lambda: SimpleNamespace(sandboxes={}, prepared={}, image_warmups={}))
+        routes = SimpleNamespace(load=lambda: SimpleNamespace(sandboxes={}, prepared={}))
 
         def release(execute, include=True):
             return release_oci(self.roots, RegistryClient(self.oci.url), RegistryUsageStore(self.root / "usage.sqlite"),
