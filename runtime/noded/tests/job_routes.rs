@@ -6,7 +6,7 @@
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -132,7 +132,7 @@ fn exited(stdout_bytes: u64) -> Value {
            "stdout_bytes": stdout_bytes, "stderr_bytes": 0, "stdout_truncated": false, "stderr_truncated": false, "sequence": 3})
 }
 
-async fn harness_with(limits: JobLimits, mounted: bool) -> Harness {
+async fn harness_with(limits: JobLimits) -> Harness {
     let dir = temp_dir();
     let socket = dir.0.join("agent.sock");
     let state = Arc::new(AgentState::default());
@@ -150,10 +150,10 @@ async fn harness_with(limits: JobLimits, mounted: bool) -> Harness {
     });
     let bundle = dir.0.join("bundles/sb-1.sandbox-2");
     std::fs::create_dir_all(bundle.join("rootfs/.ucloud-managed")).unwrap();
-    let mut mounts = vec![json!({"destination": "/proc", "type": "proc", "source": "proc", "options": []})];
-    if mounted {
-        mounts.push(ucloud_noded::oci::managed_state_mount(&bundle).unwrap());
-    }
+    let mounts = vec![
+        json!({"destination": "/proc", "type": "proc", "source": "proc", "options": []}),
+        ucloud_noded::oci::managed_state_mount(&bundle).unwrap(),
+    ];
     let config = json!({"annotations": {
         "dev.ucloud-sandboxes.managed-process.uid": "1000",
         "dev.ucloud-sandboxes.managed-process.gid": "1000",
@@ -175,7 +175,7 @@ async fn harness_with(limits: JobLimits, mounted: bool) -> Harness {
 }
 
 async fn harness() -> Harness {
-    harness_with(JobLimits::default(), true).await
+    harness_with(JobLimits::default()).await
 }
 
 async fn call(address: SocketAddr, method: &str, path: &str, body: Option<&Value>) -> (StatusCode, hyper::HeaderMap, Value) {
@@ -345,24 +345,20 @@ async fn symlinks_fifos_and_oversize_state_are_refused() {
 }
 
 #[tokio::test]
-async fn legacy_unowned_and_unstarted_sandboxes_are_the_agents() {
-    let legacy = harness_with(JobLimits::default(), false).await;
-    legacy.write_state(&running(2));
-    for path in ["/v1/sandboxes/sb-1/jobs/job-1?wait_ms=5000", "/v1/sandboxes/sb-1/jobs/job-1/logs/stdout?offset=0"] {
-        let (status, body) = get(legacy.address, path).await;
-        assert_eq!((status.as_u16(), body["agent"].as_str()), (299, Some(path)));
-    }
-    let (status, _, body) = call(legacy.address, "POST", "/v1/sandboxes/sb-1/jobs/job-1/signal", Some(&json!({"signal": 15}))).await;
-    assert_eq!((status.as_u16(), body["agent"].as_str()), (299, Some("/v1/sandboxes/sb-1/jobs/job-1/signal")));
-    // The forwarded body is the client's, byte for byte.
-    assert_eq!(legacy.seen("/v1/sandboxes/sb-1/jobs/job-1/signal"), [json!({"signal": 15})]);
-
+async fn unowned_and_unstarted_sandboxes_are_the_agents() {
     let h = harness().await;
     // No state.json yet: the supervisor's own answer, through the agent.
     assert_eq!(get(h.address, "/v1/sandboxes/sb-1/jobs/job-1").await.0.as_u16(), 299);
     *h.node.incarnation.lock().unwrap() = None;
     h.write_state(&running(2));
-    assert_eq!(get(h.address, "/v1/sandboxes/sb-1/jobs/job-1").await.0.as_u16(), 299);
+    for path in ["/v1/sandboxes/sb-1/jobs/job-1?wait_ms=5000", "/v1/sandboxes/sb-1/jobs/job-1/logs/stdout?offset=0"] {
+        let (status, body) = get(h.address, path).await;
+        assert_eq!((status.as_u16(), body["agent"].as_str()), (299, Some(path)));
+    }
+    let (status, _, body) = call(h.address, "POST", "/v1/sandboxes/sb-1/jobs/job-1/signal", Some(&json!({"signal": 15}))).await;
+    assert_eq!((status.as_u16(), body["agent"].as_str()), (299, Some("/v1/sandboxes/sb-1/jobs/job-1/signal")));
+    // The forwarded body is the client's, byte for byte.
+    assert_eq!(h.seen("/v1/sandboxes/sb-1/jobs/job-1/signal"), [json!({"signal": 15})]);
     // Unauthorized and escaped requests are the agent's to refuse.
     let (status, _) = get(h.address, "/v1/sandboxes/sb-1/jobs/job%2D1").await;
     assert_eq!(status.as_u16(), 299);
@@ -551,7 +547,7 @@ async fn thousands_of_held_reads_wait_on_one_watch_and_disconnects_free_them() {
 
 #[tokio::test]
 async fn past_the_waiter_bound_a_wait_is_a_retryable_503() {
-    let h = harness_with(JobLimits { max_waiters: 2, ..JobLimits::default() }, true).await;
+    let h = harness_with(JobLimits { max_waiters: 2, ..JobLimits::default() }).await;
     h.write_state(&running(2));
     let address = h.address;
     let first = tokio::spawn(async move { get(address, "/v1/sandboxes/sb-1/jobs/job-1?wait_ms=20000&after=2.0.0").await });
@@ -570,18 +566,4 @@ async fn past_the_waiter_bound_a_wait_is_a_retryable_503() {
     h.append("stdout", b"y");
     assert_eq!(first.await.unwrap().0, StatusCode::OK);
     assert_eq!(second.await.unwrap().0, StatusCode::OK);
-}
-
-#[test]
-fn the_oci_mount_is_what_the_reads_look_for() {
-    let bundle = Path::new("/state/bundles/sb.sandbox-1");
-    let mount = ucloud_noded::oci::managed_state_mount(bundle).unwrap();
-    assert_eq!(
-        mount,
-        json!({"destination": "/.ucloud-managed", "type": "bind", "source": "/state/bundles/sb.sandbox-1/rootfs/.ucloud-managed",
-               "options": ["rbind", "rw", "nosuid", "nodev", "noexec"]})
-    );
-    assert!(ucloud_noded::oci::has_managed_state_mount(&json!({"mounts": [mount]}), bundle));
-    assert!(!ucloud_noded::oci::has_managed_state_mount(&json!({"mounts": []}), bundle));
-    assert!(!ucloud_noded::oci::has_managed_state_mount(&json!({"mounts": [ucloud_noded::oci::managed_state_mount(Path::new("/elsewhere")).unwrap()]}), bundle));
 }

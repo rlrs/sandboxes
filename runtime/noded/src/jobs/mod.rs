@@ -5,9 +5,9 @@
 //! [`AdmissionPort`]: the agent's `/internal/v1/managed/{launch,bind,terminal}`,
 //! or noded's own admission with `--rust-admission` (step 3c.2).
 //!
-//! The daemon answers for owned sandboxes that are running (paused included)
-//! and carry the state mount. Everything else goes to the agent unchanged:
-//! legacy sandboxes (no mount), parked or transitioning ones, and requests it
+//! The daemon answers for owned sandboxes that are running (paused included);
+//! every managed-process sandbox carries the state mount. Everything else goes
+//! to the agent unchanged: parked or transitioning sandboxes, and requests it
 //! cannot read exactly as Python does.
 //!
 //! Reads never enter, thaw or lock the guest and do not count as activity.
@@ -16,7 +16,7 @@ pub mod files;
 pub mod start;
 pub mod watch;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::future::Future;
 use std::io;
 use std::path::PathBuf;
@@ -51,7 +51,6 @@ const MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_CONTROL_STDOUT: usize = 2 * 1024 * 1024;
 const MAX_CONTROL_STDERR: usize = 64 * 1024;
-const MOUNT_CACHE_ENTRIES: usize = 16 * 1024;
 const TERMINAL_SEEN_ENTRIES: usize = 64 * 1024;
 
 /// An owned, running incarnation of a managed sandbox.
@@ -236,29 +235,6 @@ fn forwarded(reason: &'static str) {
     }
 }
 
-/// Whether the incarnation's bundle carries the state mount, cached per
-/// incarnation (a config never gains or loses it in place).
-struct MountCache {
-    known: Mutex<HashMap<(String, u64, PathBuf), bool>>,
-}
-
-impl MountCache {
-    fn has_mount(&self, incarnation: &Incarnation) -> bool {
-        let key = (incarnation.sandbox_id.clone(), incarnation.generation, incarnation.bundle.clone());
-        if let Some(known) = self.known.lock().expect("not poisoned").get(&key) {
-            return *known;
-        }
-        let Ok(Some(config)) = read_config(&incarnation.bundle) else { return false };
-        let mounted = crate::oci::has_managed_state_mount(&config, &incarnation.bundle);
-        let mut known = self.known.lock().expect("not poisoned");
-        if known.len() >= MOUNT_CACHE_ENTRIES {
-            known.clear();
-        }
-        known.insert(key, mounted);
-        mounted
-    }
-}
-
 fn read_config(bundle: &std::path::Path) -> io::Result<Option<Value>> {
     let Some(bytes) = crate::fsutil::read_owned_file(&bundle.join("config.json"), MAX_CONFIG_BYTES)? else { return Ok(None) };
     Ok(serde_json::from_slice(&bytes).ok())
@@ -377,7 +353,6 @@ pub struct JobFront {
     node: Arc<dyn JobNode>,
     admission: Arc<dyn AdmissionPort>,
     terminal: TerminalQueue,
-    mounts: Arc<MountCache>,
     watcher: OnceLock<Option<Arc<Watcher>>>,
     token: Bytes,
     limits: JobLimits,
@@ -406,7 +381,6 @@ impl JobFront {
             node,
             terminal: TerminalQueue::start(admission.clone()),
             admission,
-            mounts: Arc::new(MountCache { known: Mutex::new(HashMap::new()) }),
             watcher: OnceLock::new(),
             token: Bytes::copy_from_slice(token.as_bytes()),
             limits,
@@ -457,13 +431,8 @@ impl JobFront {
             forwarded("node does not run managed starts");
             return Outcome::Forward(request);
         }
-        let (node, mounts, sandbox_id) = (self.node.clone(), self.mounts.clone(), route.sandbox_id().to_string());
-        let lookup = blocking(move || match node.lookup(&sandbox_id) {
-            Lookup::Serve(incarnation) if !mounts.has_mount(&incarnation) => Lookup::Forward("legacy (no state mount)"),
-            other => other,
-        })
-        .await
-        .unwrap_or(Lookup::Forward("lookup worker"));
+        let (node, sandbox_id) = (self.node.clone(), route.sandbox_id().to_string());
+        let lookup = blocking(move || node.lookup(&sandbox_id)).await.unwrap_or(Lookup::Forward("lookup worker"));
         let incarnation = match lookup {
             Lookup::Serve(incarnation) => incarnation,
             Lookup::Forward(reason) => {

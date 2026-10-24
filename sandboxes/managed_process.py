@@ -59,28 +59,23 @@ def managed_state_mount(bundle: Path) -> dict[str, Any]:
     }
 
 
-def configured_managed_state_mount(config: object, bundle: Path) -> bool:
-    """Whether an OCI config binds the managed state; refuse any other source.
+def require_managed_state_mount(config: object, bundle: Path) -> None:
+    """Refuse a managed-process OCI config that does not bind its own state.
 
-    A config without the mount is the legacy layout: the supervisor's state
-    stays in the Sentry's rootfs filestore and only ``ctl`` can read it.
+    Every managed-process sandbox binds exactly ``managed_state_mount(bundle)``.
+    Raises ValueError otherwise.
     """
     mounts = config.get("mounts") if isinstance(config, dict) else None
-    if not isinstance(mounts, list):
-        return False
     found = [
         mount
-        for mount in mounts
+        for mount in (mounts if isinstance(mounts, list) else ())
         if isinstance(mount, dict)
         and mount.get("destination") == MANAGED_STATE_DIRECTORY
     ]
-    if not found:
-        return False
     if len(found) != 1 or found[0] != managed_state_mount(bundle):
         raise ValueError(
             "managed-process state mount does not bind its own bundle rootfs"
         )
-    return True
 
 
 def prepare_managed_state_directory(rootfs: Path) -> None:
@@ -555,17 +550,20 @@ def managed_record_payload(record: ManagedProcessRecord) -> dict[str, Any]:
     )
 
 
-def _bound_config(bundle: Path) -> bool:
+def _managed_config(bundle: Path) -> bool:
+    """Whether the bundle runs the supervisor; it must then bind its state."""
     payload = (bundle / "config.json").read_bytes()
     if len(payload) > 1024 * 1024:
         raise ValueError("OCI config is too large")
     config = json.loads(payload)
     annotations = config.get("annotations") if isinstance(config, dict) else None
-    return (
+    if not (
         isinstance(annotations, dict)
         and annotations.get("dev.ucloud-sandboxes.managed-process") == "v1"
-        and configured_managed_state_mount(config, bundle)
-    )
+    ):
+        return False
+    require_managed_state_mount(config, bundle)
+    return True
 
 
 def record_parked_managed_state(
@@ -576,8 +574,8 @@ def record_parked_managed_state(
     Called while the guest cannot change its files (after the checkpoint, or
     on an import's shipped upper) and while ``<bundle>/rootfs`` is mounted.
     Writes the record beside the bundle's config.json, where it survives an
-    agent restart, or removes a stale one when there is none: a legacy
-    sandbox (no state mount) or one whose job never started. Raises OSError
+    agent restart, or removes a stale one when there is none: a sandbox
+    without managed processes or one whose job never started. Raises OSError
     or ValueError, having removed any stale record first.
     """
     target = bundle / PARKED_RECORD_NAME
@@ -585,7 +583,7 @@ def record_parked_managed_state(
         os.unlink(target)
     except FileNotFoundError:
         pass
-    if not _bound_config(bundle):
+    if not _managed_config(bundle):
         return None
     derived = read_managed_state(
         bundle / "rootfs", sandbox_id=sandbox_id, sandbox_generation=sandbox_generation

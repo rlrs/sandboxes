@@ -288,17 +288,7 @@ class DirectSandboxProvisioner:
                 quota_path=quota_path,
             )
         # The config is only used to prepare the rootfs, while importing. The
-        # managed-state mount follows the new bundle, but only for a sandbox
-        # whose checkpoint was taken with it: restore needs the same mounts.
-        bound_managed_state = (
-            registration.phase == "importing"
-            and portable.spec.managed_process
-            and self.overlays.imported_managed_state(
-                sandbox_id=registration.sandbox_id,
-                sandbox_generation=registration.sandbox_generation,
-                workspace_directory=registration.workspace_directory,
-            )
-        )
+        # managed-state mount follows the new bundle.
         config = self.oci.build(
             portable.spec,
             image,
@@ -307,13 +297,9 @@ class DirectSandboxProvisioner:
                 source_guest_ip=portable.source_guest_ip,
                 connection_policy=portable.connection_policy,
             ),
-            bundle=(
-                self.overlays.bundle_path(
-                    sandbox_id=registration.sandbox_id,
-                    sandbox_generation=registration.sandbox_generation,
-                )
-                if bound_managed_state
-                else None
+            bundle=self.overlays.bundle_path(
+                sandbox_id=registration.sandbox_id,
+                sandbox_generation=registration.sandbox_generation,
             ),
         )
         if split:
