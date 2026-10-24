@@ -3,7 +3,7 @@ import unittest
 from dataclasses import replace
 from unittest.mock import Mock
 
-from sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL
+from sandboxes.build_admission import BUILD_ADMISSION_CAPACITY_LABEL, build_admission_capacity
 from sandboxes.control_plane import ControlPlaneHandler, ProxiedResponse
 from sandboxes.deployment import package_version
 from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
@@ -79,6 +79,12 @@ class BuilderSelectionTests(unittest.TestCase):
             with self.subTest(capacity=capacity):
                 self.busy = replace(self.busy, labels={BUILD_ADMISSION_CAPACITY_LABEL: capacity})
                 self.assertIsNone(self.handler._select_builder_node(image_id="new"))
+
+    def test_capacity_hint_must_be_present_and_canonical(self):
+        for value, capacity in (("6", 6), ("0", 0), (None, 0), ("06", 0), ("bad", 0), ("4294967296", 0)):
+            with self.subTest(value=value):
+                labels = {} if value is None else {BUILD_ADMISSION_CAPACITY_LABEL: value}
+                self.assertEqual(build_admission_capacity(labels), capacity)
 
     def test_live_draining_or_restarted_builder_is_not_selected(self):
         for changed in (

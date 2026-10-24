@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..capabilities import REQUEST_BODY_KEEPALIVE_CAPABILITY
 from ..control_state import ControlStateStore
 from ..images import image_id_from_tag
 from ..managed_registry import canonical_image_digest_ref, registry_host_from_image_ref
@@ -62,7 +61,6 @@ class FleetView:
             heartbeat.node_url.rstrip("/")
             if heartbeat is not None and heartbeat.node_url
             and heartbeat.is_fresh(utc_now(), self.heartbeat_ttl_seconds)
-            and REQUEST_BODY_KEEPALIVE_CAPABILITY in heartbeat.capabilities
             else None
         )
 

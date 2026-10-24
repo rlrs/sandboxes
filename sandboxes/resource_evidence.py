@@ -157,9 +157,7 @@ class ResourceEvidence:
     @classmethod
     def from_dict(cls, raw: object) -> ResourceEvidence | None:
         names = {f.name for f in fields(cls)}
-        if not isinstance(raw, dict) or set(raw) not in (
-            names, names - {"host_cpu_usage_usec", "host_cpu_steal_usec"}
-        ):
+        if not isinstance(raw, dict) or set(raw) != names:
             return None
         value = dict(raw)
         try:
@@ -184,9 +182,7 @@ class ResourceEvidence:
             decoded = []
             for device in devices:
                 names = {f.name for f in fields(DeviceIO)}
-                if not isinstance(device, dict) or set(device) not in (
-                    names, names - {"read_bytes", "write_bytes"}
-                ):
+                if not isinstance(device, dict) or set(device) != names:
                     return None
                 if any(
                     not isinstance(device[k], str) or not device[k]

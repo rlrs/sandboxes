@@ -192,33 +192,6 @@ class RegistryTests(unittest.TestCase):
             self.assertEqual(reopened.get_heartbeat("job-1").node_id, "node-1")
             self.assertIsNone(reopened.get_heartbeat("missing"))
 
-    def test_control_state_accepts_canonical_pre_device_limit_metrics(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            path = Path(raw_dir) / "control-state.sqlite"
-            heartbeat = replace(
-                build_heartbeat(job_id="job-1", node_id="node-1"),
-                runtime_metrics=NodeRuntimeMetrics(collected_at=utc_now()),
-            )
-            store = ControlStateStore(path)
-            store.upsert_heartbeat(heartbeat)
-            with sqlite3.connect(path) as connection:
-                payload = json.loads(
-                    connection.execute(
-                        "SELECT payload FROM control_records "
-                        "WHERE namespace = 'heartbeat' AND record_id = 'job-1'"
-                    ).fetchone()[0]
-                )
-                payload["runtime_metrics"].pop("storage_ublk_max_devices")
-                connection.execute(
-                    "UPDATE control_records SET payload = ? "
-                    "WHERE namespace = 'heartbeat' AND record_id = 'job-1'",
-                    (json.dumps(payload, sort_keys=True, separators=(",", ":")),),
-                )
-
-            stored = store.load_heartbeats()["job-1"]
-
-        self.assertEqual(stored.runtime_metrics.storage_ublk_max_devices, 0)
-
     def test_heartbeat_schema_is_strict_and_fail_closed(self) -> None:
         raw = heartbeat_to_dict(build_heartbeat(job_id="job-1", node_id="node-1"))
         valid_inventory = {

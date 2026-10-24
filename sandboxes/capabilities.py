@@ -21,7 +21,7 @@ RUNTIME_CPU_CAPABILITY_PREFIX = "runtime-cpu-features-sha256:"
 STORAGE_NATIVE_MIGRATION_CAPABILITY = "sandbox-migrate-storage-native-v1"
 STORAGE_NATIVE_DETACH_CAPABILITY = "sandbox-detach-published-v1"
 COMMIT_EXPORT_CAPABILITY = "sandbox-commit-export-v1"
-# PUT /v1/sandboxes/{id}/archive; the gateway answers 501 for a worker without it.
+# PUT /v1/sandboxes/{id}/archive.
 ARCHIVE_UPLOAD_CAPABILITY = "sandbox-archive-upload-v1"
 
 

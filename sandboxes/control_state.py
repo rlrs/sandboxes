@@ -37,6 +37,7 @@ _ERROR = "control state is unreadable"
 _HEARTBEAT_CACHE_ENTRIES = 64
 _HEARTBEAT_CACHE_BYTES = 16 * 1024**2
 _HEARTBEAT_HEADER_CACHE_BYTES = 1024**2
+_ABSENT = object()
 # Controller-owned metadata uses the existing extensible heartbeat labels so
 # workers and the durable heartbeat schema remain wire-compatible.
 QUARANTINE_REASON = "ucloud-sandboxes/controller-quarantine"
@@ -655,41 +656,15 @@ def _heartbeat_payload_is_canonical(
     payload: str,
 ) -> bool:
     encoded = heartbeat_to_dict(heartbeat)
-    if _json(encoded) == payload:
-        return True
-
-    # Accept only the exact canonical legacy representation of additive
-    # metrics with their default values. Unknown fields and noncanonical
-    # encodings still fail closed; receive rewrites using the current schema.
-    runtime_metrics = encoded.get("runtime_metrics")
-    raw_metrics = raw.get("runtime_metrics")
-    if not isinstance(runtime_metrics, dict) or not isinstance(raw_metrics, dict):
-        return False
-    legacy = dict(encoded)
-    legacy_metrics = dict(runtime_metrics)
-    for name, default in NODE_RUNTIME_METRIC_DEFAULTS.items():
-        if name not in raw_metrics and legacy_metrics.get(name) == default:
-            legacy_metrics.pop(name)
-    # Nested metric decoders also accept explicitly supported older shapes
-    # (for example ResourceEvidence CPU counters and DeviceIO byte counters).
-    # Their absent optional fields re-encode as null. Preserve that absence
-    # only after heartbeat_from_dict has validated the complete nested schema;
-    # unknown keys, malformed values and noncanonical JSON still fail below.
-    legacy["runtime_metrics"] = _preserve_legacy_null_omissions(legacy_metrics, raw_metrics)
-    return raw == legacy and _json(raw) == payload
-
-
-def _preserve_legacy_null_omissions(encoded: Any, raw: Any) -> Any:
-    if isinstance(encoded, dict) and isinstance(raw, dict):
-        return {
-            name: _preserve_legacy_null_omissions(value, raw.get(name))
-            for name, value in encoded.items()
-            if name in raw or value is not None
+    metrics, raw_metrics = encoded.get("runtime_metrics"), raw.get("runtime_metrics")
+    if isinstance(metrics, dict) and isinstance(raw_metrics, dict):
+        # A row written before a field in NODE_RUNTIME_METRIC_DEFAULTS existed
+        # omits it; it decoded to that default. Anything else fails closed.
+        encoded["runtime_metrics"] = {
+            name: value for name, value in metrics.items()
+            if name in raw_metrics or NODE_RUNTIME_METRIC_DEFAULTS.get(name, _ABSENT) != value
         }
-    if isinstance(encoded, list) and isinstance(raw, list) and len(encoded) == len(raw):
-        return [_preserve_legacy_null_omissions(value, previous)
-                for value, previous in zip(encoded, raw, strict=True)]
-    return encoded
+    return _json(encoded) == payload
 
 
 def _encode_heartbeat(heartbeat: NodeHeartbeat) -> tuple[NodeHeartbeat, str]:

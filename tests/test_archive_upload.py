@@ -102,15 +102,11 @@ class ArchivePlanTests(unittest.TestCase):
                                              "lib": 0o700, "empty/leaf": 0o755})
                     self.assertEqual(((root / "dest/old").read_bytes(), (root / "outside").read_bytes()),
                                      (b"new", b"keep"))
-            # Unsupported means "upload one by one", never a failed write.
-            invalid = subprocess.run([binary, "files", "extract", "relative", "8"], capture_output=True)
-            self.assertFalse(archive_helper_unsupported(invalid.returncode, invalid.stderr, static=True))
-        old = b"file operation failed: invalid file request: unsupported file operation\n"
-        self.assertTrue(archive_helper_unsupported(3, old, static=True))
+        # Unsupported means "upload one by one", never a failed write.
         with TemporaryDirectory() as empty:
             no_tar = subprocess.run(["/bin/sh", "-c", sandbox_archive_extract_script(), "x", empty],
                                     input=payload, capture_output=True, env={"PATH": empty})
-            self.assertTrue(archive_helper_unsupported(no_tar.returncode, no_tar.stderr, static=False))
+            self.assertTrue(archive_helper_unsupported(no_tar.returncode, no_tar.stderr))
 
 
 class _Runner:
@@ -126,7 +122,7 @@ class _Runner:
 
 class ArchiveEndpointTests(unittest.TestCase):
     @contextmanager
-    def servers(self, *, capable=True):
+    def servers(self):
         with TemporaryDirectory() as raw:
             root = Path(raw).resolve()
             (root / "node").mkdir(mode=0o700)
@@ -142,7 +138,7 @@ class ArchiveEndpointTests(unittest.TestCase):
             node = fixtures.build_direct_node_agent_server(
                 "127.0.0.1", 0, service=service, image_file=root / "node/images.json", job_id="job-1", node_id="node-1",
             )
-            capabilities = ("sandbox", ARCHIVE_UPLOAD_CAPABILITY) if capable else ("sandbox",)
+            capabilities = ("sandbox", ARCHIVE_UPLOAD_CAPABILITY)
             with _running_server(node) as node_url:
                 for sid in ("shell", "static"):
                     heartbeats, routes = _seed_gateway_node(self, root, node_url=node_url, sandbox_id=sid,
@@ -202,14 +198,11 @@ class ArchiveEndpointTests(unittest.TestCase):
                 self.assertEqual(self.put(url, "shell", _tar(("a", b"x")))[0], 409)
             self.assertEqual(runner.calls, [])
 
-    def test_static_helper_and_unsupported_workers_and_sandboxes(self):
+    def test_static_helper_and_sandboxes_without_tar(self):
         with self.servers() as (url, service, runner):
             status, _ = self.put(url, "static", _tar(("a", b"xyz"), ("d/", b"", DIR)))
             self.assertEqual(status, 200)
             self.assertEqual(runner.calls[-1][0], ("/.ucloud-job-init", "files", "extract", "/work", "3", "d"))
-            runner.exit = (3, b"file operation failed: invalid file request: unsupported file operation\n")
-            status, result = self.put(url, "static", _tar(("a", b"xyz")))
-            self.assertEqual((status, result["error_code"]), (501, "archive_upload_unsupported"))
-        with self.servers(capable=False) as (url, service, runner):
+            runner.exit = (69, b"tar is unavailable\n")
             status, result = self.put(url, "shell", _tar(("a", b"xyz")))
-            self.assertEqual((status, result["error_code"], runner.calls), (501, "archive_upload_unsupported", []))
+            self.assertEqual((status, result["error_code"]), (501, "archive_upload_unsupported"))

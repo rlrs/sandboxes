@@ -86,8 +86,8 @@ def _node_request_headers(req, *, allow_body_keep_alive=False):
     if req.data is not None and (
         not allow_body_keep_alive or isinstance(req.data, RequestBodyStream)
     ):
-        # Legacy nodes and streaming uploads remain self-contained. A new node
-        # advertises that only completely consumed framed bodies permit reuse.
+        # Only a completely consumed framed body to the worker just resolved
+        # may reuse its connection; streaming uploads stay self-contained.
         headers["Connection"] = "close"
     return headers
 

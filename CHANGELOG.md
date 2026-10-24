@@ -34,6 +34,17 @@
   `lost_sandbox_ids`, `fencedNodeLossHeartbeats`, `persistedNodeLossDemand`,
   per-node `permanentlyLost`) and the metrics scale-down event drops
   `destructive_job_ids`.
+- **The gateway no longer serves workers older than 0.9.66.** Heartbeats must
+  carry every runtime metric field (including `memory_backing`,
+  `resource_evidence` with its host CPU counters and device byte totals, and
+  `cpu_check_ms`); persisted heartbeat rows must too. The gateway stops checking
+  the archive-upload, relay-wake-fence, resource-phase and body-keepalive
+  capabilities, a builder without an admission-capacity label is closed instead
+  of getting four slots, and archive extraction no longer recognises a static
+  helper that predates `files extract`. Before restarting the gateway, run
+  `scripts/release/verify_heartbeat_upgrade.py` with this package against
+  `control-state.sqlite`; it must validate every row. Rolling back to 0.10.0
+  needs nothing: it accepts everything this release writes.
 - `ucloud.platform.postgres.duration` no longer records a `lock_query` phase. No
   query was timed into it, so it was always 0.
 

@@ -17,92 +17,37 @@ TEST_TIER = "contract"
 
 
 class ControlStateCacheTests(unittest.TestCase):
-    def test_persisted_legacy_metrics_survive_upgrade_and_preserve_validation(self):
-        for removed in (("memory_working_set_mb",), tuple(NODE_RUNTIME_METRIC_DEFAULTS)):
-            with self.subTest(removed=removed), TemporaryDirectory() as directory:
-                path = Path(directory) / "control.sqlite"
-                old = ControlStateStore(path)
-                old.upsert_heartbeat(replace(self.heartbeat(), runtime_metrics=NodeRuntimeMetrics(collected_at=utc_now())))
-                with sqlite3.connect(path) as connection:
-                    raw = json.loads(connection.execute("SELECT payload FROM control_records").fetchone()[0])
-                    for name in removed:
-                        raw["runtime_metrics"].pop(name)
-                    payload = control_state._json(raw)
-                    connection.execute("UPDATE control_records SET payload = ?", (payload,))
-                from scripts.release.verify_heartbeat_upgrade import verify
+    def test_persisted_rows_may_omit_only_defaulted_metric_fields(self):
+        # NODE_RUNTIME_METRIC_DEFAULTS holds a new field for one release, so
+        # rows the previous gateway wrote still load after an upgrade.
+        from scripts.release.verify_heartbeat_upgrade import verify
+
+        def canonical(value):
+            return json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True)
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "control.sqlite"
+            ControlStateStore(path).upsert_heartbeat(
+                replace(self.heartbeat(), runtime_metrics=NodeRuntimeMetrics(collected_at=utc_now())))
+            with sqlite3.connect(path) as connection:
+                raw = json.loads(connection.execute("SELECT payload FROM control_records").fetchone()[0])
+                raw["runtime_metrics"].pop("memory_working_set_mb")
+                payload = canonical(raw)
+                connection.execute("UPDATE control_records SET payload = ?", (payload,))
+            with self.assertRaisesRegex(ValueError, "invalid heartbeat"):
+                verify(path)
+            with patch.dict(NODE_RUNTIME_METRIC_DEFAULTS, {"memory_working_set_mb": 0}):
                 self.assertEqual(verify(path), 1)
                 # Open a fresh store as the upgraded gateway/autoscaler does.
                 reader = ControlStateStore(path)
                 self.assertEqual(reader.load_heartbeats()["job"].runtime_metrics.memory_working_set_mb, 0)
                 self.assertTrue(reader.get_heartbeat("job").inventory_complete)
                 self.assertFalse(reader.get_heartbeat("job", include_inventory=False).inventory_complete)
-                for corrupt in (" " + payload, control_state._json({**raw, "unexpected": True})):
+                for corrupt in (" " + payload, canonical({**raw, "unexpected": True})):
                     with sqlite3.connect(path) as connection:
                         connection.execute("UPDATE control_records SET payload = ?", (corrupt,))
                     with self.assertRaisesRegex(ValueError, "invalid heartbeat"):
                         reader.load_heartbeats()
-
-    def test_nested_additive_metrics_survive_durable_read_and_receive(self):
-        from copy import deepcopy
-        from sandboxes.resource_evidence import DeviceIO, ResourceEvidence
-        from sandboxes.models import ResidentWaitMetrics
-        from scripts.release.verify_heartbeat_upgrade import verify
-
-        for old_cpu, old_device in ((True, False), (False, True), (True, True)):
-            with self.subTest(old_cpu=old_cpu, old_device=old_device), TemporaryDirectory() as directory:
-                path = Path(directory) / "control.sqlite"
-                heartbeat = replace(self.heartbeat(), received_at=utc_now(), runtime_metrics=NodeRuntimeMetrics(
-                    collected_at=utc_now(), resource_evidence=ResourceEvidence(
-                        collected_at=utc_now().isoformat(),
-                        devices=(DeviceIO(identity="boot:disk", name="vda"),),
-                    ),
-                    resident_wait=ResidentWaitMetrics(
-                        resident_waits=1, checkpoint_inflight=0, checkpoints_completed=0,
-                        reclaim_target_bytes=0, projected_reclaim_bytes=0,
-                        reason="resident_headroom", admitted_demand_bytes=4096,
-                        pending_demand_bytes=2048, unknown_transition_memory_costs=0,
-                    ),
-                ))
-                ControlStateStore(path).receive_heartbeat(heartbeat)
-                with sqlite3.connect(path) as connection:
-                    current = json.loads(connection.execute("SELECT payload FROM control_records").fetchone()[0])
-                    raw = deepcopy(current)
-                    evidence = raw["runtime_metrics"]["resource_evidence"]
-                    for key in ("admitted_demand_bytes", "pending_demand_bytes",
-                                "unknown_transition_memory_costs", "admitted_ram_backing_bytes", "pending_ram_backing_bytes"):
-                        raw["runtime_metrics"]["resident_wait"].pop(key)
-                    if old_cpu:
-                        for key in ("host_cpu_usage_usec", "host_cpu_steal_usec"):
-                            evidence.pop(key)
-                    if old_device:
-                        for key in ("read_bytes", "write_bytes"):
-                            evidence["devices"][0].pop(key)
-                    payload = control_state._json(raw)
-                    connection.execute("UPDATE control_records SET payload=?", (payload,))
-                reader = ControlStateStore(path)
-                self.assertEqual(verify(path), 1)
-                self.assertIsNone(reader.load_heartbeats()["job"].runtime_metrics.resource_evidence.host_cpu_usage_usec)
-                self.assertIsNone(reader.load_heartbeats()["job"].runtime_metrics.resident_wait.admitted_demand_bytes)
-                self.assertIsNone(reader.get_heartbeat("job", include_inventory=False).runtime_metrics.resource_evidence.devices[0].write_bytes)
-                reader.receive_heartbeat(replace(heartbeat, activity_epoch=heartbeat.activity_epoch + 1, received_at=utc_now()))
-                self.assertEqual(reader.load_heartbeats()["job"].activity_epoch, heartbeat.activity_epoch + 1)
-                with sqlite3.connect(path) as connection:
-                    refreshed = json.loads(connection.execute("SELECT payload FROM control_records").fetchone()[0])
-                self.assertIn("host_cpu_usage_usec", refreshed["runtime_metrics"]["resource_evidence"])
-                self.assertEqual(refreshed["runtime_metrics"]["resident_wait"]["admitted_demand_bytes"], 4096)
-                self.assertIn("read_bytes", refreshed["runtime_metrics"]["resource_evidence"]["devices"][0])
-                for field, value in (("unexpected", None), ("memory_dirty_bytes", -1), ("collected_at", None)):
-                    corrupt = deepcopy(raw)
-                    corrupt["runtime_metrics"]["resource_evidence"][field] = value
-                    with sqlite3.connect(path) as connection:
-                        connection.execute("UPDATE control_records SET payload=?", (control_state._json(corrupt),))
-                    for read in (reader.load_heartbeats, lambda: reader.get_heartbeat("job", include_inventory=False)):
-                        with self.assertRaisesRegex(ValueError, "invalid heartbeat"):
-                            read()
-                with sqlite3.connect(path) as connection:
-                    connection.execute("UPDATE control_records SET payload=?", (" " + payload,))
-                with self.assertRaisesRegex(ValueError, "invalid heartbeat"):
-                    reader.load_heartbeats()
 
     def test_header_read_omits_inventory_but_rechecks_external_authority(self):
         with TemporaryDirectory() as directory:
@@ -409,20 +354,13 @@ class ControlStateCacheTests(unittest.TestCase):
                 if path.exists():
                     self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
-    def test_body_pooling_requires_fresh_capability_on_the_observed_origin(self):
+    def test_body_pooling_requires_a_fresh_heartbeat_for_the_origin(self):
         from datetime import timedelta
-        from sandboxes.capabilities import REQUEST_BODY_KEEPALIVE_CAPABILITY
-        from sandboxes.control_plane import ControlPlaneHandler
         from tests.gateway_support import gateway_services
         with TemporaryDirectory() as directory:
-            store = ControlStateStore(Path(directory) / 'control.sqlite')
-            handler = object.__new__(ControlPlaneHandler)
-            handler.services = gateway_services(store=store, heartbeat_ttl_seconds=30)
-            for capable, age, expected in [(False, 0, None), (True, 0, 'http://node-job:8090'), (True, 60, None)]:
-                observed = utc_now() - timedelta(seconds=age)
-                store.upsert_heartbeat(replace(self.heartbeat(), received_at=observed,
-                    capabilities=(REQUEST_BODY_KEEPALIVE_CAPABILITY,) if capable else ()))
-                handler._heartbeat_for_route(job_id='job', include_inventory=False)
-                self.assertEqual(handler._pooled_node_body_origin, expected)
-            handler._heartbeat_for_route(job_id='missing')
-            self.assertIsNone(handler._pooled_node_body_origin)
+            fleet = gateway_services(store=ControlStateStore(Path(directory) / 'control.sqlite'),
+                                     heartbeat_ttl_seconds=30).fleet
+            for age, expected in [(0, 'http://node-job:8090'), (60, None)]:
+                heartbeat = replace(self.heartbeat(), received_at=utc_now() - timedelta(seconds=age))
+                self.assertEqual(fleet.body_keepalive_origin(heartbeat), expected)
+            self.assertIsNone(fleet.body_keepalive_origin(None))

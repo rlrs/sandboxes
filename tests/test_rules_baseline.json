@@ -98,8 +98,7 @@
   "private_patch": 7
  },
  "test_control_state_cache.py": {
-  "new": 1,
-  "private": 34,
+  "private": 26,
   "private_patch": 6,
   "test_import": 1
  },
@@ -644,8 +643,8 @@
   "test_import": 1
  },
  "test_resource_phase_forwarding.py": {
-  "new": 3,
-  "private": 16,
+  "new": 2,
+  "private": 11,
   "test_import": 2
  },
  "test_retired_memory_maintenance.py": {
@@ -857,7 +856,7 @@
  },
  "test_wake_owner_admission.py": {
   "new": 3,
-  "private": 10,
+  "private": 8,
   "private_patch": 2,
   "test_import": 1
  },
