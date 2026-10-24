@@ -1,13 +1,21 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import unittest
 
-from sandboxes.exec_routing import ExecRoutingService, ExecRouteUnavailable
+from sandboxes.exec_routing import (
+    ExecRoutingService,
+    ExecRouteUnavailable,
+    heartbeat_proves_route_absent,
+)
 from sandboxes.exec_session_routes import (
+    MAX_WORKER_ID_BYTES,
     ExecSessionRoutes,
     SignedExecRoute,
     valid_session_prefix,
+    worker_id_fits,
 )
+from sandboxes.models import NodeHeartbeat, ResourceQuantity, SandboxInventoryEntry
 
 ROUTE = SignedExecRoute(
     sandbox_id="rollout-7f3c",
@@ -68,6 +76,21 @@ class ExecSessionRoutesTests(unittest.TestCase):
                 SignedExecRoute("s" * 600, 1, "node-a", "job-1", ROUTE.issued_at)
             )
 
+    def test_every_worker_id_heartbeat_intake_accepts_fits_a_prefix(self) -> None:
+        routes = ExecSessionRoutes("gateway-secret")
+        # JSON escapes a control character to six bytes; UTF-8 needs up to four.
+        for worst in ("\x01" * (MAX_WORKER_ID_BYTES // 6), "\U0001f600" * (MAX_WORKER_ID_BYTES // 4),
+                      "n" * MAX_WORKER_ID_BYTES):
+            with self.subTest(length=len(worst)):
+                self.assertTrue(worker_id_fits(worst))
+                prefix = routes.prefix(
+                    SignedExecRoute("s" * 64, 2**63 - 1, worst, worst, 2**40)
+                )
+                self.assertTrue(valid_session_prefix(prefix))
+        self.assertFalse(worker_id_fits("n" * (MAX_WORKER_ID_BYTES + 1)))
+        self.assertFalse(worker_id_fits("\x01" * (MAX_WORKER_ID_BYTES // 6 + 1)))
+        self.assertFalse(worker_id_fits("\u00e9" * (MAX_WORKER_ID_BYTES // 2 + 1)))
+
     def test_worker_shape_check(self) -> None:
         self.assertFalse(valid_session_prefix("exec-abc"))
         self.assertFalse(valid_session_prefix("xr1.payload.short"))
@@ -85,9 +108,6 @@ class _Routing:
 
     def get_sandbox_readonly(self, sandbox_id):
         return self.route
-
-    def get_exec(self, session_id):  # pragma: no cover - must not be called
-        raise AssertionError("signed sessions must not read exec routes")
 
 
 class SignedExecRoutingTests(unittest.TestCase):
@@ -119,29 +139,59 @@ class SignedExecRoutingTests(unittest.TestCase):
                 self.assertEqual(error.payload["error_code"], "exec_worker_lost")
                 self.assertEqual(error.payload["sandbox_generation"], 3)
 
-    def test_unsignable_identity_falls_back_to_the_durable_route(self) -> None:
+    def test_unsigned_session_names_are_unknown(self) -> None:
+        for session_id in (f"exec-{NODE_SUFFIX}", self.session_id.replace("xr1.", "xr2.")):
+            with self.subTest(session_id=session_id), self.assertRaises(ExecRouteUnavailable) as raised:
+                self.service(None, _Routing()).resolve(session_id)
+            self.assertEqual(
+                (raised.exception.status, raised.exception.payload),
+                (404, {"error": "exec route not found", "retryable": False}),
+            )
+
+    def test_refuses_an_exec_whose_route_cannot_be_signed(self) -> None:
         service = self.service(None, _Routing())
         route = SimpleNamespace(
             sandbox_id="one", generation=3, node_id="n" * 600, job_id="job-1"
         )
-        self.assertIsNone(service.signed_prefix(route))
+        with self.assertRaises(ExecRouteUnavailable) as raised:
+            service.signed_prefix(route)
+        self.assertEqual(
+            (raised.exception.status, raised.exception.payload["error_code"]),
+            (500, "exec_route_unsignable"),
+        )
         self.assertTrue(
             service.signed_prefix(
                 SimpleNamespace(sandbox_id="one", generation=3, node_id="a", job_id="j")
             ).startswith("xr1.")
         )
 
-    def test_prefix_is_only_trusted_for_its_own_incarnation(self) -> None:
-        service = self.service(None, _Routing())
-        current = SimpleNamespace(sandbox_id="one", generation=3, job_id="job-1")
-        self.assertTrue(service.is_signed_for(self.session_id, current))
-        for other in (
-            SimpleNamespace(sandbox_id="one", generation=4, job_id="job-1"),
-            SimpleNamespace(sandbox_id="one", generation=3, job_id="job-2"),
-            SimpleNamespace(sandbox_id="two", generation=3, job_id="job-1"),
-        ):
-            self.assertFalse(service.is_signed_for(self.session_id, other))
-        self.assertFalse(service.is_signed_for(f"exec-{NODE_SUFFIX}", current))
+
+
+class RouteAbsenceTests(unittest.TestCase):
+    def test_only_a_fresh_empty_inventory_proves_a_route_absent(self) -> None:
+        now = datetime.now(timezone.utc)
+        routed_at = (now - timedelta(seconds=5)).isoformat()
+        empty = NodeHeartbeat(
+            node_id="node-a", job_id="job-1", updated_at=now, active_sandboxes=0,
+            received_at=now, inventory_complete=True,
+        )
+        parked = SandboxInventoryEntry(
+            sandbox_id="one", generation=1, operation_id="create-1", spec_hash="a" * 64,
+            state="parked", resources=ResourceQuantity(vcpu=1, memory_mb=256),
+        )
+
+        def absent(heartbeat) -> bool:
+            return heartbeat_proves_route_absent(
+                heartbeat, sandbox_id="one", route_created_at=routed_at,
+                route_updated_at=routed_at, heartbeat_ttl_seconds=120,
+            )
+
+        self.assertTrue(absent(empty))
+        # Zero active sandboxes does not mean a parked one disappeared.
+        self.assertFalse(absent(replace(empty, inventory=(parked,))))
+        self.assertFalse(absent(replace(empty, active_sandboxes=1)))
+        self.assertFalse(absent(replace(empty, received_at=now - timedelta(seconds=10))))
+        self.assertFalse(absent(None))
 
 
 if __name__ == "__main__":

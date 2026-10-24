@@ -58,8 +58,8 @@ under [Open decisions](#open-decisions).
 - **Finish power-of-k:** move wakes to node-gated admission and delete the placement service.
 - **Routing errors by type:** catch `RoutingUnavailable` instead of `sqlite3.DatabaseError`
   (`control_plane.py`, `gateway/heartbeats.py`), then drop that base class (kept for 0.10.x).
-- **Stateless exec ingress:** drop `upsert_exec` and `exec_sessions` once no old worker can join;
-  add route tokens for events and files.
+- **Stateless exec ingress:** add route tokens for events and files. Drop the unused
+  `exec_sessions` and `exec_losses` tables once no 0.10.0 process shares the routing schema.
 - **Split the single gateway host:** first move heartbeats, quarantine, host locks, build
   history and autoscaler state from host-local files into PostgreSQL.
 - **Node-loss timers:** run the observe-only experiment; gaps: no alert on `unavailable`, untimed

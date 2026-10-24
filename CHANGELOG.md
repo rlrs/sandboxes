@@ -30,6 +30,19 @@
   `images.failed_builds`, which were always empty and 0; `images.active_builds`
   still comes from builder heartbeats. The table stays in `images.sqlite`, so
   existing files open unchanged and a rollback to 0.10.0 needs nothing.
+- **The gateway no longer keeps durable exec routes.** Since 0.9.66 every worker
+  names exec sessions under the gateway's signed `X-UCloud-Exec-Session-Prefix`,
+  so the `exec_sessions` fallback for workers that ignored it was never written
+  (both it and `exec_losses` are empty in production, and every worker runs
+  0.10.0). The gateway stops reading and writing both tables; a session ID
+  without a valid prefix now answers 404. Heartbeats whose `node_id` or `job_id`
+  is longer than 128 bytes are refused (403), so every route can be signed; an
+  exec start whose route cannot be signed answers 500 `exec_route_unsignable`
+  instead of starting an unroutable session. `/metrics` drops `exec.sessions`.
+  The tables and their indexes stay, so a rollback to 0.10.0 and 0.10.0
+  autoscaler, GC and migration processes during the upgrade keep working; they
+  are dropped in a later release. Workers older than 0.9.66 must not hold
+  sandboxes when this gateway starts (placement already sends them no work).
 - **Operator scripts**: `scripts/images/import_image_recipes.py` only exports
   bundles; register names with `build_image_index.py register`. The unused
   `preflight_environment.py`, `build_environment_canary.sh` and

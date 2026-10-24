@@ -452,7 +452,7 @@ class MetricsTests(unittest.TestCase):
 
         snapshot = build_metrics_snapshot(
             {},
-            RoutingState({}, {}, {}, {}),
+            RoutingState({}, {}, {}),
             [],
             heartbeat_ttl_seconds=120,
             program_requests=requests,
@@ -675,7 +675,6 @@ class MetricsTests(unittest.TestCase):
                     created_at=now.isoformat(),
                 )
             },
-            exec_sessions={},
             pending={
                 "schedulable": PendingSandboxDemand(
                     sandbox_id="schedulable",
@@ -741,7 +740,6 @@ class MetricsTests(unittest.TestCase):
                     created_at=(now + timedelta(seconds=1)).isoformat(),
                 )
             },
-            exec_sessions={},
             pending={},
             image_builds={},
             prepared={},
@@ -775,7 +773,6 @@ class MetricsTests(unittest.TestCase):
                     storage_snapshot={"schema": "storage-native-v1"},
                 )
             },
-            exec_sessions={},
             pending={},
             image_builds={},
             prepared={},

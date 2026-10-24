@@ -13,7 +13,7 @@ from unittest.mock import patch
 from sandboxes.control_plane import build_server
 from sandboxes.gateway_response_proxy import encode_response
 from sandboxes.models import NodeHeartbeat, ResourceQuantity, utc_now
-from sandboxes.routing import ExecRoute, SandboxRoute
+from sandboxes.routing import SandboxRoute
 from tests.support import postgres_routing_file, wait_until
 
 TEST_TIER = "contract"
@@ -119,23 +119,17 @@ class AsyncGatewayEventTests(unittest.TestCase):
             total_resources=ResourceQuantity(vcpu=32, memory_mb=98304),
         )
         handler.services.heartbeats.store.receive_heartbeat(self.heartbeat)
-        handler.routing_store.upsert_sandbox(SandboxRoute(
+        route = handler.routing_store.upsert_sandbox(SandboxRoute(
             sandbox_id='s', node_id='node', job_id='job', node_url=self.heartbeat.node_url,
             resources=ResourceQuantity(vcpu=1, memory_mb=1024), spec={'id': 's'},
             state='running', generation=7, create_operation_id='test-create', spec_hash='a' * 64,
         ))
-        for index in range(8):
-            handler.routing_store.upsert_exec(
-                ExecRoute(
-                    session_id=f"e{index}",
-                    sandbox_id="s",
-                    node_id="node",
-                    job_id="job",
-                    node_url=self.heartbeat.node_url,
-                )
-            )
+        # Sessions the worker named under the gateway's signed prefix.
+        prefix = handler.exec_routing.signed_prefix(route)
+        self.sessions = [f"{prefix}.{index:032x}" for index in range(8)]
 
-    def poll(self, path="/v1/exec/e0/events", *, token="public", body=None):
+    def poll(self, path=None, *, token="public", body=None):
+        path = path or f"/v1/exec/{self.sessions[0]}/events"
         connection = HTTPConnection("127.0.0.1", self.gateway.server_port, timeout=3)
         self.addCleanup(connection.close)
         connection.request(
@@ -238,7 +232,7 @@ class AsyncGatewayEventTests(unittest.TestCase):
     def test_sleeping_polls_release_http_workers_and_keep_health_responsive(self):
         connections = []
         for index in range(8):
-            connections.append(self.poll(f"/v1/exec/e{index}/events?wait=1"))
+            connections.append(self.poll(f"/v1/exec/{self.sessions[index]}/events?wait=1"))
             self.wait_calls(index + 1)
         # Eight waiting requests exceed the two-thread HTTP admission pool.
         connection = self.poll("/healthz")

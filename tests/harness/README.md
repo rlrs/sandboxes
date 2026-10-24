@@ -18,8 +18,7 @@ runs in well under 2 s.
 Node agents run in the test process by default. `LocalFleet(node_processes=True)`
 runs each in its own process, forked from a preloaded zygote
 (`node_process.py`), so `node.crash()` can SIGKILL it mid-operation. That mode
-keeps the fixed host sample and has neither `node.requests` nor
-`node.honor_exec_session_prefix`; touching one raises. The harness relays
+keeps the fixed host sample and has no `node.requests`; touching it raises. The harness relays
 their heartbeats from `GET /v1/heartbeat` beside the agent's own sender, and
 relays a fresh sample until the gateway keeps one of its own (the gateway keeps
 the latest receipt, so the agent's startup send can supersede a relay). Agents
@@ -97,8 +96,7 @@ there is none between the Warden's journal commit and the registry's.
 last receipt past the TTL, as silence would. `node.reboot()` kills guest
 processes and changes the boot ID before restarting the agent.
 `node.drain(token)` and `node.request(...)` call the node's control API
-directly, as the autoscaler or gateway does. `node.honor_exec_session_prefix
-= False` models a worker that predates signed exec session names.
+directly, as the autoscaler or gateway does.
 `fleet.continuity_cycle(node, interrupted_at=...)` runs the autoscaler's
 per-cycle guest-continuity step against a fake provider job and the real
 direct probe; the rest of an autoscaler cycle is not modeled yet.

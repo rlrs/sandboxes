@@ -14,6 +14,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 
 from ..control_state import QUARANTINE_REASON, ControlStateStore
+from ..exec_session_routes import MAX_WORKER_ID_BYTES, worker_id_fits
 from ..metrics import MetricsStore, record_node_epoch_retired, record_node_heartbeat
 from ..models import NodeHeartbeat, SandboxInventoryEntry, utc_now
 from ..registry import HeartbeatIdentityError, heartbeat_from_dict, heartbeat_to_dict
@@ -464,6 +465,9 @@ class HeartbeatIngest:
             return "heartbeat node_url must be an absolute HTTP(S) origin"
         if not heartbeat.node_id or not heartbeat.job_id or not heartbeat.node_epoch:
             return "heartbeat node_id, job_id, and node_epoch are required"
+        if not worker_id_fits(heartbeat.node_id) or not worker_id_fits(heartbeat.job_id):
+            # Exec sessions are routed by a signed prefix naming both.
+            return f"heartbeat node_id and job_id must be at most {MAX_WORKER_ID_BYTES} bytes"
         for route_node, route_job, route_url in self.routing_store.assigned_node_identities(
             node_id=heartbeat.node_id, job_id=heartbeat.job_id, node_url=node_url,
         ):

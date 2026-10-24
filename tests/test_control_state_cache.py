@@ -311,32 +311,6 @@ class ControlStateCacheTests(unittest.TestCase):
                     returning.join(3)
             self.assertFalse(errors)
 
-    def test_exec_absence_check_only_loads_inventory_for_an_empty_worker(self):
-        from sandboxes.exec_routing import ExecRoutingService, heartbeat_proves_route_absent
-        from sandboxes.routing import ExecRoute
-        with TemporaryDirectory() as raw:
-            store = ControlStateStore(Path(raw) / 'control.sqlite')
-            heartbeat = replace(self.heartbeat(), received_at=utc_now(), active_sandboxes=1)
-            store.receive_heartbeat(heartbeat)
-            routing = ExecRoutingService(store, None, 120)
-            route = ExecRoute(session_id='exec', sandbox_id='sandbox', node_id=heartbeat.node_id,
-                              job_id=heartbeat.job_id, node_url=heartbeat.node_url,
-                              created_at='2026-01-01T00:00:00+00:00', updated_at='2026-01-01T00:00:00+00:00')
-            def stale():
-                return heartbeat_proves_route_absent(
-                    routing.heartbeat(route), sandbox_id=route.sandbox_id,
-                    route_created_at=route.created_at, route_updated_at=route.updated_at,
-                    heartbeat_ttl_seconds=routing.heartbeat_ttl_seconds,
-                )
-            with patch.object(store, 'get_heartbeat', wraps=store.get_heartbeat) as get:
-                self.assertFalse(stale())
-                get.assert_called_once_with('job', include_inventory=False)
-            # Zero active count does not mean the parked sandbox disappeared.
-            store.receive_heartbeat(replace(heartbeat, active_sandboxes=0, received_at=utc_now()))
-            self.assertFalse(stale())
-            store.receive_heartbeat(replace(heartbeat, active_sandboxes=0, inventory=(), received_at=utc_now()))
-            self.assertTrue(stale())
-
     def test_single_heartbeat_read_has_no_explicit_transaction_and_keeps_permissions(self):
         with TemporaryDirectory() as directory:
             store = ControlStateStore(Path(directory) / 'control.sqlite')

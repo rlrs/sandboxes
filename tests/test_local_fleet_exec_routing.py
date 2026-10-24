@@ -6,14 +6,17 @@ signals by heartbeat alone. A late push is not silence: the gateway pulls the
 worker's heartbeat first. When the worker is silent the gateway answers for
 it: 503 while the incarnation is still its own, 404 once deleted or replaced,
 410 once the incarnation was lost. A fresh worker is the authority on its own
-sessions. Workers without the prefix keep the durable exec route.
+sessions. Every session must carry the prefix, so heartbeat intake refuses
+worker IDs too long to sign.
 """
 
+from dataclasses import replace
 import signal
 import unittest
 
 from tests.harness import LocalFleet
-from sandboxes import routing
+from sandboxes.agent import fetch_node_agent_heartbeat, post_heartbeat_with_headers
+from sandboxes.exec_session_routes import MAX_WORKER_ID_BYTES
 
 TEST_TIER = "contract"
 
@@ -96,65 +99,19 @@ class SignedExecSessionTests(unittest.TestCase):
             )
             self.assertTrue(lost.json()["lost_at"])
 
-    def test_unsigned_worker_sessions_keep_the_durable_route(self):
+
+    def test_heartbeat_intake_refuses_worker_ids_too_long_to_sign(self):
         with LocalFleet() as fleet:
-            node = fleet.nodes[0]
-            node.honor_exec_session_prefix = False
-            store = routing.open_routing_store(fleet.routing_file)
-            fleet.create("alpha")
-            started = fleet.start_exec("alpha", ["/bin/sh", "-c", "echo ready; exec sleep 30"],
-                                       initial_wait_seconds=None)
-            session_id = started.json()["session"]["id"]
-            self.assertTrue(session_id.startswith("exec-"), session_id)
-            self.assertEqual(store.get_exec(session_id).sandbox_id, "alpha")
-            with fleet.routing_calls() as calls:
-                fleet.wait_output(session_id, "ready\n")
-            self.assertIn("get_exec", calls)
-
-            # A late push is not silence; a silent worker keeps its durable
-            # session: retryable, unproxied.
-            fleet.expire_heartbeat(node)
-            self.assertEqual(fleet.events(session_id, after=0, wait_seconds=0).status, 200)
-            node.stop()
-            fleet.expire_heartbeat(node)
-            before = len(_exec_paths(node))
-            silent = fleet.events(session_id, after=0, wait_seconds=0)
-            self.assertEqual((silent.status, silent.json()["error_code"]), (503, "sandbox_worker_unreachable"))
-            self.assertEqual(len(_exec_paths(node)), before)
-            self.assertIsNotNone(store.get_exec(session_id))
-            self.assertIsNone(store.get_exec_loss(session_id))
-            node.start()
-
-            # Deletion removes the durable row: the gateway answers alone.
-            self.assertEqual(fleet.delete("alpha").status, 200)
-            self.assertIsNone(store.get_exec(session_id))
-            before = len(_exec_paths(node))
-            gone = fleet.events(session_id, after=0, wait_seconds=0)
-            self.assertEqual((gone.status, gone.json()), (404, {"error": "exec route not found", "retryable": False}))
-            self.assertEqual(len(_exec_paths(node)), before)
-
-            # A retired boot records the loss, so it is final even though the
-            # rebooted worker is fresh.
-            fleet.create("alpha")
-            survivor = fleet.start_exec("alpha", ["sleep", "30"]).json()["session"]["id"]
-            node.reboot()
-            fleet.heartbeat()
-            before = len(_exec_paths(node))
-            for response in (
-                fleet.request("GET", f"/v1/exec/{survivor}", token="sandbox"),
-                fleet.events(survivor, after=0, wait_seconds=0),
-                fleet.exec_stdin(survivor, "x"),
-                fleet.exec_signal(survivor, 15),
-            ):
-                self.assertEqual(response.status, 410, response.body)
-                self.assertEqual(
-                    (response.json()["error_code"], response.json()["retryable"],
-                     response.json()["sandbox_generation"]),
-                    ("exec_worker_lost", False, 2),
-                )
-            self.assertEqual(len(_exec_paths(node)), before)
-            unknown = fleet.events("exec-" + "0" * 32, after=0, wait_seconds=0)
-            self.assertEqual((unknown.status, unknown.json()), (404, {"error": "exec route not found", "retryable": False}))
+            sample = fetch_node_agent_heartbeat(
+                fleet.nodes[0].url, bearer_token=fleet.tokens.node_control
+            )
+            url = fleet.gateway_url + "/v1/nodes/heartbeat"
+            auth = {"Authorization": f"Bearer {fleet.tokens.heartbeat}"}
+            for field in ("node_id", "job_id"):
+                with self.subTest(field):
+                    oversized = replace(sample, **{field: "w" * (MAX_WORKER_ID_BYTES + 1)})
+                    self.assertEqual(post_heartbeat_with_headers(url, oversized, auth).status, 403)
+            self.assertEqual(post_heartbeat_with_headers(url, sample, auth).status, 200)
 
 
 if __name__ == "__main__":

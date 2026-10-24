@@ -67,7 +67,6 @@ from sandboxes.agent import fetch_node_agent_heartbeat, post_heartbeat_with_head
 from sandboxes.control_plane import build_server
 from sandboxes.direct_registry import DirectSandboxRegistry
 from sandboxes.direct_service import DirectSandboxService
-from sandboxes.exec_session_routes import EXEC_SESSION_PREFIX_HEADER
 from sandboxes.models import NodeRuntimeMetrics
 from sandboxes.storage_native_daemon import (
     StorageNativeNodeClient,
@@ -285,7 +284,6 @@ class FleetNode:
         self.boot_id = uuid.uuid4()
         self._sample_metrics: Callable[[], NodeRuntimeMetrics | None] = fixed_metrics
         self._requests: list[tuple[str, str]] = []
-        self._honor_exec_session_prefix = True
         self.port = 0
         self.url: str | None = None
         self.server = None
@@ -334,17 +332,6 @@ class FleetNode:
         """(method, path) of every request this node's agent parsed."""
         self._in_process("requests")
         return self._requests
-
-    @property
-    def honor_exec_session_prefix(self) -> bool:
-        """False models a worker that predates signed exec session names."""
-        self._in_process("honor_exec_session_prefix")
-        return self._honor_exec_session_prefix
-
-    @honor_exec_session_prefix.setter
-    def honor_exec_session_prefix(self, honored: bool) -> None:
-        self._in_process("honor_exec_session_prefix")
-        self._honor_exec_session_prefix = honored
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -493,8 +480,6 @@ class FleetNode:
                 if not super().parse_request():
                     return False
                 node._requests.append((self.command, self.path))
-                if not node._honor_exec_session_prefix:
-                    del self.headers[EXEC_SESSION_PREFIX_HEADER]
                 return True
 
         server.RequestHandlerClass = ObservedHandler

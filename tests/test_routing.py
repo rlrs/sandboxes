@@ -141,12 +141,6 @@ def seed_routing_state(store: RoutingStore, state: RoutingState) -> None:
             return_value=timestamp(route.updated_at),
         ):
             store.upsert_sandbox(route)
-    for route in state.exec_sessions.values():
-        with patch(
-            "sandboxes.routing.utc_now",
-            return_value=timestamp(route.updated_at),
-        ):
-            store.upsert_exec(route)
     for item in state.pending.values():
         with patch(
             "sandboxes.routing.utc_now",
@@ -163,17 +157,12 @@ def seed_routing_state(store: RoutingStore, state: RoutingState) -> None:
 
 
 class RoutingStoreTests(unittest.TestCase):
-    def test_capacity_snapshot_omits_exec_history_without_changing_state(self):
+    def test_load_prunes_expired_demand_and_metrics_read_the_same_state(self):
         with routing_store(self) as store:
-            route = store.upsert_sandbox(sandbox_route(
+            store.upsert_sandbox(sandbox_route(
                 sandbox_id="running", node_id="node", job_id="job",
                 node_url="http://node", state="running",
             ))
-            store.upsert_exec(ExecRoute(
-                session_id="retained-exec", sandbox_id=route.sandbox_id,
-                node_id=route.node_id, job_id=route.job_id, node_url=route.node_url,
-            ))
-            session = store.get_exec("retained-exec")
             resources = ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024)
             expired_at = utc_now() - timedelta(seconds=PENDING_DEMAND_TTL_SECONDS + 1)
             with patch("sandboxes.routing.utc_now", return_value=expired_at):
@@ -187,21 +176,14 @@ class RoutingStoreTests(unittest.TestCase):
             )
             store.upsert_prepared_builder("builder", count=1, ttl_seconds=600)
 
-            snapshot = store.load(include_exec_sessions=False)
+            snapshot = store.load()
 
-            self.assertEqual(snapshot.exec_sessions, {})
             self.assertEqual(set(snapshot.sandboxes), {"running"})
             self.assertEqual(set(snapshot.pending), {"pending"})
             self.assertEqual(set(snapshot.image_builds), {"build"})
             self.assertEqual(set(snapshot.prepared), {"prepared"})
             self.assertEqual(set(snapshot.prepared_builders), {"builder"})
-            full = store.load()
-            self.assertEqual(full.exec_sessions, {session.session_id: session})
-            self.assertEqual(snapshot, replace(full, exec_sessions={}))
-            self.assertEqual(
-                sandbox_demand_from_routing_state(snapshot),
-                sandbox_demand_from_routing_state(full),
-            )
+            self.assertEqual(store.load_metrics(), snapshot)
 
     def test_observation_cannot_recreate_deleted_or_deleting_incarnation(self):
         with routing_store(self) as store:
@@ -373,50 +355,6 @@ class RoutingStoreTests(unittest.TestCase):
                 job_id=" ",
                 node_url="http://node-1:8090",
             )
-
-    def test_exec_route_replay_cannot_change_worker_identity(self) -> None:
-        route = ExecRoute(
-            session_id="exec-1",
-            sandbox_id="sandbox-1",
-            node_id="node-1",
-            job_id="job-1",
-            node_url="http://node-1:8090",
-        )
-        with routing_store(self) as store:
-            store.upsert_exec(route)
-            store.upsert_exec(route)
-
-            with self.assertRaisesRegex(
-                SandboxRouteConflictError,
-                "another sandbox or worker",
-            ):
-                store.upsert_exec(replace(route, job_id="job-2"))
-
-            stored = store.get_exec(route.session_id)
-
-        self.assertIsNotNone(stored)
-        assert stored is not None
-        self.assertEqual(stored.job_id, "job-1")
-
-    def test_exec_route_delete_returns_the_route_once(self) -> None:
-        route = ExecRoute(
-            session_id="exec-1",
-            sandbox_id="sandbox-1",
-            node_id="node-1",
-            job_id="job-1",
-            node_url="http://node-1:8090",
-        )
-        with routing_store(self) as store:
-            store.upsert_exec(route)
-            stored = store.get_exec(route.session_id)
-            deleted = store.delete_exec(route.session_id)
-            after = store.get_exec(route.session_id)
-            repeated = store.delete_exec(route.session_id)
-
-        self.assertIsNotNone(stored)
-        self.assertEqual(deleted, stored)
-        self.assertIsNone(after)
-        self.assertIsNone(repeated)
 
     def test_generic_route_upsert_accepts_internal_transition_state(self) -> None:
         with routing_store(self) as store:
@@ -952,17 +890,6 @@ class RoutingStoreTests(unittest.TestCase):
                             updated_at=old,
                         ),
                     },
-                    exec_sessions={
-                        "exec-stale": ExecRoute(
-                            session_id="exec-stale",
-                            sandbox_id="stale-one",
-                            node_id="node-1",
-                            job_id="job-1",
-                            node_url="http://node-1:8090",
-                            created_at=old,
-                            updated_at=old,
-                        )
-                    },
                     pending={
                         "stale-one": PendingSandboxDemand(
                             sandbox_id="stale-one",
@@ -1007,7 +934,6 @@ class RoutingStoreTests(unittest.TestCase):
 
         self.assertNotIn("stale-one", state.sandboxes)
         self.assertNotIn("stale-one", state.pending)
-        self.assertNotIn("exec-stale", state.exec_sessions)
         self.assertNotIn("active-one", state.sandboxes)
         self.assertIn("other-node", state.sandboxes)
 
@@ -1031,7 +957,6 @@ class RoutingStoreTests(unittest.TestCase):
                             updated_at=future,
                         )
                     },
-                    exec_sessions={},
                     pending={},
                     image_builds={},
                 ),
@@ -1343,26 +1268,6 @@ class RoutingStoreTests(unittest.TestCase):
                             updated_at=now,
                         ),
                     },
-                    exec_sessions={
-                        "exec-remove": ExecRoute(
-                            session_id="exec-remove",
-                            sandbox_id="remove-me",
-                            node_id="node-1",
-                            job_id="job-1",
-                            node_url="http://node-1:8090",
-                            created_at=now,
-                            updated_at=now,
-                        ),
-                        "exec-keep": ExecRoute(
-                            session_id="exec-keep",
-                            sandbox_id="keep-me",
-                            node_id="node-2",
-                            job_id="job-2",
-                            node_url="http://node-2:8090",
-                            created_at=now,
-                            updated_at=now,
-                        ),
-                    },
                     pending={
                         "remove-me": PendingSandboxDemand(
                             sandbox_id="remove-me",
@@ -1379,17 +1284,11 @@ class RoutingStoreTests(unittest.TestCase):
 
             removed = store.delete_sandboxes_for_jobs_with_error(["job-1"])
             state = store.load()
-            removed_exec = store.get_exec("exec-remove")
-            kept_exec = store.get_exec("exec-keep")
 
         self.assertEqual([route.sandbox_id for route in removed], ["remove-me"])
         self.assertNotIn("remove-me", state.sandboxes)
         self.assertNotIn("remove-me", state.pending)
-        self.assertNotIn("exec-remove", state.exec_sessions)
-        self.assertIsNone(removed_exec)
         self.assertIn("keep-me", state.sandboxes)
-        self.assertIn("exec-keep", state.exec_sessions)
-        self.assertIsNotNone(kept_exec)
 
     def test_node_loss_keeps_only_fully_published_parked_route(self) -> None:
         with routing_store(self) as store:
@@ -1440,7 +1339,7 @@ class RoutingStoreTests(unittest.TestCase):
                     storage_snapshot={"schema": "storage-native-v1"},
                 )
             )
-            local_park = store.upsert_sandbox(
+            store.upsert_sandbox(
                 sandbox_route(
                     sandbox_id="local-parked",
                     node_id="lost-node",
@@ -1452,25 +1351,11 @@ class RoutingStoreTests(unittest.TestCase):
                     spec_hash="d" * 64,
                 )
             )
-            for route in (live, portable, local_park, deleting_portable):
-                store.upsert_exec(
-                    ExecRoute(
-                        session_id=f"exec-{route.sandbox_id}",
-                        sandbox_id=route.sandbox_id,
-                        node_id=route.node_id,
-                        job_id=route.job_id,
-                        node_url=route.node_url,
-                    )
-                )
-
             removed = store.delete_sandboxes_for_jobs_with_error(
                 ["lost-job"],
                 terminal_error="node_lost",
             )
             state = store.load()
-            for route in (live, portable, local_park, deleting_portable):
-                loss = store.get_exec_loss(f"exec-{route.sandbox_id}")
-                self.assertEqual(loss["generation"], route.generation)
 
         self.assertTrue(is_portable_parked_route(portable))
         self.assertEqual(
@@ -1494,7 +1379,6 @@ class RoutingStoreTests(unittest.TestCase):
             state.sandboxes["portable-parked"].worker_state,
             "detached",
         )
-        self.assertEqual(state.exec_sessions, {})
 
     def test_worker_detach_is_generation_fenced_and_idempotent(self) -> None:
         with routing_store(self) as store:
@@ -1517,18 +1401,8 @@ class RoutingStoreTests(unittest.TestCase):
             stale = replace(route, generation=route.generation + 1)
             stale_completion = store.complete_sandbox_detach(stale)
             assert fenced is not None
-            store.upsert_exec(
-                ExecRoute(
-                    session_id="exec-after-detach-fence",
-                    sandbox_id=fenced.sandbox_id,
-                    node_id=fenced.node_id,
-                    job_id=fenced.job_id,
-                    node_url=fenced.node_url,
-                )
-            )
             completed = store.complete_sandbox_detach(fenced)
             replayed_completion = store.complete_sandbox_detach(fenced)
-            durable_state = store.load()
 
         assert replayed_fence is not None
         assert completed is not None
@@ -1538,7 +1412,6 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertIsNone(stale_completion)
         self.assertEqual(completed.worker_state, "detached")
         self.assertEqual(replayed_completion.worker_state, "detached")
-        self.assertNotIn("exec-after-detach-fence", durable_state.exec_sessions)
 
     def test_delete_stale_sandboxes_removes_missing_jobs_after_grace(self) -> None:
         with routing_store(self) as store:
@@ -1620,26 +1493,6 @@ class RoutingStoreTests(unittest.TestCase):
                             updated_at=old,
                         ),
                     },
-                    exec_sessions={
-                        "exec-old": ExecRoute(
-                            session_id="exec-old",
-                            sandbox_id="old-missing",
-                            node_id="old-node",
-                            job_id="old-job",
-                            node_url="http://old-node:8090",
-                            created_at=old,
-                            updated_at=old,
-                        ),
-                        "exec-portable-preserved": ExecRoute(
-                            session_id="exec-portable-preserved",
-                            sandbox_id="portable-preserved",
-                            node_id="portable-preserved-node",
-                            job_id="portable-preserved-job",
-                            node_url="http://portable-preserved-node:8090",
-                            created_at=old,
-                            updated_at=old,
-                        ),
-                    },
                     pending={
                         "old-missing": PendingSandboxDemand(
                             sandbox_id="old-missing",
@@ -1659,18 +1512,16 @@ class RoutingStoreTests(unittest.TestCase):
             )
             state = store.load()
             loss = store.get_sandbox_loss("old-missing")
-            exec_loss = store.get_exec_loss("exec-old")
 
         self.assertEqual(
             [route.sandbox_id for route in removed],
             ["old-missing", "portable-delete-pending"],
         )
         # A vanished owner job is a loss, answered 410, not an unknown id.
-        assert loss is not None and exec_loss is not None
-        self.assertEqual((loss["reason"], exec_loss["sandbox_id"]), ("node_lost", "old-missing"))
+        assert loss is not None
+        self.assertEqual(loss["reason"], "node_lost")
         self.assertNotIn("old-missing", state.sandboxes)
         self.assertNotIn("old-missing", state.pending)
-        self.assertNotIn("exec-old", state.exec_sessions)
         self.assertIn("recent-missing", state.sandboxes)
         self.assertIn("active-job", state.sandboxes)
         self.assertIn("fresh-node", state.sandboxes)
@@ -1679,7 +1530,6 @@ class RoutingStoreTests(unittest.TestCase):
         self.assertEqual(portable.worker_state, "detached")
         self.assertEqual(portable.node_epoch, "")
         self.assertEqual(portable.activity_epoch, 0)
-        self.assertNotIn("exec-portable-preserved", state.exec_sessions)
 
     def test_route_claims_image_specific_capacity_before_generic_capacity(
         self,
@@ -2153,7 +2003,6 @@ class RoutingStoreTests(unittest.TestCase):
         observed_at = utc_now().isoformat()
         with routing_store(self) as store:
             stored = {name: store.upsert_sandbox(route) for name, route in routes.items()}
-            store.upsert_exec(ExecRoute(session_id="exec-kept", sandbox_id="kept", **owner))
             retirement = store.retire_node_epochs(
                 "job-1", ("boot-a",), node_epoch="boot-b", activity_epoch=3,
                 inventory=inventory, observed_at=observed_at,
@@ -2164,7 +2013,6 @@ class RoutingStoreTests(unittest.TestCase):
                 inventory=inventory, observed_at=observed_at,
             )
             current = {name: store.get_sandbox_readonly(name) for name in routes}
-            exec_loss = (store.get_exec_loss("exec-kept"), store.get_exec("exec-kept"))
             losses = {name: (store.get_sandbox_loss(name) or {}).get("reason") for name in routes}
             reapable = store.reboot_lost_incarnations(
                 "job-1", {(name, 1) for name in routes})
@@ -2185,8 +2033,6 @@ class RoutingStoreTests(unittest.TestCase):
              current["kept"].updated_at),
             ("parked", "boot-b", 3, observed_at),
         )
-        # Its sessions belonged to the old boot's processes.
-        self.assertEqual((exec_loss[0]["sandbox_id"], exec_loss[1]), ("kept", None))
         self.assertEqual(current["deleting"], stored["deleting"])
         self.assertEqual(current["new-boot"], stored["new-boot"])
         for name in ("portable", "detaching"):

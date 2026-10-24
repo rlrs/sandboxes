@@ -117,7 +117,9 @@ cache for builds. See [images.md](images.md).
 `POST /v1/sandboxes/<id>/exec` reads the route and forwards to the owning node;
 a parked route is woken first. The gateway signs a session prefix (HMAC over
 sandbox, generation and worker), so follow-up polls, stdin, signals and closes
-route by heartbeat without touching the database. A session is never
+route by heartbeat without touching the database; a session name without a
+valid prefix is unknown (404). Heartbeats with node or job IDs over 128 bytes are
+refused, so every route fits a prefix. A session is never
 redirected to another node: a lost owner gives 410 `exec_worker_lost`. Files,
 archives and managed-process jobs follow the same routing and implicit-wake
 rules. None of this enters the placement queue.

@@ -1227,7 +1227,6 @@ def build_metrics_snapshot(
     events: list[MetricEvent],
     *,
     heartbeat_ttl_seconds: int,
-    exec_session_count: int | None = None,
     program_requests: list[ProgramRequestState] | None = None,
 ) -> dict[str, Any]:
     now = utc_now()
@@ -1258,7 +1257,7 @@ def build_metrics_snapshot(
     schedulable_builder_nodes = [
         heartbeat for heartbeat in compatible if "image-build" in heartbeat.capabilities
     ]
-    routing_state = routing_state or RoutingState({}, {}, {}, {})
+    routing_state = routing_state or RoutingState({}, {}, {})
     fresh_sandbox_nodes = {heartbeat.node_id: heartbeat for heartbeat in sandbox_nodes}
     routes_on_fresh_nodes = sum(
         1
@@ -1381,13 +1380,6 @@ def build_metrics_snapshot(
             "oldest_prepared_seconds": _oldest_age_seconds(prepared_capacity),
             "next_expiration_seconds": _next_expiration_seconds(prepared_capacity),
             "items": [item.to_dict() for item in prepared_capacity],
-        },
-        "exec": {
-            "sessions": (
-                len(routing_state.exec_sessions)
-                if exec_session_count is None
-                else max(0, int(exec_session_count))
-            ),
         },
         "programs": program_summary,
         "images": {

@@ -1702,13 +1702,10 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             ):
                 return handler_cls.metrics_response_cache
 
-            exec_session_count = 0
             load_metrics = getattr(self.routing_store, "load_metrics", None)
-            if load_metrics is None:
-                routing_state = self.routing_store.load()
-                exec_session_count = len(routing_state.exec_sessions)
-            else:
-                routing_state, exec_session_count = load_metrics()
+            routing_state = (
+                self.routing_store.load() if load_metrics is None else load_metrics()
+            )
             events = self.metrics_store.load_events(
                 max_events=(
                     FULL_METRICS_EVENT_LIMIT if full else DEFAULT_METRICS_EVENT_LIMIT
@@ -1743,7 +1740,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 routing_state,
                 events,
                 heartbeat_ttl_seconds=self.services.fleet.heartbeat_ttl_seconds,
-                exec_session_count=exec_session_count,
                 program_requests=self.routing_store.program_requests_readonly(),
             )
             snapshot["telemetry"] = (
@@ -3765,12 +3761,13 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 SANDBOX_GENERATION_HEADER: str(route.generation),
             }
         if sandbox_http_route is not None and sandbox_http_route.action == "exec":
-            exec_routing = getattr(self, "exec_routing", None)
-            prefix = exec_routing.signed_prefix(route) if exec_routing is not None else None
-            if prefix is not None:
-                # Capable workers name the session under this signed route, so
-                # later polls need no durable exec route. Others ignore it.
-                extra_headers = {EXEC_SESSION_PREFIX_HEADER: prefix}
+            # The worker names the session under this signed route, so later
+            # requests for it route without any stored state.
+            try:
+                extra_headers = {EXEC_SESSION_PREFIX_HEADER: self.exec_routing.signed_prefix(route)}
+            except ExecRouteUnavailable as exc:
+                self._write_json(exc.payload, status=exc.status, headers=exc.headers)
+                return
         # Downloads stream their response; uploads stream the request body and
         # receive a small JSON acknowledgement after the worker commits it.
         if (
@@ -4220,27 +4217,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             if invalid is not None:
                 self._send_proxied_response(invalid)
                 return False
-        if http_route.action == "exec":
-            session = response.json().get("session")
-            session_id = session.get("id") if isinstance(session, dict) else None
-            exec_routing = getattr(self, "exec_routing", None)
-            if (
-                isinstance(session_id, str)
-                and session_id
-                and not (
-                    exec_routing is not None
-                    and exec_routing.is_signed_for(session_id, route)
-                )
-            ):
-                self.routing_store.upsert_exec(
-                    ExecRoute(
-                        session_id=session_id,
-                        sandbox_id=route.sandbox_id,
-                        node_id=route.node_id,
-                        job_id=route.job_id,
-                        node_url=route.node_url,
-                    )
-                )
         return True
 
     def _handle_lifecycle_proxy_response(

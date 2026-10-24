@@ -2902,7 +2902,7 @@ def cmd_autoscaler(args: argparse.Namespace) -> int:
                         )
                     )
                 )
-            routing_state = routing_store.load(include_exec_sessions=False)
+            routing_state = routing_store.load()
             pending_snapshot = list(routing_state.pending.values())
             capacity_pending_snapshot = [
                 item for item in pending_snapshot if item.is_capacity_demand
