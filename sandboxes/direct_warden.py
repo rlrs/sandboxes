@@ -52,10 +52,10 @@ from .storage_native_daemon import (
     storage_operation_id,
 )
 from .managed_process import (
-    configured_managed_state_mount,
     managed_ledger_fingerprint,
     prepare_managed_state_directory,
     record_parked_managed_state,
+    require_managed_state_mount,
 )
 from .telemetry import Telemetry
 from . import pause_tier
@@ -1879,16 +1879,15 @@ class DirectRunscWarden:
     def _prepare_managed_state_mount(cls, sandbox: DirectSandbox) -> None:
         """Create the bound managed-state source before runsc create or restore.
 
-        Only for a config that binds it, and only from the bundle's own rootfs.
-        A config without the mount (created before it existed) is left alone:
-        its checkpoint's mount table has none.
+        Every managed-process config binds it, from the bundle's own rootfs;
+        one that does not is refused.
         """
         config = cls._managed_process_config(sandbox)
         if config is None:
             return
         try:
-            if configured_managed_state_mount(config, sandbox.bundle):
-                prepare_managed_state_directory(sandbox.bundle / "rootfs")
+            require_managed_state_mount(config, sandbox.bundle)
+            prepare_managed_state_directory(sandbox.bundle / "rootfs")
         except (OSError, ValueError) as exc:
             raise DirectWardenError(
                 f"managed-process state mount is unavailable: {exc}"
@@ -1914,11 +1913,9 @@ class DirectRunscWarden:
     def _managed_process_ledger_digest(cls, sandbox: DirectSandbox) -> str:
         """Fingerprint the supervisor's ledger, read as the host sees it.
 
-        With the state mount the guest writes it into the rootfs; the guest is
-        stopped by then (checkpoint), so it is stable. Without the mount the
-        guest's copy is in the Sentry's filestore and the host sees none, so
-        the digest is the constant "no job". A sandbox moved across nodes
-        carries its upper, so both ends compute the same digest.
+        Through the state mount the guest writes it into the rootfs; the guest
+        is stopped by then (checkpoint), so it is stable. A sandbox moved
+        across nodes carries its upper, so both ends compute the same digest.
         """
         if cls._managed_process_config(sandbox) is None:
             return ""

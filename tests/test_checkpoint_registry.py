@@ -457,9 +457,9 @@ class CheckpointRegistryTests(unittest.TestCase):
 
 class ManagedStateImportTests(unittest.TestCase):
     """A move regenerates the OCI config: the state mount follows the new
-    bundle, and only for a sandbox whose checkpoint was taken with it."""
+    bundle."""
 
-    def imported_config(self, *, bound: bool) -> tuple[dict, Path]:
+    def imported_config(self) -> tuple[dict, Path]:
         fixture = CheckpointRegistryTests()
         fixture.managed_process = True
         fixture.setUp()
@@ -474,14 +474,13 @@ class ManagedStateImportTests(unittest.TestCase):
 
         def shipped_upper(owner, **kwargs):
             record = prepare_import(owner, **kwargs)
-            if bound:
-                # The source node created it host-side, in the upper it ships.
-                managed = Path(record.mount_path) / "upper" / ".ucloud-managed"
-                managed.mkdir(mode=0o700)
-                (managed / "state.json").write_text(json.dumps({
-                    "version": 1, "job_id": "agent", "spec_sha256": "e" * 64,
-                    "state": "running", "pid": 4, "sequence": 3}))
-                (managed / "stdout.log").write_bytes(b"x" * 321)
+            # The source node created it host-side, in the upper it ships.
+            managed = Path(record.mount_path) / "upper" / ".ucloud-managed"
+            managed.mkdir(mode=0o700)
+            (managed / "state.json").write_text(json.dumps({
+                "version": 1, "job_id": "agent", "spec_sha256": "e" * 64,
+                "state": "running", "pid": 4, "sequence": 3}))
+            (managed / "stdout.log").write_bytes(b"x" * 321)
             return record
 
         storage.prepare_import = shipped_upper
@@ -503,7 +502,7 @@ class ManagedStateImportTests(unittest.TestCase):
         return json.loads((bundle / "config.json").read_text(encoding="utf-8")), bundle
 
     def test_bound_sandbox_mount_follows_the_destination_bundle(self):
-        config, bundle = self.imported_config(bound=True)
+        config, bundle = self.imported_config()
         mounts = [m for m in config["mounts"] if m["destination"] == "/.ucloud-managed"]
         self.assertEqual(mounts, [{
             "destination": "/.ucloud-managed",
@@ -520,13 +519,3 @@ class ManagedStateImportTests(unittest.TestCase):
                                          "stdout_bytes", "stderr_bytes", "cursor")},
             {"sandbox_id": "sandbox", "sandbox_generation": 7, "job_id": "agent",
              "stdout_bytes": 321, "stderr_bytes": 0, "cursor": "3.321.0"})
-
-    def test_sandbox_parked_before_the_mount_stays_legacy_after_a_move(self):
-        config, _bundle = self.imported_config(bound=False)
-        self.assertEqual(
-            config["annotations"]["dev.ucloud-sandboxes.managed-process"], "v1"
-        )
-        self.assertNotIn(
-            "/.ucloud-managed", [m["destination"] for m in config["mounts"]]
-        )
-        self.assertIsNone(load_parked_managed_state(_bundle))

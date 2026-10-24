@@ -229,8 +229,8 @@ class LocalFleetScenarioTests(unittest.TestCase):
             # Only while parked.
             self.assertEqual(observed(), (None, None))
 
-            # A sandbox without the state mount, or whose job never started, has none.
-            for sandbox_id, spec in (("legacy", {}), ("idle", {"managed_process": True})):
+            # A sandbox without managed processes, or whose job never started, has none.
+            for sandbox_id, spec in (("plain", {}), ("idle", {"managed_process": True})):
                 fleet.create(sandbox_id, parkable=True, **spec)
                 response = node.request("POST", f"/v1/sandboxes/{sandbox_id}/park",
                                         payload={"operation_id": f"park-{sandbox_id}"})

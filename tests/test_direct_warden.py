@@ -736,19 +736,7 @@ class DirectRunscWardenTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        (self.bundle / "config.json").write_text(
-            json.dumps(
-                {
-                    "annotations": {
-                        "dev.gvisor.internal.application-memory-directory": (
-                            self.memory_directory
-                        ),
-                        "dev.ucloud-sandboxes.managed-process": "v1",
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
+        self.managed_config()
         self.warden.create(self.sandbox, operation_id="create:managed")
         self.warden.park(self.sandbox, operation_id="park:managed")
 
@@ -767,8 +755,7 @@ class DirectRunscWardenTests(unittest.TestCase):
             HibernationState.PARKED,
         )
 
-    def managed_config(self, *, bound: bool, bundle: Path | None = None) -> None:
-        bundle = bundle or self.sandbox.bundle
+    def managed_config(self, *, bound: bool = True) -> None:
         config = {
             "annotations": {
                 "dev.gvisor.internal.application-memory-directory": self.memory_directory,
@@ -777,32 +764,19 @@ class DirectRunscWardenTests(unittest.TestCase):
             "mounts": [{"destination": "/tmp", "type": "tmpfs", "source": "tmpfs"}],
         }
         if bound:
-            config["mounts"].append(managed_state_mount(bundle))
+            config["mounts"].append(managed_state_mount(self.sandbox.bundle))
         (self.bundle / "rootfs").mkdir(exist_ok=True)
         (self.bundle / "config.json").write_text(json.dumps(config), encoding="utf-8")
 
-    def test_managed_sandbox_parked_without_the_state_mount_still_wakes(self) -> None:
-        # Before the mount the guest's ledger lived in the Sentry's filestore:
-        # the host saw none, so park bound the constant "no job" digest.
+    def test_managed_sandbox_without_the_state_mount_is_refused(self) -> None:
         self.managed_config(bound=False)
-        self.warden.create(self.sandbox, operation_id="create:legacy")
-        self.assertFalse((self.bundle / "rootfs" / ".ucloud-managed").exists())
-        self.warden.park(self.sandbox, operation_id="park:legacy")
-        # Nothing exact to report: the guest's ledger is not host-visible.
-        self.assertIsNone(load_parked_managed_state(self.bundle))
-        manifest = self.warden.load_parked_manifest(self.sandbox)
-        self.assertEqual(
-            manifest.managed_process_sha256,
-            hashlib.sha256(b"managed-primary-v1:no-job").hexdigest(),
-        )
-        self.assertEqual(
-            self.warden.resume(self.sandbox, operation_id="wake:legacy").state,
-            HibernationState.RUNNING,
-        )
+        with self.assertRaisesRegex(DirectWardenError, "state mount is unavailable"):
+            self.warden.create(self.sandbox, operation_id="create:unbound")
+        self.assertEqual(self.runner.status, "absent")
         self.assertFalse((self.bundle / "rootfs" / ".ucloud-managed").exists())
 
     def test_moved_bound_ledger_has_the_same_digest_and_needs_its_own_bundle(self) -> None:
-        self.managed_config(bound=True)
+        self.managed_config()
         payload = b'{"version":1,"job_id":"j","spec_sha256":"' + DIGEST_A.encode() + b'","sequence":2}'
         (self.bundle / "rootfs" / ".ucloud-managed").mkdir(mode=0o700)
         (self.bundle / "rootfs" / ".ucloud-managed" / "state.json").write_bytes(payload)
@@ -828,7 +802,7 @@ class DirectRunscWardenTests(unittest.TestCase):
         def sentinel(reason: str) -> str:
             return hashlib.sha256(f"managed-primary-v1:{reason}".encode()).hexdigest()
 
-        self.managed_config(bound=True)
+        self.managed_config()
         self.warden.create(self.sandbox, operation_id="create:ledgers")
         managed = self.bundle / "rootfs" / ".ucloud-managed"
         ledger = managed / "state.json"
@@ -874,7 +848,7 @@ class DirectRunscWardenTests(unittest.TestCase):
     def test_managed_state_directory_replaced_by_the_host_side_is_never_followed(self) -> None:
         # The guest cannot replace its own mount point; only the host side
         # can. The fingerprint still never follows it, and runsc never binds it.
-        self.managed_config(bound=True)
+        self.managed_config()
         managed = self.bundle / "rootfs" / ".ucloud-managed"
         target = self.root / "elsewhere"
         target.mkdir()

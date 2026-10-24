@@ -163,6 +163,17 @@
   needs nothing: it accepts everything this release writes.
 - `ucloud.platform.postgres.duration` no longer records a `lock_query` phase. No
   query was timed into it, so it was always 0.
+- **Every managed-process sandbox must bind its state mount.** Sandboxes
+  created before 0.9.72 kept the supervisor's state inside the guest, without
+  the `/.ucloud-managed` bind mount; the agent and noded no longer support
+  them. A managed-process config without the mount is refused at create,
+  wake and import ("state mount is unavailable"), an import always builds
+  the mount, and noded serves job status and logs for every running managed
+  sandbox instead of forwarding mountless ones to the agent. Production has no
+  such sandbox, running, parked or routed. Before upgrading a worker, check that
+  no bundle carries the managed-process annotation without the mount, and
+  delete any that does: after the upgrade it cannot be woken or imported.
+  Rolling back to 0.10.0 needs nothing.
 
 ## 0.10.0 - 2026-10-22 (gateway; workers; store node)
 

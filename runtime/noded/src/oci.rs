@@ -1036,18 +1036,6 @@ pub fn managed_state_mount(bundle: &Path) -> Result<Value, OciError> {
     Ok(json!({"destination": MANAGED_STATE_DESTINATION, "options": MANAGED_STATE_OPTIONS, "source": source, "type": "bind"}))
 }
 
-/// Whether a bundle's `config.json` binds the managed state, as Python's
-/// `configured_managed_state_mount` decides: one mount at the destination,
-/// exactly this bundle's. Sandboxes created before it (legacy) keep their job
-/// routes in the agent; a config binding anything else is not read either.
-pub fn has_managed_state_mount(config: &Value, bundle: &Path) -> bool {
-    let Ok(expected) = managed_state_mount(bundle) else { return false };
-    let Some(mounts) = config.get("mounts").and_then(Value::as_array) else { return false };
-    let found: Vec<&Value> =
-        mounts.iter().filter(|mount| mount.get("destination").and_then(Value::as_str) == Some(MANAGED_STATE_DESTINATION)).collect();
-    found.len() == 1 && *found[0] == expected
-}
-
 /// The `--network` mode of the node: `none` or `sandbox`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkMode {
@@ -1315,9 +1303,8 @@ impl OciBuilder {
                 .iter()
                 .map(|item| item.to_string())
                 .collect();
-            if let Some(bundle) = bundle {
-                mounts.push(managed_state_mount(bundle)?);
-            }
+            let bundle = bundle.ok_or_else(|| config("managed_process requires the sandbox bundle for its state mount"))?;
+            mounts.push(managed_state_mount(bundle)?);
         } else if spec.security.init {
             let binary =
                 self.init_binary.as_ref().ok_or_else(|| config("security.init requires a configured direct-runtime init binary"))?;
