@@ -48,9 +48,10 @@ class BuildHistoryTests(unittest.TestCase):
             "secret": 123, "phases": {"docker_build_ms": 100, "cache_prepare_ms": 2,
                                       "cache_mount_ms": 4, "finishing_wait_ms": 12, "cleanup_ms": float("nan"),
                                       "private command": 42},
-            "environment": {"groups_reused": 3, "selective_subprocess_ms": 120, "groups_built": True,
-                            "erofs_bytes_built": 10**1000, "mkfs_ms": -1,
-                            "squash_ms": float("inf"), "docker_pull_ms": {"nested": 10}},
+            "environment": {"metadata_hints": 3, "mkfs_ms": 120, "metadata_hint_unsupported": True,
+                            "metadata_hint_bytes": 10**1000, "sign_ms": -1,
+                            "publish_component_ms": float("inf"), "docker_pull_ms": {"nested": 10},
+                            "groups_reused": 3},
         }
         self.assertTrue(self.store().record(raw))
         saved = self.store().get("build-0")
@@ -60,7 +61,7 @@ class BuildHistoryTests(unittest.TestCase):
         self.assertEqual(saved["timings"], {
             "total_ms": 123, "queue_wait_ms": 45, "preparation_ms": 6, "end_to_end_ms": 174,
             "phases": {"docker_build_ms": 100, "cache_prepare_ms": 2, "cache_mount_ms": 4, "finishing_wait_ms": 12},
-            "environment": {"groups_reused": 3, "selective_subprocess_ms": 120},
+            "environment": {"metadata_hints": 3, "mkfs_ms": 120},
         })
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 
@@ -70,18 +71,6 @@ class BuildHistoryTests(unittest.TestCase):
                     build(build_id="x" * 257), build(image_id=None), build(status=[]), None):
             self.assertFalse(store.record(raw))
         self.assertEqual(store.list_builds(), [])
-
-    def test_publication_diagnostics_keep_only_known_numeric_reason_counters(self):
-        raw = build(timings={"environment": {
-            "selective_fallback_compressed_budget": 1,
-            "selective_fallback_parent_context": 2,
-            "selective_fallback_private_payload": 1,
-            "oci_transfer_ms": 30, "oci_decompress_ms": 15, "oci_extract_ms": 20,
-            "oci_download_bytes_actual": 10_000_000,
-        }})
-        saved = terminal_build_summary(raw)["timings"]["environment"]
-        self.assertEqual(saved, {key: value for key, value in raw["timings"]["environment"].items()
-                                 if key != "selective_fallback_private_payload"})
 
     def test_idempotent_replay_and_newer_cleanup_revision_survive_restart(self):
         store = self.store()

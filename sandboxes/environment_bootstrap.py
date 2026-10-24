@@ -10,8 +10,8 @@ KEY_FILE = "/etc/ucloud-sandboxes/environment/producer.pem"
 SOCKET = "/run/ucloud-environment/io.sock"
 SERVICE = "ucloud-environment-io.service"
 CHUNK_TOKEN_FILE = "/etc/ucloud-sandboxes/environment/chunk-index.token"
-WRITE_TOKEN_FILE = "/etc/ucloud-sandboxes/environment/chunk-index-write.token"  # rafs builders only.
-BUNDLED_NYDUS_IMAGE = "runtime/nydus/nydus-image"  # In the builder bundle (builder_format rafs).
+WRITE_TOKEN_FILE = "/etc/ucloud-sandboxes/environment/chunk-index-write.token"  # Builders only.
+BUNDLED_NYDUS_IMAGE = "runtime/nydus/nydus-image"  # In the builder bundle.
 
 
 def settings(options):
@@ -29,25 +29,12 @@ $SUDO chmod 0644 {TRUST_FILE}
 '''
     if options.role == "builder":
         private = base64.b64encode(options.environment_signing_key_pem.encode()).decode()
-        setup += f'''command -v mkfs.erofs >/dev/null || {{ echo 'immutable builder requires bundled erofs-utils' >&2; exit 1; }}
-$SUDO install -m 0600 /dev/null {KEY_FILE}
+        setup += f'''$SUDO install -m 0600 /dev/null {KEY_FILE}
 printf %s {shlex.quote(private)} | base64 -d | $SUDO tee {KEY_FILE} >/dev/null
 $SUDO chown root:root {KEY_FILE}
 '''
-        preserve = " --environment-preserve-mtimes" if options.environment_preserve_mtimes else ""
-        if preserve:
-            # Layout 2 needs --mkfs-time (1.8+) and --MZ (1.9+). Capture the whole usage: under
-            # pipefail, grep -q exiting at the match can SIGPIPE mkfs and fail a capable builder.
-            setup += ('UCLOUD_MKFS_USAGE="$(mkfs.erofs --help 2>&1 || true)"; for UCLOUD_MKFS_OPTION in --mkfs-time '
-                      '--MZ; do case "$UCLOUD_MKFS_USAGE" in *"$UCLOUD_MKFS_OPTION"*) ;; *) echo "layout-2 publication'
-                      ' requires erofs-utils 1.9+ (mkfs.erofs $UCLOUD_MKFS_OPTION)" >&2; exit 1 ;; esac; done\n')
-        rafs = ""
-        if getattr(options, "environment_builder_format", "erofs") == "rafs":
-            rafs_setup, rafs = _rafs_builder(options)
-            setup += rafs_setup
-        return (registry_flags + " --environment-signing-key " + KEY_FILE + preserve + "".join(
-            " --environment-allow-path " + shlex.quote(path) for path in options.environment_allow_paths) + rafs,
-                setup, "")
+        rafs_setup, rafs = _rafs_builder(options)
+        return registry_flags + " --environment-signing-key " + KEY_FILE + rafs, setup + rafs_setup, ""
     chunk_setup = chunk_flags = ""
     if options.environment_chunk_index_url:
         # Chunk-store images: the index's read token, never an S3 key.
@@ -107,9 +94,10 @@ ENVIRONMENT_IO_SERVICE
 
 
 def _rafs_builder(options):
-    """(setup, flags) for builder_format "rafs": the chunk_store block, the index
-    write token and the S3 key (root-only), and the bundle's nydus-image checked
-    against chunk_store.nydus_image_sha256 and installed at chunk_store.nydus_image."""
+    """(setup, flags) for a builder, whose builds end in the chunk store: the
+    chunk_store block, the index write token and the S3 key (root-only), and the
+    bundle's nydus-image checked against chunk_store.nydus_image_sha256 and
+    installed at chunk_store.nydus_image."""
     from .chunk_store_node import STORE_CONFIG, STORE_ENV
     from .environment_config import ChunkStoreConfig
     store = ChunkStoreConfig.from_dict(json.loads(options.chunk_store_config_json))
@@ -125,7 +113,7 @@ printf %s {b64(secrets)} | base64 -d | $SUDO tee {STORE_ENV} >/dev/null
 [ "$($SUDO sha256sum "$UCLOUD_PACKAGE_BUNDLE_DIR/{BUNDLED_NYDUS_IMAGE}" | awk '{{print $1}}')" = {shlex.quote(store.nydus_image_sha256)} ] || {{ echo "the bundle's nydus-image does not match chunk_store.nydus_image_sha256" >&2; exit 1; }}
 $SUDO install -D -m 0755 -o root -g root "$UCLOUD_PACKAGE_BUNDLE_DIR/{BUNDLED_NYDUS_IMAGE}" {shlex.quote(store.nydus_image)}
 """
-    flags = (" --environment-format rafs --chunk-store-config " + STORE_CONFIG
+    flags = (" --chunk-store-config " + STORE_CONFIG
              + " --chunk-index-token-file " + WRITE_TOKEN_FILE)
     return setup, flags
 
@@ -134,8 +122,7 @@ def validate(options):
     supplied = bool(options.environment_registry_url)
     if not supplied:
         if any((options.environment_repository, options.environment_trusted_keys_json,
-                options.environment_signing_key_pem, options.environment_allow_paths,
-                options.environment_preserve_mtimes, options.environment_chunk_index_url,
+                options.environment_signing_key_pem, options.environment_chunk_index_url,
                 options.environment_chunk_store_url, options.environment_chunk_nydusd)):
             raise ValueError("immutable environment bootstrap requires registry URL and producer trust")
         return
@@ -143,11 +130,11 @@ def validate(options):
     EnvironmentDeploymentConfig.from_dict({
         "trusted_keys_file": TRUST_FILE, "signing_key_file": KEY_FILE if options.role == "builder" else "",
         "repository": options.environment_repository, "worker_enabled": options.role == "sandbox",
-        "builder_enabled": options.role == "builder", "allow_paths": options.environment_allow_paths,
-        "cache_bytes": options.environment_cache_bytes, "preserve_mtimes": options.environment_preserve_mtimes,
+        "builder_enabled": options.role == "builder", "cache_bytes": options.environment_cache_bytes,
         "prefetch_enabled": options.environment_prefetch_enabled,
         "shared_traces": options.environment_shared_traces,
         "device_budget_percent": options.environment_device_budget_percent,
+        "chunk_store": json.loads(options.chunk_store_config_json or "null") if options.role == "builder" else None,
     })
     from .environment_artifact import content_digest
     raw = json.loads(options.environment_trusted_keys_json)
@@ -176,8 +163,6 @@ def validate(options):
     if options.role == "sandbox":
         if options.environment_signing_key_pem:
             raise ValueError("sandbox workers must never receive environment signing keys")
-        if options.environment_preserve_mtimes:
-            raise ValueError("only builders publish environment components")
         if options.environment_cache_bytes > options.direct_disk_headroom_mb * 1024 ** 2 // 2:
             raise ValueError("immutable environment cache must leave half the disk safety headroom free")
     else:

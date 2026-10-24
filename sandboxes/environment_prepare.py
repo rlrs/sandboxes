@@ -1,11 +1,10 @@
-"""Bounded exec-isolated preparation of disposable, authenticated OCI diffs.
+"""Bounded exec-isolated preparation of one sandbox commit's filtered upper.
 
 No signing key is sent through the protocol, and the child never publishes
-registry data. Its output is fixed views under a private parent-owned root.
+registry data. Its output is a fixed file under a private parent-owned root.
 This is performance isolation, not a security sandbox: the fresh interpreter
 runs with the parent's UID and environment and can access the same filesystem.
 """
-from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -15,8 +14,6 @@ import re
 import stat
 import subprocess
 import sys
-import tarfile
-import time
 from urllib.parse import urlsplit
 
 from .commit_policy import (
@@ -24,37 +21,17 @@ from .commit_policy import (
 )
 from .environment_artifact import require_digest
 from .managed_registry import RegistryClient
-from .oci_layer_materialize import (
-    FALLBACK_REASONS, MAX_COMPRESSED_BYTES, UnsupportedLayer, materialize_layers,
-)
 
 MAX_REQUEST_BYTES = 1024 * 1024
 MAX_RESULT_BYTES = 4096
-MAX_LAYERS = 1024
-MAX_GROUPS = 24
 RESULT_NAME = "preparation-result.json"
+# Schema 1 was the retired layer-group request; the child refuses it.
 COMMIT_REQUEST_SCHEMA = 2
 FILTERED_NAME = "filtered.tar"
-_TIMINGS = ("selective_materialization_ms", "squash_ms")
-_MATERIALIZATION_TIMINGS = ("oci_transfer_ms", "oci_decompress_ms", "oci_extract_ms")
-_METRIC_LIMITS = {**dict.fromkeys((*_TIMINGS, *_MATERIALIZATION_TIMINGS), 3_600_000),
-                  "oci_download_bytes_actual": MAX_COMPRESSED_BYTES + 1}
 
 
 class PreparationError(RuntimeError):
     """Preparation failed without permitting publication or Docker fallback."""
-
-
-@dataclass(frozen=True)
-class PreparationResult:
-    views: tuple[Path, ...]
-    metrics: dict[str, float]
-    fallback: bool = False
-    fallback_reason: str = ""
-
-
-def _elapsed(started):
-    return round((time.monotonic() - started) * 1000, 3)
 
 
 def _private_root(value, *, empty):
@@ -72,31 +49,6 @@ def _private_root(value, *, empty):
 
 
 _REGISTRY_FIELDS = {"schema", "root", "registry_url", "registry_timeout_seconds", "repository"}
-
-
-def _validate_request(value):
-    if not isinstance(value, dict) or set(value) != _REGISTRY_FIELDS | {
-            "layers", "diff_ids", "group_counts"} or type(value["schema"]) is not int or value["schema"] != 1:
-        raise ValueError("invalid preparation request schema")
-    _validate_registry(value)
-    layers, diff_ids, counts = value["layers"], value["diff_ids"], value["group_counts"]
-    if (not isinstance(layers, list) or not isinstance(diff_ids, list)
-            or not isinstance(counts, list) or len(layers) != len(diff_ids)):
-        raise ValueError("invalid preparation layer binding")
-    if not 1 <= len(layers) <= MAX_LAYERS or not 1 <= len(counts) <= MAX_GROUPS:
-        raise UnsupportedLayer("selective preparation collection exceeds its bound", reason="collection_budget")
-    if any(type(count) is not int or count <= 0 for count in counts) or sum(counts) != len(layers):
-        raise ValueError("invalid preparation group binding")
-    for layer, diff_id in zip(layers, diff_ids):
-        if (not isinstance(layer, dict) or set(layer) != {"digest", "size", "mediaType"}
-                or type(layer["size"]) is not int or layer["size"] < 0
-                or not isinstance(layer["mediaType"], str) or len(layer["mediaType"]) > 256):
-            raise ValueError("invalid preparation descriptor")
-        require_digest(layer["digest"])
-        require_digest(diff_id)
-    if sum(layer["size"] for layer in layers) > MAX_COMPRESSED_BYTES:
-        raise UnsupportedLayer("selective preparation byte budget exceeded", reason="compressed_budget")
-    return _private_root(value["root"], empty=True)
 
 
 def _validate_commit_request(value):
@@ -130,38 +82,6 @@ def _validate_registry(value):
         raise ValueError("invalid preparation repository")
 
 
-def _prepare(value, root):
-    # Import the merger only in this fresh interpreter, after request validation.
-    from .environment_builder import squash_layer_diffs
-
-    metrics = dict.fromkeys(_METRIC_LIMITS, 0.0)
-    started = time.monotonic()
-    try:
-        directories = materialize_layers(
-            RegistryClient(value["registry_url"], timeout_seconds=value["registry_timeout_seconds"]),
-            value["repository"], value["layers"], value["diff_ids"], root / "diffs", metrics=metrics)
-    except (UnsupportedLayer, OSError, EOFError, tarfile.TarError) as error:
-        # Match the existing extraction-only fallback boundary. Digest errors,
-        # registry HTTP errors and later squash failures must fail closed.
-        reason = (error.reason if isinstance(error, UnsupportedLayer) else
-                  "io" if isinstance(error, OSError) else "archive")
-        return {"status": "fallback", "groups": 0, "metrics": metrics,
-                "fallback_reason": reason}
-    finally:
-        metrics["selective_materialization_ms"] = _elapsed(started)
-    offset = 0
-    for index, count in enumerate(value["group_counts"]):
-        view = root / f"view-{index}"
-        if count == 1:
-            directories[offset].rename(view)
-        else:
-            started = time.monotonic()
-            squash_layer_diffs(directories[offset:offset + count], view, consume_private_diffs=True)
-            metrics["squash_ms"] += _elapsed(started)
-        offset += count
-    return {"status": "ok", "groups": len(value["group_counts"]), "metrics": metrics}
-
-
 def _result_value(root):
     descriptor = os.open(root / RESULT_NAME, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(descriptor, "rb") as stream:
@@ -172,59 +92,6 @@ def _result_value(root):
     if len(raw) > MAX_RESULT_BYTES:
         raise ValueError("preparation result exceeds its bound")
     return json.loads(raw)
-
-
-def _read_result(root, groups, elapsed_ms):
-    value = _result_value(root)
-    if not isinstance(value, dict) or set(value) not in (
-            {"status", "groups", "metrics"}, {"status", "groups", "metrics", "fallback_reason"}):
-        raise ValueError("invalid preparation result schema")
-    reason = value.get("fallback_reason", "unsupported" if value["status"] == "fallback" else "")
-    if (not isinstance(reason, str) or
-            (reason not in FALLBACK_REASONS if value["status"] == "fallback" else reason != "")):
-        raise ValueError("invalid preparation fallback reason")
-    metrics = value["metrics"]
-    if (not isinstance(metrics, dict) or not set(_TIMINGS) <= set(metrics) <= set(_METRIC_LIMITS)
-            or any(type(number) not in {int, float} or not math.isfinite(number)
-                   or not 0 <= number <= _METRIC_LIMITS[key] for key, number in metrics.items())):
-        raise ValueError("invalid preparation metrics")
-    if type(value["groups"]) is not int:
-        raise ValueError("invalid preparation result count")
-    metrics["selective_subprocess_ms"] = elapsed_ms
-    if value["status"] == "fallback" and value["groups"] == 0:
-        return PreparationResult((), metrics, fallback=True, fallback_reason=reason)
-    if value["status"] != "ok" or value["groups"] != groups:
-        raise ValueError("preparation child failed")
-    _private_root(str(root), empty=False)
-    # Never accept paths supplied by the child. Group names and count derive
-    # solely from the parent's already-bound layer groups.
-    views = tuple(root / f"view-{index}" for index in range(groups))
-    if any(not stat.S_ISDIR(path.lstat().st_mode) or path.resolve(strict=True) != path for path in views):
-        raise ValueError("invalid prepared view")
-    return PreparationResult(views, metrics)
-
-
-def prepare_in_subprocess(client, repository, layers, diff_ids, group_counts, root, *, timeout_seconds=600):
-    """Prepare private views with a fresh interpreter and bounded metadata IPC."""
-    if type(timeout_seconds) not in {int, float} or not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 3600:
-        raise ValueError("invalid preparation process timeout")
-    root = _private_scratch(root)
-    value = {"schema": 1, "root": str(root), "registry_url": client.base_url,
-             "registry_timeout_seconds": client.timeout_seconds, "repository": repository,
-             "layers": [{key: layer.get(key) for key in ("digest", "size", "mediaType")} for layer in layers],
-             "diff_ids": list(diff_ids), "group_counts": list(group_counts)}
-    root = _validate_request(value)
-    data = json.dumps(value, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
-    if len(data) > MAX_REQUEST_BYTES:
-        raise UnsupportedLayer("selective preparation request exceeds its bound", reason="request_budget")
-    started = time.monotonic()
-    try:
-        _spawn(data, timeout_seconds)
-        return _read_result(root, len(value["group_counts"]), _elapsed(started))
-    except subprocess.TimeoutExpired:
-        raise PreparationError("selective preparation child timed out") from None
-    except (OSError, ValueError):
-        raise PreparationError("invalid selective preparation result") from None
 
 
 def _spawn(data, timeout_seconds):
@@ -241,7 +108,7 @@ def _spawn(data, timeout_seconds):
             process.wait()
             raise
         if process.returncode != 0:
-            raise PreparationError("selective preparation child failed")
+            raise PreparationError("preparation child failed")
 
 
 def _private_scratch(root):
@@ -319,19 +186,15 @@ def main():
         if len(raw) > MAX_REQUEST_BYTES:
             return 2
         value = json.loads(raw)
-        if isinstance(value, dict) and value.get("schema") == COMMIT_REQUEST_SCHEMA:
-            root = _validate_commit_request(value)
-            result = commit_upper(
-                RegistryClient(value["registry_url"], timeout_seconds=value["registry_timeout_seconds"]),
-                value["repository"], value["blob"], CommitPolicy.from_dict(value["policy"]),
-                value["secret_digests"], root)
-        else:
-            root = _validate_request(value)
-            result = _prepare(value, root)
+        root = _validate_commit_request(value)
+        result = commit_upper(
+            RegistryClient(value["registry_url"], timeout_seconds=value["registry_timeout_seconds"]),
+            value["repository"], value["blob"], CommitPolicy.from_dict(value["policy"]),
+            value["secret_digests"], root)
     except Exception:
         # Avoid serializing exception text: registry failures may contain URLs
         # or response payloads. Unexpected failures are terminal for the parent.
-        result = {"status": "error", "groups": 0, "metrics": dict.fromkeys(_TIMINGS, 0.0)}
+        result = {"status": "error"}
     if root is None:
         return 2
     try:

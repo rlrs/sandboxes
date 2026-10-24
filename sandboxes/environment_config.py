@@ -72,36 +72,19 @@ def load_signing_key(key_path):
 
 
 def environment_publisher_from_args(args):
-    registry = environment_registry_from_args(args)
-    key_path = getattr(args, "environment_signing_key", None)
-    if getattr(args, "environment_format", "erofs") == "rafs":
-        return rafs_publisher_from_args(args, registry, key_path)
-    allowlist = tuple(getattr(args, "environment_allow_path", ()) or ())
-    preserve_mtimes = getattr(args, "environment_preserve_mtimes", False)
-    if registry is None and key_path is None and not allowlist and not preserve_mtimes:
-        return None
-    if registry is None or key_path is None or not allowlist:
-        raise ValueError("environment builder requires registry trust, a signing key, and an explicit immutable path allowlist")
-    from .environment_builder import FreshEnvironmentBuilder
-    from .image_rootfs import DockerOverlay2RootfsStore
-    key = load_signing_key(key_path)
-    root = args.image_file.absolute().parent / "environment-build"
-    builder = FreshEnvironmentBuilder(DockerOverlay2RootfsStore(root / "images", docker_binary=args.docker_binary),
-                                      registry, key, root / "scratch", preparation_subprocess=True,
-                                      release_published_tag=True, preserve_mtimes=preserve_mtimes)
-    return lambda spec: builder.publish_image(spec.tag, allowlist=allowlist)
-
-
-
-def rafs_publisher_from_args(args, registry, key_path):
-    """builder_format "rafs": builds end in the chunk store (chunk_convert.rafs_build_publisher).
-    Credentials and the pinned nydus-image are checked here, not at the first build."""
+    """The builder agent's publisher: builds end in the chunk store
+    (chunk_convert.rafs_build_publisher). Credentials and the pinned
+    nydus-image are checked here, not at the first build."""
     import hashlib
     from .chunk_convert import rafs_build_publisher
     from .chunk_index import ChunkIndexClient
+    registry = environment_registry_from_args(args)
+    key_path = getattr(args, "environment_signing_key", None)
     config, token = getattr(args, "chunk_store_config", None), getattr(args, "chunk_index_token_file", None)
+    if registry is None and key_path is None and config is None and token is None:
+        return None
     if registry is None or key_path is None or config is None or token is None:
-        raise ValueError("--environment-format rafs needs registry trust, a signing key, "
+        raise ValueError("environment publication needs registry trust, a signing key, "
                          "--chunk-store-config and --chunk-index-token-file")
     store = ChunkStoreConfig.from_file(config)
     store.credentials()
@@ -111,6 +94,7 @@ def rafs_publisher_from_args(args, registry, key_path):
     index = ChunkIndexClient(store.index_url, read_token(token).decode())
     return rafs_build_publisher(registry, store, index, load_signing_key(key_path),
                                 args.image_file.absolute().parent / "environment-build" / "rafs")
+
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
@@ -285,8 +269,8 @@ class ChunkStoreConfig:
     concurrent_misses: int
     store_node: StoreNodeConfig | None = None  # Phase B (C2.6); off when absent.
     nydusd: NydusdConfig | None = None  # C2.1: needs the store node's virtual blobs; off when absent.
-    # The nydus-image at ``nydus_image``, pinned: builders with builder_format
-    # "rafs" install it from their bundle and refuse any other.
+    # The nydus-image at ``nydus_image``, pinned: builders install it from
+    # their bundle and refuse any other.
     nydus_image_sha256: str | None = None
 
     @classmethod
@@ -404,12 +388,9 @@ class EnvironmentDeploymentConfig:
     signing_key_file: str = ""
     repository: str = "environments"
     worker_enabled: bool = False
+    # Builders convert each build into the chunk store (docs/images.md).
     builder_enabled: bool = False
-    allow_paths: tuple[str, ...] = ()
     cache_bytes: int = 1024 ** 3
-    # Builders publish layout-2 layer components (per-file mtimes kept). Set
-    # only after every worker and gateway runs a release that reads layout 2.
-    preserve_mtimes: bool = False
     # Off switch for attach-time metadata and startup-trace prefetch (C2.2,
     # C2.3). A backend reads it once at start; bootstrap never restarts one.
     prefetch_enabled: bool = True
@@ -433,9 +414,6 @@ class EnvironmentDeploymentConfig:
     shared_traces: bool = False
     # Chunk-store (RAFS) images, off by default (C2.13, design §9 M1).
     chunk_store: ChunkStoreConfig | None = None
-    # What a build publishes: "erofs" components in the registry, or "rafs":
-    # the image converted into the chunk store on the builder (docs/images.md).
-    builder_format: str = "erofs"
     # Sandbox builds (docs/images.md); None: every recipe builds on builders.
     sandbox_builds: SandboxBuildsConfig | None = None
 
@@ -446,22 +424,28 @@ class EnvironmentDeploymentConfig:
         if not isinstance(raw, dict):
             raise ValueError("immutable_environments must be an object")
         from dataclasses import fields
-        if set(raw) - {field.name for field in fields(cls)} or "trusted_keys_file" not in raw:
-            raise ValueError("invalid immutable_environments fields")
         values = dict(raw)
+        # Configs written for 0.10.0 and earlier may still name these. Builds
+        # always end in the chunk store, so the EROFS builder's switches go.
+        builder_format = values.pop("builder_format", "rafs")
+        if builder_format != "rafs":
+            raise ValueError(f"immutable_environments.builder_format {builder_format!r} is not supported: builders "
+                             "only convert builds into the chunk store; delete the key")
+        if not isinstance(values.pop("preserve_mtimes", False), bool):
+            raise ValueError("immutable environment preserve_mtimes must be boolean")
+        if not isinstance(values.pop("allow_paths", []), list):
+            raise ValueError("immutable environment allow_paths must be a list")
+        if set(values) - {field.name for field in fields(cls)} or "trusted_keys_file" not in values:
+            raise ValueError("invalid immutable_environments fields")
         if values.get("chunk_store") is not None:
             values["chunk_store"] = ChunkStoreConfig.from_dict(values["chunk_store"])
         if values.get("sandbox_builds") is not None:
             values["sandbox_builds"] = SandboxBuildsConfig.from_dict(values["sandbox_builds"])
-        paths = values.get("allow_paths", [])
-        if not isinstance(paths, (list, tuple)):
-            raise ValueError("immutable environment allow_paths must be a list")
-        values["allow_paths"] = tuple(paths)
         result = cls(**values)
         import re
         if not isinstance(result.repository, str) or not re.fullmatch(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*", result.repository):
             raise ValueError("invalid immutable environment repository")
-        for name in ("worker_enabled", "builder_enabled", "preserve_mtimes", "prefetch_enabled", "dispatch_roots",
+        for name in ("worker_enabled", "builder_enabled", "prefetch_enabled", "dispatch_roots",
                      "shared_traces", "regenerate_bases"):
             if not isinstance(getattr(result, name), bool):
                 raise ValueError(f"immutable environment {name} must be boolean")
@@ -477,19 +461,12 @@ class EnvironmentDeploymentConfig:
             raise ValueError("immutable environment producer trust is required")
         if isinstance(result.cache_bytes, bool) or not isinstance(result.cache_bytes, int) or result.cache_bytes < 256 * 1024:
             raise ValueError("immutable environment cache_bytes must fit at least one chunk")
-        for value in result.allow_paths:
-            if (not isinstance(value, str) or not value or Path(value).is_absolute()
-                    or any(part in {"", ".", ".."} for part in value.split("/")) or any(c in value for c in "\0\r\n")):
-                raise ValueError("immutable environment allow_paths must be clean relative paths")
-        if result.builder_enabled and (not result.signing_key_file or not result.allow_paths):
-            raise ValueError("immutable environment builder requires signing_key_file and allow_paths")
+        if result.builder_enabled and not result.signing_key_file:
+            raise ValueError("immutable environment builder requires signing_key_file")
         if result.regenerate_bases and (result.chunk_store is None or result.chunk_store.store_node is None):
             raise ValueError("immutable environment regenerate_bases reads roots through chunk_store.store_node")
-        if result.builder_format not in ("erofs", "rafs"):
-            raise ValueError("immutable environment builder_format must be erofs or rafs")
-        if result.builder_format == "rafs" and (not result.builder_enabled or result.chunk_store is None
-                                                or result.chunk_store.nydus_image_sha256 is None):
-            raise ValueError("builder_format rafs needs builder_enabled and a chunk_store with nydus_image_sha256")
+        if result.builder_enabled and (result.chunk_store is None or result.chunk_store.nydus_image_sha256 is None):
+            raise ValueError("immutable environment builder needs a chunk_store with nydus_image_sha256")
         if result.sandbox_builds is not None and result.sandbox_builds.enabled and (
                 not result.signing_key_file or not result.dispatch_roots or result.chunk_store is None
                 or result.chunk_store.nydus_image_sha256 is None or result.chunk_store.store_node is None):
@@ -501,11 +478,8 @@ class EnvironmentDeploymentConfig:
         # Older releases reject unknown fields: write the switch only once set,
         # so a release rollback still reads configs rendered with it off.
         raw = asdict(self)
-        for name in ("preserve_mtimes", "regenerate_bases"):
-            if not raw[name]:
-                del raw[name]
-        if self.builder_format == "erofs":
-            del raw["builder_format"]
+        if not self.regenerate_bases:
+            del raw["regenerate_bases"]
         if self.device_budget_percent == DEFAULT_DEVICE_BUDGET_PERCENT:
             del raw["device_budget_percent"]
         if self.chunk_store is None:
