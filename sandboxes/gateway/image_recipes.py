@@ -20,7 +20,7 @@ processes never submit one image twice.
 Retention: ``pinned`` images stay registry-leased (a corpus built ahead);
 ``cached`` ones age out as any managed image does and are rebuilt on demand.
 
-With builder_format "rafs" a build ends in the chunk store; ensure then
+A builder build ends in the chunk store; ensure then
 releases the image's OCI copy, as the M2 waves did for the corpus, but per
 image: it can always be rebuilt from its recipe, so no regeneration receipt.
 

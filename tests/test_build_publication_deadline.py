@@ -39,18 +39,6 @@ class TimedOverlayRunner(Overlay2Runner):
 
 
 class BuildPublicationDeadlineTests(unittest.TestCase):
-    def test_waiting_for_same_layer_expires_and_releases_its_descriptor(self):
-        with TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            builder = FreshEnvironmentBuilder(None, None, None, root)
-            with builder._group_lock("group"):
-                with build_execution_deadline(0.05), self.assertRaises(ImageBuildTimeoutError):
-                    with builder._group_lock("group"):
-                        self.fail("contended lock was acquired")
-            # Timeout must not leave another lease or poison future operations.
-            with builder._group_lock("group"):
-                pass
-
     def test_materialization_queue_timeout_does_not_leak_capacity(self):
         with TemporaryDirectory() as temporary:
             store = DockerOverlay2RootfsStore(Path(temporary), max_concurrent_operations=1)

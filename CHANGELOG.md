@@ -43,6 +43,22 @@
   autoscaler, GC and migration processes during the upgrade keep working; they
   are dropped in a later release. Workers older than 0.9.66 must not hold
   sandboxes when this gateway starts (placement already sends them no work).
+- **Builders only convert builds into the chunk store.** The EROFS builder path
+  (`immutable_environments.builder_format: "erofs"`, the old code default) is
+  deleted: per-layer-group publication, layer squashing, the selective OCI layer
+  extractor (`oci_layer_materialize.py`) and its subprocess protocol. Production
+  has run `builder_format: "rafs"` since 0.9.56. A builder with `builder_enabled`
+  now needs `chunk_store` with `nydus_image_sha256`. `builder_format: "rafs"`,
+  `allow_paths` and `preserve_mtimes` still load and are ignored;
+  `builder_format: "erofs"` is refused. None of the three is written any more.
+  `serve-builder-agent` drops `--environment-format`, `--environment-allow-path`
+  and `--environment-preserve-mtimes`; builders rendered from this release do
+  not pass them. `publish-environment` (toolkits) is unchanged, and workers still
+  mount the per-layer EROFS roots older builders published. Build history no
+  longer records the layer-group and selective-extraction counters. **Rollback**
+  to 0.10.0: restore the previous `deployment.json`. Without `builder_format:
+  "rafs"` 0.10.0 builders publish EROFS, and without `allow_paths` 0.10.0
+  refuses `builder_enabled`.
 - **Operator scripts**: `scripts/images/import_image_recipes.py` only exports
   bundles; register names with `build_image_index.py register`. The unused
   `preflight_environment.py`, `build_environment_canary.sh` and

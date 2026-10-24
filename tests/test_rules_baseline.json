@@ -36,7 +36,7 @@
   "test_import": 1
  },
  "test_build_publication_deadline.py": {
-  "private": 15,
+  "private": 12,
   "sleep": 2,
   "test_import": 1
  },
@@ -192,7 +192,7 @@
   "test_import": 2
  },
  "test_environment_bootstrap.py": {
-  "private": 23,
+  "private": 20,
   "test_import": 4
  },
  "test_environment_builder.py": {
@@ -206,8 +206,7 @@
   "private_patch": 1
  },
  "test_environment_layers.py": {
-  "private": 13,
-  "private_patch": 14,
+  "private": 1,
   "test_import": 1
  },
  "test_environment_metadata.py": {
@@ -215,18 +214,11 @@
   "private_patch": 1,
   "test_import": 2
  },
- "test_environment_mtimes.py": {
-  "private": 1,
-  "test_import": 3
- },
  "test_environment_prefetch.py": {
   "clock": 12,
   "private": 14,
   "sleep": 4,
   "test_import": 2
- },
- "test_environment_prepare.py": {
-  "private": 1
  },
  "test_environment_rafs.py": {
   "clock": 3,
@@ -506,10 +498,6 @@
   "private": 5,
   "private_patch": 1
  },
- "test_oci_layer_materialize.py": {
-  "private": 3,
-  "private_patch": 6
- },
  "test_oci_release.py": {
   "test_import": 1
  },
@@ -709,16 +697,6 @@
   "clock": 2,
   "new": 2,
   "private": 37
- },
- "test_selective_environment_publication.py": {
-  "private": 2,
-  "private_patch": 3,
-  "test_import": 2
- },
- "test_selective_group_claims.py": {
-  "private": 11,
-  "private_patch": 10,
-  "test_import": 3
  },
  "test_soft_drain.py": {
   "new": 1,

@@ -20,7 +20,7 @@ Components come in two kinds, which differ only in where their bytes live:
 | Kind | Bytes live in | Used for |
 | --- | --- | --- |
 | **RAFS** (Nydus RAFS v6) | The **chunk store**: 256 KiB chunks, deduplicated, in S3, read through the **store node** | Training images, prepared images, sandbox builds |
-| **EROFS** | Blobs in the **managed registry** | Toolkits, images built with `builder_format: "erofs"` |
+| **EROFS** | Blobs in the **managed registry** | Toolkits (`publish-environment`), images older EROFS builders published |
 
 Workers trust only the signatures. S3, the store node, the chunk index and the
 registry are untrusted: a worker verifies root and component signatures and
@@ -134,10 +134,8 @@ API processes.
 **Builder builds.** Builder VMs (`serve-builder-agent`) run Docker with
 BuildKit; the gateway scales the pool up to `builder.max_nodes`. Each builder
 admits a few builds and answers retryable 503s beyond that (no unbounded
-queue). With `builder_format: "erofs"` (default) the output becomes signed
-EROFS components in the registry, grouped by original layers so related
-images share lower components; with `"rafs"` it is converted into the chunk
-store, reusing layers already converted (a foundation's). Optional: a shared
+queue). The output is converted into the chunk store, reusing layers already
+converted (a foundation's). Optional: a shared
 BuildKit cache (`builder.buildx_cache_ref`) and pull-through upstream mirrors
 (`upstream_mirror`). Released images have no manifest for `FROM` to read, so
 with `regenerate_bases` the gateway regenerates a verified one-layer OCI copy
@@ -238,9 +236,8 @@ validation rule. The keys that select behaviour:
 
 | Key | Effect |
 | --- | --- |
-| `immutable_environments.worker_enabled` / `builder_enabled` | Workers run the environment backend; builders publish environments |
+| `immutable_environments.worker_enabled` / `builder_enabled` | Workers run the environment backend; builders convert builds into the chunk store |
 | `immutable_environments.dispatch_roots` | Gateway pins the signed root into every create spec |
-| `immutable_environments.builder_format` | `erofs` (default) or `rafs`: where builder outputs land |
 | `immutable_environments.chunk_store` | Enables the chunk store (S3 location, index, tokens); `store_node` and `nydusd` inside it |
 | `immutable_environments.sandbox_builds.enabled` | Build eligible recipes in sandboxes; needs `dispatch_roots` and a store node |
 | `immutable_environments.regenerate_bases` | Regenerate OCI copies of released bases for builder builds |

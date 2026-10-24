@@ -132,8 +132,8 @@ SANDBOX_RUNTIME_PACKAGES = (
 BUILDER_RUNTIME_PACKAGES = (
     *SANDBOX_RUNTIME_PACKAGES,
     "docker-buildx-plugin",
-    # Immutable builders publish EROFS images (mkfs.erofs, 1.9+ for layout 2).
-    # Hetzner's builder image shipped it; UCloud's vm-ubuntu image does not.
+    # mkfs.erofs (1.9+ for layout 2) for toolkit (publish-environment) and
+    # commit components; the gateway installs it from these debs too.
     "erofs-utils",
 )
 RUNTIME_KERNEL_MODULES = (
@@ -263,9 +263,7 @@ class VmInitOptions:
     environment_repository: str = ""
     environment_trusted_keys_json: str = ""
     environment_signing_key_pem: str = ""
-    environment_allow_paths: tuple[str, ...] = ()
     environment_cache_bytes: int = 1024 ** 3
-    environment_preserve_mtimes: bool = False
     environment_prefetch_enabled: bool = True
     environment_attach_concurrency: int = 1
     environment_device_budget_percent: int = DEFAULT_DEVICE_BUDGET_PERCENT
@@ -280,10 +278,7 @@ class VmInitOptions:
     # chunk_store.nydusd: nydusd serves RAFS images from the store node (C2.1).
     environment_chunk_nydusd: str = ""
     environment_chunk_nydusd_sha256: str = ""
-    # immutable_environments.builder_format: "rafs" builders convert each build
-    # into the chunk store and get the block, the write token and the S3 key.
-    environment_builder_format: str = "erofs"
-    # The store role and rafs builders: the chunk_store block (JSON), the index
+    # The store role and builders: the chunk_store block (JSON), the index
     # tokens (the store role both, a builder the write token) and the S3 key
     # (chunk_store_node.store_init_script, environment_bootstrap.settings).
     chunk_store_config_json: str = ""
@@ -732,13 +727,12 @@ fi
     from .environment_bootstrap import settings as environment_bootstrap_settings
     environment_flags, environment_setup, environment_start = environment_bootstrap_settings(options)
     direct_agent_command += environment_flags
+    chunk_store_environment = ""
     if environment_flags and options.role == "builder":
-        # Fresh allowlisted publication uses the canonical Docker overlay mount
-        # adapter and preserves ownership/xattrs in a private build view.
+        # Conversion reads the root-only signing key, write token and S3 key,
+        # and keeps image ownership and xattrs.
         node_service_user = "root"
         node_service_group = "root"
-    chunk_store_environment = ""
-    if options.role == "builder" and options.environment_builder_format == "rafs":
         from .chunk_store_node import STORE_ENV
         chunk_store_environment = f"EnvironmentFile={STORE_ENV}"  # The chunk store's S3 key, root-only.
     if environment_flags and options.role == "sandbox":

@@ -589,10 +589,9 @@ class RafsConverter:
 
 
 def rafs_build_publisher(registry, store, index, signing_key, work_root):
-    """A builder's last step with ``immutable_environments.builder_format`` "rafs":
-    the pushed image converted into the chunk store, its tag moved to a copy
-    annotated with the new root; returns that manifest's digest, as the EROFS
-    publisher does. Layers another build converted (a foundation's) are reused
+    """A builder's last step: the pushed image converted into the chunk store,
+    its tag moved to a copy annotated with the new root; returns that
+    manifest's digest. Layers another build converted (a foundation's) are reused
     through the index's layer claims, so a task image costs its own layers.
     No full-tree check: these images can be rebuilt from their recipes."""
     from .environment_builder import _measure

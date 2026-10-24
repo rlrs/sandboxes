@@ -16,8 +16,6 @@ import sqlite3
 import stat
 import time
 
-from .oci_layer_materialize import FALLBACK_REASONS
-
 
 _APPLICATION_ID = 0x55434248  # UCBH
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}\Z")
@@ -27,14 +25,9 @@ _TOTALS = frozenset(("total_ms", "queue_wait_ms", "preparation_ms", "end_to_end_
 _PHASES = frozenset(("docker_build_and_push_ms", "docker_build_ms", "docker_push_ms",
                      "immutable_environment_ms", "cleanup_ms", "cache_prepare_ms", "cache_mount_ms",
                      "finishing_wait_ms"))
-_ENVIRONMENT = frozenset(("total_ms", "preflight_ms", "docker_pull_ms", "layer_lock_wait_ms",
-    "component_lookup_ms", "squash_ms", "normalize_times_ms", "mkfs_ms", "sign_ms", "publish_component_ms",
-    "groups_reused", "groups_built", "erofs_bytes_built", "preflight_misses", "docker_pull_skipped",
-    "selective_materialization_ms", "selective_subprocess_ms", "selective_materializations", "selective_fallbacks",
-    "oci_layers_materialized", "oci_download_bytes", "oci_download_bytes_actual",
-    "oci_transfer_ms", "oci_decompress_ms", "oci_extract_ms", "metadata_hint_ms", "metadata_hints",
-    "metadata_hint_unsupported", "metadata_hint_chunks", "metadata_hint_bytes")) | frozenset(
-        "selective_fallback_" + reason for reason in FALLBACK_REASONS)
+_ENVIRONMENT = frozenset(("total_ms", "docker_pull_ms", "mkfs_ms", "sign_ms", "publish_component_ms",
+    "metadata_hint_ms", "metadata_hints", "metadata_hint_unsupported", "metadata_hint_chunks",
+    "metadata_hint_bytes"))
 
 
 def _timestamp(value):

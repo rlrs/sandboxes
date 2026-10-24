@@ -29,7 +29,6 @@ COMPONENT_SCHEMA = "ucloud-environment-erofs-v1"
 # layers include that group on the same parent chain (docs/images.md).
 COMPONENT_SCHEMA_V2 = "ucloud-environment-erofs-v2"
 LAYER_SOURCE_KIND = "oci-layer-diffs-v1"
-LAYER_TAG_PREFIX = "layer-"
 # The diff_id of an empty tar. Some builders emit it for metadata-only
 # instructions; it changes no file, so layer components skip it.
 EMPTY_LAYER_DIFF_ID = "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
@@ -205,18 +204,6 @@ def require_layer_format(value):
             or value["excludes"] != sorted(set(value["excludes"]))):
         raise ValueError("invalid environment layer format")
     return value
-
-
-def layer_group_key(layer_format, parent, diff_ids):
-    """Content address of one layer group's component; its tag is ``layer-<key>``.
-
-    A squashed group drops whiteouts that hide nothing beneath it, so its bytes
-    depend on the lower layers: the parent ChainID is part of the key. Images
-    sharing a base share its whole chain, so this costs no base reuse.
-    """
-    return hashlib.sha256(canonical_bytes({
-        "format": require_layer_format(layer_format), "parent": parent, "diff_ids": list(diff_ids),
-    })).hexdigest()
 
 
 @dataclass(frozen=True)
