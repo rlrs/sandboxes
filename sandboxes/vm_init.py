@@ -487,9 +487,6 @@ def render_vm_init_script(options: VmInitOptions) -> str:
         "/etc/systemd/system/ucloud-storage-native-backend.service"
     )
     storage_service = "/etc/systemd/system/ucloud-storage-native.service"
-    # Units of the oneshot heartbeat timer that node agents replaced (C4.4).
-    retired_heartbeat_timer = "/etc/systemd/system/ucloud-sandbox-heartbeat.timer"
-    retired_heartbeat_service = "/etc/systemd/system/ucloud-sandbox-heartbeat.service"
     authorized_keys_shell = "\n".join(
         f"  {shlex.quote(key)}" for key in options.init_authorized_keys
     )
@@ -2105,17 +2102,6 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 NODE_SERVICE
-
-# The node agent sends its own heartbeats. Retire an older release's timer
-# before the new agent starts, so a re-initialized node never posts twice.
-if [ -e {shlex.quote(retired_heartbeat_timer)} ]; then
-  $SUDO systemctl disable --now ucloud-sandbox-heartbeat.timer
-fi
-if [ -e {shlex.quote(retired_heartbeat_service)} ]; then
-  $SUDO systemctl stop ucloud-sandbox-heartbeat.service
-  $SUDO systemctl reset-failed ucloud-sandbox-heartbeat.service || true
-fi
-$SUDO rm -f {shlex.quote(retired_heartbeat_timer)} {shlex.quote(retired_heartbeat_service)}
 
 $SUDO systemctl daemon-reload
 {environment_start}

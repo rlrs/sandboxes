@@ -157,8 +157,8 @@ impl ResidentSampler {
 
     /// Sample one incarnation's cgroup; `None` (and the cache entry dropped)
     /// on any doubt.
-    pub fn sample(&self, key: &Key, pid: u32, start_time_ticks: u64, container_id: &str, expected_path: Option<&str>) -> Option<ResidentSample> {
-        let result = self.measure(key, pid, start_time_ticks, container_id, expected_path);
+    pub fn sample(&self, key: &Key, pid: u32, start_time_ticks: u64, expected_path: &str) -> Option<ResidentSample> {
+        let result = self.measure(key, pid, start_time_ticks, expected_path);
         let mut state = self.state();
         match result {
             Some((sample, proof)) => {
@@ -174,7 +174,7 @@ impl ResidentSampler {
         }
     }
 
-    fn measure(&self, key: &Key, pid: u32, ticks: u64, container_id: &str, expected_path: Option<&str>) -> Option<(ResidentSample, (String, u64, u64))> {
+    fn measure(&self, key: &Key, pid: u32, ticks: u64, expected_path: &str) -> Option<(ResidentSample, (String, u64, u64))> {
         let same_sentry = || crate::runsc::start_time_ticks(&self.proc_root, pid).is_ok_and(|now| now == ticks);
         if !same_sentry() {
             return None;
@@ -184,13 +184,8 @@ impl ResidentSampler {
         let [raw] = unified[..] else { return None };
         let relative = raw.strip_prefix('/')?;
         let parts: Vec<&str> = relative.split('/').filter(|part| !part.is_empty()).collect();
-        if parts.is_empty() || raw.split('/').skip(1).any(|part| part == "." || part == "..") {
+        if parts.is_empty() || raw.split('/').skip(1).any(|part| part == "." || part == "..") || raw != expected_path {
             return None;
-        }
-        match expected_path {
-            Some(expected) if raw != expected => return None,
-            None if parts.last() != Some(&container_id) => return None, // Never a shared parent.
-            _ => {}
         }
         let path = self.cgroup_root.join(relative);
         let mut identity = std::fs::metadata(&path).ok()?;
@@ -308,8 +303,7 @@ impl Reclaimer<'_> {
         }
         let relative = sample.cgroup_path.trim_start_matches('/');
         let path = self.sampler.cgroup_root.join(relative);
-        let container_id = Path::new(relative).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-        let resample = || self.sampler.sample(key, sample.sentry_pid, sample.sentry_start_time_ticks, &container_id, Some(&sample.cgroup_path));
+        let resample = || self.sampler.sample(key, sample.sentry_pid, sample.sentry_start_time_ticks, &sample.cgroup_path);
         let same_cgroup = |observed: &ResidentSample| (observed.cgroup_device, observed.cgroup_inode) == (sample.cgroup_device, sample.cgroup_inode);
         let (mut requested, mut current, mut reason) = (0u64, sample.clone(), "target_reached");
         let outcome = (|| -> std::io::Result<()> {
@@ -449,8 +443,10 @@ pub(crate) mod tests {
             std::fs::write(self.proc.join("123/stat"), format!("123 (sentry) S {}{ticks} 0", "0 ".repeat(18))).unwrap();
         }
 
+        /// Samples against `expected`, else the incarnation's own cgroup.
         pub fn sample(&self, expected: Option<&str>) -> Option<ResidentSample> {
-            self.sampler.sample(&("s".into(), 1), 123, 456, &self.container, expected)
+            let own = format!("/ucloud-sandboxes/{}", self.container);
+            self.sampler.sample(&("s".into(), 1), 123, 456, expected.unwrap_or(&own))
         }
 
         /// `_anonymous(current)`: all of it tmpfs.

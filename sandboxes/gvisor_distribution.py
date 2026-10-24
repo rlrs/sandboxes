@@ -18,18 +18,24 @@ GVISOR_SIDECARS = (
 )
 
 
+def _require_pinned(commit: str) -> None:
+    if commit != GVISOR_COMMIT:
+        raise ValueError(
+            f"gVisor runtime commit {commit} is not the pinned {GVISOR_COMMIT}"
+        )
+
+
 def distribution_files(runsc: Path, commit: str) -> list[tuple[Path, str]]:
-    """Return verified sidecars for the new pin; legacy deployments stay readable.
+    """Return the verified sidecars of the pinned distribution.
 
     The manifest is provenance inside the deployment's trusted input, not a
     signature. The node bundle digest authenticates the resulting distribution.
     """
+    _require_pinned(commit)
     manifest_path = runsc.parent / "build-manifest.json"
     sidecar_dir = runsc.parent / "gvisor-bin"
-    if commit != GVISOR_COMMIT and not manifest_path.exists():
-        if sidecar_dir.exists():
-            raise ValueError("gVisor companion binaries require a build manifest")
-        return []
+    if not manifest_path.is_file():
+        raise ValueError("gVisor distribution requires a build manifest")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("schema") != 2 or manifest.get("gvisor_commit") != commit:
         raise ValueError("gVisor distribution manifest does not match the runtime pin")
@@ -70,11 +76,8 @@ def installed_sidecar_fingerprints(runsc: Path, commit: str) -> dict[str, str]:
     Bootstrap has already authenticated the node bundle. Hash actual installed
     bytes here so a different companion cannot reuse an old boot fingerprint.
     """
+    _require_pinned(commit)
     directory = runsc.parent / "gvisor-bin"
-    if commit != GVISOR_COMMIT:
-        if directory.exists():
-            raise ValueError("legacy gVisor runtime must not share companion binaries")
-        return {}
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("installed gVisor companion directory is missing or linked")
     if {path.name for path in directory.iterdir()} != set(GVISOR_SIDECARS):

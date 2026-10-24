@@ -102,8 +102,7 @@ class ResidentMemorySampler:
         *,
         pid: int,
         start_time_ticks: int,
-        container_id: str,
-        expected_path: str | None = None,
+        expected_path: str,
     ) -> ResidentMemorySample | None:
         try:
             if (
@@ -125,13 +124,8 @@ class ResidentMemorySampler:
                 or any(part in {".", ".."} for part in raw.split("/")[1:])
             ):
                 raise ValueError("runtime cgroup path is invalid")
-            if expected_path is not None:
-                if raw != expected_path:
-                    raise ValueError("runtime cgroup differs from OCI ownership")
-            elif relative.name != container_id:
-                # Legacy OCI configs let runsc select its default path. Require
-                # its exact immutable container ID, never a shared parent cgroup.
-                raise ValueError("runtime cgroup is not incarnation-specific")
+            if raw != expected_path:
+                raise ValueError("runtime cgroup differs from OCI ownership")
             path = self.cgroup_root / relative
             identity = path.stat()
             with self._guard:

@@ -2567,13 +2567,12 @@ def cmd_deploy_all_in_one(args: argparse.Namespace) -> int:
             companions = distribution_files(
                 plan.local_direct_runsc, plan.direct_runsc_commit
             )
-            if companions:
-                companions.append(
-                    (
-                        plan.local_direct_runsc.parent / "build-manifest.json",
-                        "build-manifest.json",
-                    )
+            companions.append(
+                (
+                    plan.local_direct_runsc.parent / "build-manifest.json",
+                    "build-manifest.json",
                 )
+            )
             for local_path, relative in companions:
                 remote_path = str(
                     PurePosixPath(plan.remote_direct_runsc_path).parent / relative

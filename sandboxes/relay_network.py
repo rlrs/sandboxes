@@ -86,11 +86,6 @@ _RELAY_MAPS = (
 SANDBOX_NETWORK = "100.96.0.0/16"
 
 
-def legacy_relay_policy_table(slot: int) -> str:
-    """Per-sandbox table name used before the shared table."""
-    return f"ucloud_relay_{int(slot)}"
-
-
 def relay_table_rules() -> str:
     """Replace the shared table's skeleton; callers append every sandbox.
 
@@ -239,10 +234,8 @@ def relay_policy_removal(lease: DirectNetworkLease) -> str:
     """Idempotently remove one sandbox; fails without effect if the table is missing."""
     t = RELAY_TABLE
     chains = [_relay_chain(lease, kind) for kind in _RELAY_CHAIN_KINDS]
-    legacy = legacy_relay_policy_table(lease.slot)
     # Create before deleting so the transaction succeeds whatever is present.
     return (
-        f"add table inet {legacy}\ndelete table inet {legacy}\n"
         "".join(f"add chain inet {t} {chain}\n" for chain in chains)
         + _relay_elements(lease, "add")
         + _relay_elements(lease, "delete")

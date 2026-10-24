@@ -12,6 +12,7 @@ import zipfile
 
 from sandboxes.cli import build_parser
 from sandboxes.config import DeploymentConfig
+from sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
 from sandboxes.deploy import (
     AllInOneDeployPlan,
     packaged_systemd_units,
@@ -60,7 +61,7 @@ class DeployTests(unittest.TestCase):
         raw["deployment_id"] = "prod-a"
         raw["gateway_private_host"] = "sandbox-gateway-prod"
         raw["registry_private_ip"] = "10.0.0.5"
-        sandbox["direct_runsc_commit"] = "9f653e577965df2ddd13875b5530cd2588661f1c"
+        sandbox["direct_runsc_commit"] = GVISOR_COMMIT
         raw.update(overrides)
         return DeploymentConfig.from_dict(raw)
 
@@ -78,9 +79,21 @@ class DeployTests(unittest.TestCase):
                 "sandboxes-0.2.0.dist-info/METADATA",
                 "Metadata-Version: 2.1\nName: sandboxes\nVersion: 0.2.0\n",
             )
+        # The complete pinned gVisor distribution, with its build manifest.
+        files = {}
+        for name in ["runsc", *("gvisor-bin/" + name for name in GVISOR_SIDECARS)]:
+            binary = root / name
+            binary.parent.mkdir(exist_ok=True)
+            binary.write_bytes(name.encode())
+            binary.chmod(0o755)
+            files[name] = {
+                "size": binary.stat().st_size,
+                "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+            }
+        (root / "build-manifest.json").write_text(
+            json.dumps({"schema": 2, "gvisor_commit": GVISOR_COMMIT, "files": files})
+        )
         runsc = root / "runsc"
-        runsc.write_bytes(b"patched-runsc")
-        runsc.chmod(0o755)
         managed_init = root / "ucloud-sandbox-init"
         managed_init.write_bytes(b"managed-process-init")
         managed_init.chmod(0o755)
@@ -268,13 +281,9 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["input"], b"new wheel")
 
     def test_sandbox_bundle_contains_complete_new_gvisor_distribution(self):
-        from sandboxes.gvisor_distribution import GVISOR_COMMIT, GVISOR_SIDECARS
-
         with TemporaryDirectory() as directory:
             root = Path(directory)
-            raw = self._config().to_dict()
-            raw["sandbox"]["direct_runsc_commit"] = GVISOR_COMMIT
-            plan = self._plan(root, config=DeploymentConfig.from_dict(raw))
+            plan = self._plan(root)
             runtime = root / "runtime"
             (runtime / "debs").mkdir(parents=True)
             (runtime / "debs/runtime.deb").write_bytes(b"package")
@@ -284,22 +293,6 @@ class DeployTests(unittest.TestCase):
             kernel = root / "kernel"
             kernel.mkdir()
             (kernel / "xfs.ko").write_bytes(b"module")
-            files = {}
-            names = ["runsc", *("gvisor-bin/" + name for name in GVISOR_SIDECARS)]
-            for name in names:
-                binary = root / name
-                binary.parent.mkdir(exist_ok=True)
-                binary.write_bytes(name.encode())
-                binary.chmod(0o755)
-                files[name] = {
-                    "size": binary.stat().st_size,
-                    "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
-                }
-            (root / "build-manifest.json").write_text(
-                json.dumps(
-                    {"schema": 2, "gvisor_commit": GVISOR_COMMIT, "files": files}
-                )
-            )
             script = render_remote_deploy_script(plan)
             start = script.index("import hashlib\nimport gzip")
             code = compile(

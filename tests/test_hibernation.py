@@ -1,6 +1,5 @@
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -516,34 +515,6 @@ class HibernationTests(unittest.TestCase):
                 ),
                 manifest,
             )
-
-    def test_incarnation_lock_retains_legacy_store_lock_exclusion(self) -> None:
-        with TemporaryDirectory() as raw_dir:
-            store = HibernationArtifactStore((Path(raw_dir) / "artifacts").resolve())
-            store.root.mkdir(mode=0o700)
-            lock_path = store.root / store.LOCK_NAME
-            lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-            started = threading.Event()
-
-            def prepare() -> Path:
-                started.set()
-                return store.prepare_generation(
-                    sandbox_id="sandbox-1", sandbox_generation=7, hibernation_generation=1
-                )
-
-            try:
-                fcntl.flock(lock_fd, fcntl.LOCK_EX)
-                with ThreadPoolExecutor(max_workers=1) as workers:
-                    preparing = workers.submit(prepare)
-                    try:
-                        self.assertTrue(started.wait(2))
-                        with self.assertRaises(FutureTimeoutError):
-                            preparing.result(timeout=0.05)
-                    finally:
-                        fcntl.flock(lock_fd, fcntl.LOCK_UN)
-                    self.assertTrue(preparing.result(timeout=2).is_dir())
-            finally:
-                os.close(lock_fd)
 
     def test_artifact_root_initialization_is_safe_across_sandboxes(self) -> None:
         with TemporaryDirectory() as raw_dir:

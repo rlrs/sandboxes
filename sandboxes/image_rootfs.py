@@ -34,7 +34,6 @@ _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _OVERLAY2_ROOTFS_SCHEMA = 1
 _OVERLAY_METADATA = ".ucloud-overlay.json"
-_OVERLAY_METADATA_SCHEMA = 1
 
 
 def _mount_present(path: Path, runner: CommandRunner, binary: str) -> bool:
@@ -1271,9 +1270,9 @@ class OverlayRootfsManager:
                     {
                         "lowerdir": str(image.rootfs),
                         "rootfs_identity_sha256": image.rootfs_identity_sha256,
-                        **({"image_id": image.environment.base, "schema": _OVERLAY_METADATA_SCHEMA}
-                           if image.backend_abi == DOCKER_OVERLAY2_ABI else
-                           {"environment": image.environment.to_dict(), "backend_abi": image.backend_abi, "schema": 2}),
+                        "environment": image.environment.to_dict(),
+                        "backend_abi": image.backend_abi,
+                        "schema": 2,
                     }
                 )
                 + b"\n",
@@ -1412,23 +1411,19 @@ class OverlayRootfsManager:
     def _decode_environment(
         metadata: object, expected_fingerprint: str
     ) -> EnvironmentManifest:
-        """Read legacy bundles without rewriting or relabeling their identity."""
+        """Read a bundle's identity without rewriting or relabeling it."""
         try:
-            if not isinstance(metadata, dict):
-                raise ValueError("metadata must be an object")
-            common = {"lowerdir", "rootfs_identity_sha256", "schema"}
-            if type(metadata.get("schema")) is not int:
-                raise ValueError("invalid schema")
-            if metadata["schema"] == 1 and set(metadata) == common | {"image_id"}:
-                environment = EnvironmentManifest(base=metadata["image_id"])
-                backend_abi = DOCKER_OVERLAY2_ABI
-            elif metadata["schema"] == 2 and set(metadata) == common | {
-                "environment", "backend_abi"
-            }:
-                environment = EnvironmentManifest.from_dict(metadata["environment"])
-                backend_abi = metadata["backend_abi"]
-            else:
+            if (
+                not isinstance(metadata, dict)
+                or type(metadata.get("schema")) is not int
+                or metadata["schema"] != 2
+                or set(metadata) != {
+                    "lowerdir", "rootfs_identity_sha256", "schema", "environment", "backend_abi"
+                }
+            ):
                 raise ValueError("unsupported bundle metadata")
+            environment = EnvironmentManifest.from_dict(metadata["environment"])
+            backend_abi = metadata["backend_abi"]
             if (
                 metadata["rootfs_identity_sha256"] != expected_fingerprint
                 or environment.rootfs_fingerprint(backend_abi) != expected_fingerprint

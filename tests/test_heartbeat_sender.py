@@ -11,12 +11,10 @@ from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
-import os
 from pathlib import Path
 import random
 import re
 import shlex
-import subprocess
 import tempfile
 import threading
 import time
@@ -429,49 +427,6 @@ class NodeHeartbeatDeploymentTests(unittest.TestCase):
                 config = cli.heartbeat_sender_config_from_args(cli.build_parser().parse_args(argv))
                 self.assertEqual((config.url, config.bearer_token, config.interval_seconds, config.labels),
                                  (values["UCLOUD_HEARTBEAT_URL"], TOKEN, 7, labels))
-
-    def test_reinit_retires_an_older_releases_timer_before_the_agent_restarts(self) -> None:
-        script = render_vm_init_script(test_vm_init.VmInitTests._options())
-        start = script.index("# The node agent sends its own heartbeats.")
-        end = script.index("\n", script.index("$SUDO rm -f", start))
-        # After the node unit is written, before systemd reloads units and
-        # before the new agent starts.
-        written = script.index("<<NODE_SERVICE")
-        self.assertLess(written, start)
-        self.assertLess(end, script.index("$SUDO systemctl daemon-reload", written))
-        self.assertLess(end, script.index("systemctl restart ucloud-sandbox-node.service"))
-        for present, failing in ((("timer", "service"), ""), ((), ""), (("service",), ""),
-                                 (("timer", "service"), "disable")):
-            with self.subTest(present=present, failing=failing), tempfile.TemporaryDirectory() as raw:
-                root = Path(raw)
-                units, bin_dir, log = root / "units", root / "bin", root / "systemctl.log"
-                units.mkdir()
-                bin_dir.mkdir()
-                for kind in present:
-                    (units / f"ucloud-sandbox-heartbeat.{kind}").write_text("[Unit]\n")
-                fake = bin_dir / "systemctl"
-                fake.write_text(f'#!/bin/sh\necho "$*" >> {shlex.quote(str(log))}\n'
-                                f'case "$1" in {failing or "never"}) exit 1;; esac\n')
-                fake.chmod(0o755)
-                snippet = script[start:end].replace("/etc/systemd/system", str(units))
-                result = subprocess.run(
-                    ["bash", "-c", "set -euo pipefail\nSUDO=\n" + snippet],
-                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
-                    capture_output=True, text=True,
-                )
-                calls = log.read_text().splitlines() if log.exists() else []
-                if failing:
-                    self.assertNotEqual(result.returncode, 0)
-                    self.assertTrue((units / "ucloud-sandbox-heartbeat.timer").exists(),
-                                    "a timer systemd could not stop is left for the operator")
-                    continue
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(list(units.iterdir()), [])
-                expected = (["disable --now ucloud-sandbox-heartbeat.timer"] if "timer" in present else [])
-                if "service" in present:
-                    expected += ["stop ucloud-sandbox-heartbeat.service",
-                                 "reset-failed ucloud-sandbox-heartbeat.service"]
-                self.assertEqual(calls, expected)
 
 
 if __name__ == "__main__":

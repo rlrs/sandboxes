@@ -27,13 +27,12 @@ class ResidentMemoryTests(unittest.TestCase):
         )
         self.sampler = ResidentMemorySampler(cgroup_root=self.cg, proc_root=self.proc)
 
-    def sample(self, **kwargs):
+    def sample(self, expected_path=None):
         return self.sampler.sample(
             ("s", 1),
             pid=123,
             start_time_ticks=456,
-            container_id=self.container,
-            **kwargs,
+            expected_path=expected_path or "/ucloud-sandboxes/" + self.container,
         )
 
     def test_containment_is_resolved_once_per_unchanged_cgroup(self):

@@ -259,11 +259,9 @@ def boot_config_sha256(runsc: Path, runsc_commit: str, *, network: str, host_ero
         boot_settings["application_memory_backend"] = "reflink-restore-v1"
     elif ram_backing:
         boot_settings["application_memory_backend"] = "ram-sparse-capture-v1"
-    companions = installed_sidecar_fingerprints(runsc, runsc_commit)
-    if companions:
-        # Preserve legacy fingerprints, but bind new checkpoints to every
-        # executable that can implement their kernel and restore operations.
-        boot_settings["gvisor_companions"] = companions
+    # Bind checkpoints to every executable that can implement their kernel
+    # and restore operations.
+    boot_settings["gvisor_companions"] = installed_sidecar_fingerprints(runsc, runsc_commit)
     return _canonical_sha256(boot_settings)
 
 

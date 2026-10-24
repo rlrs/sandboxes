@@ -26,7 +26,6 @@ from .relay_network import (
     RELAY_FORWARD_MARK,
     NetworkRelay,
     apply_nft,
-    legacy_relay_policy_table,
     parse_network_relays,
     relay_bridge_rules,
     relay_hosts,
@@ -430,11 +429,6 @@ class DirectNetworkManager:
         }
         if self._apply_relay_delta(relay_policy_removal(lease), remaining):
             self._relay_applied.pop(lease.slot, None)
-        # An interface ACCEPT from an earlier release must never outlive the
-        # relay policy: a reused slot would bypass private-destination denies.
-        legacy = ("FORWARD", "-i", lease.host_interface, "-j", "ACCEPT")
-        if self._command_ok(("iptables", "-C", *legacy)):
-            self.runner(("iptables", "-D", *legacy))
 
     def _apply_relay_delta(self, script: str, state: dict) -> bool:
         """Apply per-sandbox statements, else rebuild from durable state.
@@ -482,24 +476,18 @@ class DirectNetworkManager:
     def _rebuild_relay_table(
         self, fragments: Mapping[int, str], leases: Sequence[DirectNetworkLease]
     ) -> None:
-        # One transaction replaces the shared table and retires any per-sandbox
-        # tables from earlier releases, so there is no unguarded moment.
-        legacy = "".join(
-            f"add table inet {table}\ndelete table inet {table}\n"
-            for table in (legacy_relay_policy_table(lease.slot) for lease in leases)
-        )
-        # The bridge follows the latest resolution (each rebuild path resolves
-        # the relays just before it).
+        # One transaction replaces the shared table, so there is no unguarded
+        # moment. The bridge follows the latest resolution (each rebuild path
+        # resolves the relays just before it).
         bridge = relay_bridge_rules(self.relays, {
             name: self._relay_resolution.get(name, (0.0, ()))[1] for name in self.relays})
         self._relay_table_ready = False
-        self.nft_runner(relay_table_rules() + bridge + "".join(fragments.values()) + legacy)
+        self.nft_runner(relay_table_rules() + bridge + "".join(fragments.values()))
         self._relay_applied = dict(fragments)
         self._relay_bridge_applied = bridge
         self._relay_table_ready = True
         if leases:
             self._ensure_relay_forward_accept()
-            self._remove_legacy_relay_accepts(leases)
 
     def _refresh_relay_policies(self, *, force: bool = False) -> None:
         # Share the durable lease lock with create/delete so DNS refresh cannot
@@ -563,21 +551,6 @@ class DirectNetworkManager:
             ("iptables", "-I", rule[0], "1", *rule[1:]),
             snapshot=snapshot,
         )
-
-    def _remove_legacy_relay_accepts(
-        self, leases: Sequence[DirectNetworkLease]
-    ) -> None:
-        # Earlier releases installed one FORWARD ACCEPT per relay interface.
-        snapshot = self._iptables_snapshot()
-        for lease in leases:
-            rule = ("FORWARD", "-i", lease.host_interface, "-j", "ACCEPT")
-            present = (
-                ("filter", "-A", *rule) in snapshot
-                if snapshot is not None
-                else self._command_ok(("iptables", "-C", *rule))
-            )
-            if present:
-                self.runner(("iptables", "-D", *rule))
 
     def _ensure_host_rules(self) -> None:
         # Read a fresh kernel snapshot for this reconciliation, never a cached

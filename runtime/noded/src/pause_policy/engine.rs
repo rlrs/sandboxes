@@ -339,7 +339,8 @@ impl Engine {
                 path
             }
         };
-        self.sampler.sample(key, u32::try_from(pid).ok()?, ticks, &sandbox.container_id, path.as_deref())
+        // Every bundle names its incarnation's cgroup; never guess one.
+        self.sampler.sample(key, u32::try_from(pid).ok()?, ticks, path.as_deref()?)
     }
 
     /// The sampling half of `refresh_resident_memory`: sample every owned,
