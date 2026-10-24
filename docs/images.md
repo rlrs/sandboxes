@@ -224,7 +224,7 @@ backend to attach every component, and composes them.
   its own writable upper plus tmpfs at `/tmp` and `/run`.
 - A deleted sandbox's image stays mounted for the next one; idle images are
   collected LRU only when the node is over its device or cache budget.
-  Prefetch (metadata hints, startup traces) only orders fetches.
+  Every read loads on demand; there is no attach-time prefetch.
 
 ## Configuration
 

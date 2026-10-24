@@ -61,7 +61,7 @@ class BuildHistoryTests(unittest.TestCase):
         self.assertEqual(saved["timings"], {
             "total_ms": 123, "queue_wait_ms": 45, "preparation_ms": 6, "end_to_end_ms": 174,
             "phases": {"docker_build_ms": 100, "cache_prepare_ms": 2, "cache_mount_ms": 4, "finishing_wait_ms": 12},
-            "environment": {"metadata_hints": 3, "mkfs_ms": 120},
+            "environment": {"mkfs_ms": 120},
         })
         self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
 

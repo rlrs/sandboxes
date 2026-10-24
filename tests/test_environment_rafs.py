@@ -1,7 +1,6 @@
 """The worker's RAFS read path against an S3 stand-in, and concurrent attach."""
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
-import json
 from pathlib import Path
 import threading
 import time
@@ -18,7 +17,6 @@ from sandboxes.environment_artifact import (CHUNK_BYTES, EnvironmentArtifactRegi
 from sandboxes.environment_backend import EnvironmentBackend
 from sandboxes.environment_cache import VerifiedEnvironmentCache
 from sandboxes.environment_rafs import DEMAND_WINDOW_BYTES, load_rafs_image
-from sandboxes.environment_trace import LocalTraceStore
 
 TEST_TIER = "contract"
 
@@ -122,25 +120,6 @@ class RafsReadTests(unittest.TestCase):
         image._use(Locator(locator.epoch, stale, locator.entries, locator.meta))
         self.assertEqual(len(self.cache.read(image, image.map.offsets[0], 4096)), 4096)
         self.assertIsNot(image._locator.packs, stale)
-
-    def test_traces_record_chunk_ids_and_replay_as_coalesced_pack_ranges(self):
-        image = self.image(self.roots[0])
-        traces = LocalTraceStore(self.store.root / "traces")
-        traces.save(image, [3, 1, 2])
-        raw = json.loads((self.store.root / "traces" / (image.image_digest[7:] + ".json")).read_text())
-        self.assertEqual(raw["chunks"], [image.chunk_ids[index] for index in (3, 1, 2)])
-        self.assertEqual(traces.load(image), ("present", (3, 1, 2)))
-        other = self.image(self.roots[1])
-        (self.store.root / "traces" / (other.image_digest[7:] + ".json")).write_text(
-            json.dumps(raw | {"image_digest": other.image_digest, "chunks": ["f" * 64]}))
-        self.assertEqual(traces.load(other), ("invalid", None))
-        # Replay of the whole image: pack ranges of up to 4 MiB, not chunk GETs.
-        cache, before = self.new_cache("replay"), len(self.store.objects.gets())
-        job = cache.prefetch(image, image.prefetch_order(range(len(image.chunks))), kind="trace",
-                             max_bytes=cache.max_bytes)
-        self.assertTrue(job.wait(30))
-        self.assertEqual(job.fetched_chunks, len({chunk.digest for chunk in image.chunks}))
-        self.assertEqual(len(self.store.objects.gets()) - before, len({entry[0] for entry in image._locator.entries}))
 
     def test_the_backend_attaches_rafs_components_through_the_chunk_index(self):
         digest = load_environment(self.store.registry, self.roots[0]).environment.base

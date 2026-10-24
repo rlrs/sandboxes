@@ -92,41 +92,55 @@ class EnvironmentBootstrapTests(unittest.TestCase):
         parsed = DeploymentConfig.from_dict(raw)
         self.assertTrue(parsed.immutable_environments.worker_enabled)
         self.assertFalse(parsed.immutable_environments.builder_enabled)
-        self.assertTrue(parsed.immutable_environments.prefetch_enabled)
         self.assertEqual(DeploymentConfig.from_dict(parsed.to_dict()), parsed)
-        raw["immutable_environments"]["prefetch_enabled"] = False
-        self.assertFalse(DeploymentConfig.from_dict(raw).immutable_environments.prefetch_enabled)
+        # Configs written for 0.10.0 name the retired prefetch switches; a
+        # config written now leaves them out, which 0.10.0 reads as its defaults.
+        for retired in ({"prefetch_enabled": True, "shared_traces": False},
+                        {"prefetch_enabled": False, "shared_traces": True}):
+            with self.subTest(retired=retired):
+                raw["immutable_environments"] = {"trusted_keys_file": "/etc/producers.json", "worker_enabled": True,
+                                                 **retired}
+                self.assertEqual(DeploymentConfig.from_dict(raw), parsed)
+        self.assertFalse({"prefetch_enabled", "shared_traces"} & set(parsed.immutable_environments.to_dict()))
         for change in ({"worker_enabled": 1}, {"builder_enabled": True},
-                       {"prefetch_enabled": "false"}, {"prefetch_enabled": 0}, {"attach_concurrency": 0},
+                       {"prefetch_enabled": "false"}, {"prefetch_enabled": 0}, {"shared_traces": "true"},
+                       {"attach_concurrency": 0},
                        {"attach_concurrency": True}, {"device_budget_percent": 0}, {"device_budget_percent": 101},
                        {"device_budget_percent": True}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 EnvironmentDeploymentConfig.from_dict({"trusted_keys_file": "/etc/producers.json", **change})
 
-    def test_deployment_off_switch_reaches_the_worker_backend_command(self):
+    def test_deployment_settings_reach_the_worker_backend_command(self):
         from dataclasses import replace
         from tests.test_policy import node
         from sandboxes import cli
         with TemporaryDirectory() as temporary:
             trust = provision(Path(temporary) / "key")["public_trust_file"]
             base = DeploymentConfig.default(scope_id="test")
-            for enabled, attach, budget in ((True, 1, 75), (False, 4, 60)):
+            for attach, budget in ((1, 75), (4, 60)):
                 selected = EnvironmentDeploymentConfig.from_dict({"trusted_keys_file": trust, "worker_enabled": True,
-                                                                  "prefetch_enabled": enabled, "attach_concurrency": attach,
+                                                                  "prefetch_enabled": False, "shared_traces": True,
+                                                                  "attach_concurrency": attach,
                                                                   "device_budget_percent": budget})
                 # Written only once changed, so a rollback still reads the config.
                 self.assertEqual("device_budget_percent" in selected.to_dict(), budget != 75)
-                with self.subTest(enabled=enabled), patch.object(cli, "read_bearer_token_source", return_value="t"):
+                with self.subTest(attach=attach), patch.object(cli, "read_bearer_token_source", return_value="t"):
                     options = cli.vm_init_options_for_job(
                         replace(base, immutable_environments=selected), node("worker").job, "sandbox",
                         package_spec="/tmp/package.tar.gz", package_sha256="a" * 64)
-                    self.assertIs(options.environment_prefetch_enabled, enabled)
                     script = render_vm_init_script(options)
-                    self.assertEqual("--disable-prefetch" in script, not enabled)
+                    self.assertNotIn("--disable-prefetch", script)
+                    self.assertNotIn("--shared-traces", script)
                     self.assertEqual("--attach-concurrency 4" in script, attach == 4)  # Absent at the default.
                     self.assertEqual(options.environment_device_budget_percent, budget)
                     self.assertEqual("--environment-device-budget-percent" in script, budget != 75)
                     self.assertEqual("--environment-device-budget-percent 60" in script, budget == 60)
+
+    def test_the_backend_command_still_accepts_units_rendered_by_0_10_0(self):
+        from sandboxes import cli
+        common = ["serve-environment-io", "--root", "/state/environment-io", "--socket", "/run/io.sock"]
+        self.assertEqual(cli.build_parser().parse_args([*common, "--disable-prefetch", "--shared-traces"]).socket,
+                         Path("/run/io.sock"))
 
     def test_worker_and_builder_lifetimes_and_key_separation(self):
         with TemporaryDirectory() as temporary:
@@ -144,9 +158,7 @@ class EnvironmentBootstrapTests(unittest.TestCase):
             self.assertIn("PrivateMounts=no", worker)
             self.assertIn("require a fresh worker", worker)
             self.assertNotIn("producer.pem", worker)
-            self.assertNotIn("--disable-prefetch", worker)
-            disabled = render_vm_init_script(vm_fixtures.VmInitTests._options(**common, environment_prefetch_enabled=False))
-            self.assertIn(" --cache-bytes 1073741824 --disable-prefetch --environment-registry-url", disabled)
+            self.assertIn(" --cache-bytes 1073741824 --environment-registry-url", worker)
             builder = render_vm_init_script(vm_fixtures.VmInitTests._options(role="builder", **common,
                 environment_signing_key_pem=private, **BUILDER_MATERIAL))
             self.assertIn("--environment-signing-key", builder)
@@ -162,9 +174,6 @@ class EnvironmentBootstrapTests(unittest.TestCase):
                 render_vm_init_script(vm_fixtures.VmInitTests._options(**common, environment_signing_key_pem=private))
             with self.assertRaisesRegex(ValueError, "headroom"):
                 render_vm_init_script(vm_fixtures.VmInitTests._options(**common, environment_cache_bytes=100 * 1024 ** 3))
-            # A truthy string must not render the default (prefetching) service.
-            with self.assertRaisesRegex(ValueError, "prefetch_enabled must be boolean"):
-                render_vm_init_script(vm_fixtures.VmInitTests._options(**common, environment_prefetch_enabled="false"))
             # Chunk-store workers get the index's read token, never an S3 key.
             chunk = {"environment_chunk_index_url": "http://10.42.0.2:5090", "environment_chunk_index_token": "t" * 64}
             reader = render_vm_init_script(vm_fixtures.VmInitTests._options(**common, **chunk))
@@ -194,10 +203,6 @@ class EnvironmentBootstrapTests(unittest.TestCase):
             for invalid in (nydusd, {**nydusd, "environment_chunk_nydusd_sha256": "x"}):
                 with self.subTest(nydusd=invalid), self.assertRaises(ValueError):  # Pinned, and only with a store node.
                     render_vm_init_script(vm_fixtures.VmInitTests._options(**common, **chunk, **invalid))
-            # Shared startup traces (C2.7) are opt-in.
-            self.assertNotIn("--shared-traces", reader)
-            self.assertIn(" --shared-traces", render_vm_init_script(vm_fixtures.VmInitTests._options(
-                **common, environment_shared_traces=True)))
             with self.assertRaisesRegex(ValueError, "store node"):
                 render_vm_init_script(vm_fixtures.VmInitTests._options(
                     **common, environment_chunk_store_url="http://10.42.0.200:5091"))

@@ -309,14 +309,14 @@ def build_parser() -> argparse.ArgumentParser:
     environment_io.add_argument("--root", type=Path, required=True)
     environment_io.add_argument("--socket", type=Path, required=True)
     environment_io.add_argument("--cache-bytes", type=int, default=1024 ** 3)
-    environment_io.add_argument("--disable-prefetch", action="store_true",
-                                help="Demand-load only: no attach-time metadata or startup-trace prefetch.")
+    # Accepted and ignored for one release: units rendered by 0.10.0 may pass
+    # them, and the backend now always loads on demand.
+    environment_io.add_argument("--disable-prefetch", action="store_true", help=argparse.SUPPRESS)
+    environment_io.add_argument("--shared-traces", action="store_true", help=argparse.SUPPRESS)
     environment_io.add_argument("--chunk-index-url", default="", help="ucloud-chunk-index, for RAFS components")
     environment_io.add_argument("--chunk-index-token-file", type=Path)
     environment_io.add_argument("--chunk-concurrent-misses", type=int, default=32)
     environment_io.add_argument("--attach-concurrency", type=int, default=1, help="concurrent component attaches")
-    environment_io.add_argument("--shared-traces", action="store_true",
-                                help="share startup traces through the managed registry (plan C2.7)")
     environment_io.add_argument("--chunk-store-url", default="",
                                 help="read RAFS images only from this store node, with the index read token")
     environment_io.add_argument("--nydusd", default="", help="serve RAFS images with this nydusd (C2.1)")
@@ -1092,9 +1092,9 @@ def cmd_serve_environment_io(args: argparse.Namespace) -> int:
     chunk_index = (args.chunk_index_url, read_token(args.chunk_index_token_file).decode()) \
         if args.chunk_index_url else None
     serve_backend(environment_registry_from_args(args), root=args.root, socket_path=args.socket,
-                  cache_bytes=args.cache_bytes, prefetch=not args.disable_prefetch, chunk_index=chunk_index,
+                  cache_bytes=args.cache_bytes, chunk_index=chunk_index,
                   concurrent_misses=args.chunk_concurrent_misses, chunk_store_url=args.chunk_store_url or None,
-                  attach_concurrency=args.attach_concurrency, shared_traces=args.shared_traces,
+                  attach_concurrency=args.attach_concurrency,
                   nydusd=(args.nydusd, args.nydusd_sha256) if args.nydusd else None)
     return 0
 
@@ -1886,10 +1886,7 @@ def run_registry_prune(
     usage_records = usage_snapshot.records
     reference_repositories = _reference_retained_repositories(config)
     cache_policy = None
-    from .environment_trace import TRACE_REPOSITORY
-    # Startup traces are small hint manifests, one per component: never pruned
-    # by count or age, never evicted (plan C2.7).
-    excluded_repositories = [*reference_repositories.values(), TRACE_REPOSITORY]
+    excluded_repositories = list(reference_repositories.values())
     if config.builder.buildx_cache_ref:
         from .build_cache import RegistryBuildCache
         cache_policy = RegistryBuildCache(
@@ -6523,10 +6520,8 @@ def vm_init_options_for_job(
             "environment_repository": selected_environment.repository,
             "environment_trusted_keys_json": json.dumps({key: base64.b64encode(value).decode("ascii") for key, value in trusted_keys.items()}),
             "environment_cache_bytes": selected_environment.cache_bytes,
-            "environment_prefetch_enabled": selected_environment.prefetch_enabled,
             "environment_attach_concurrency": selected_environment.attach_concurrency,
             "environment_device_budget_percent": selected_environment.device_budget_percent,
-            "environment_shared_traces": selected_environment.shared_traces,
         }
         chunk_store = selected_environment.chunk_store
         if chunk_store is not None and role == "sandbox":

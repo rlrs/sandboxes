@@ -5,6 +5,8 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from sandboxes.models import (
+    ENVIRONMENT_IO_METRICS,
+    RETIRED_ENVIRONMENT_IO_METRICS,
     InstancePhase,
     NodeHeartbeat,
     NodeRuntimeMetrics,
@@ -12,6 +14,7 @@ from sandboxes.models import (
     SandboxInventoryEntry,
     SandboxLifecycleObservation,
     parse_iso_datetime,
+    retired_environment_io_metrics,
     sandbox_route_state_from_observation,
     utc_now,
 )
@@ -197,6 +200,30 @@ class HeartbeatContractTests(unittest.TestCase):
 
         self.assertEqual(canonical["collected_at"], metrics.collected_at.isoformat())
         self.assertEqual(NodeRuntimeMetrics.from_dict(canonical), metrics)
+
+    def test_environment_io_metrics_are_exactly_the_named_set(self) -> None:
+        # The retired prefetch names stay, as 0 and False, so 0.10.0 workers
+        # and gateways read this release's heartbeats and it reads theirs.
+        exported = retired_environment_io_metrics() | {name: 1 for name in (
+            "hits", "misses", "downloaded_bytes", "corruptions", "fetch_retries", "cached_bytes",
+            "pending_misses", "active_components", "prefetch_joined_reads")}
+        self.assertEqual(set(exported), ENVIRONMENT_IO_METRICS)
+        self.assertIs(exported["prefetch_enabled"], False)
+        self.assertIn("metadata_prefetch_chunks", RETIRED_ENVIRONMENT_IO_METRICS)
+        wire = NodeRuntimeMetrics(collected_at=utc_now(), environment_io=exported).to_dict()
+        # Every rejection below is then attributable to its one change.
+        self.assertEqual(NodeRuntimeMetrics.from_dict(wire).environment_io, exported)
+        absent = dict(wire)
+        del absent["environment_io"]
+        self.assertIsNone(NodeRuntimeMetrics.from_dict(absent))
+        for change in ({"hits": True}, {"hits": -1}, {"misses": 1.5}, {"trace_prefetch_seconds": 1},
+                       {"trace_prefetch_seconds": float("inf")}, {"prefetch_enabled": 1}, {"invented": 0}):
+            with self.subTest(change=change):
+                self.assertIsNone(NodeRuntimeMetrics.from_dict(wire | {"environment_io": exported | change}))
+        for name in ("active_components", "metadata_hint_present"):
+            missing = {key: value for key, value in exported.items() if key != name}
+            with self.subTest(missing=name):
+                self.assertIsNone(NodeRuntimeMetrics.from_dict(wire | {"environment_io": missing}))
 
     def test_resource_quantity_rejects_permissive_values(self) -> None:
         with self.assertRaises(ValueError):

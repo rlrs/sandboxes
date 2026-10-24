@@ -40,7 +40,6 @@ IMAGE_MEDIA_TYPE = "application/vnd.ucloud.environment.image.v1"
 OCI_IMAGE = "application/vnd.oci.image.manifest.v1+json"
 MAX_INDEX_BYTES = 16 * 1024 * 1024
 _MAX_CHUNKS = 65536
-_RETAINED_HINTS = 32  # Verified metadata hints kept by manifest digest (load -> metadata_hint).
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _REPOSITORY = re.compile(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*\Z")
 _SIGNING_DOMAIN = b"ucloud.immutable-environment-component.v1\0"
@@ -521,7 +520,6 @@ class EnvironmentArtifactRegistry:
         self.repository = repository
         self.trusted_keys = dict(trusted_keys)
         self._whole_images: set[str] = set()
-        self._metadata: dict[str, tuple] = {}
         self._layout_guard = threading.Lock()
 
     def whole_image(self, component: "EnvironmentComponent") -> bool:
@@ -529,17 +527,8 @@ class EnvironmentArtifactRegistry:
         with self._layout_guard:
             return component.image_digest in self._whole_images
 
-    def metadata_hint(self, digest: str):
-        """(status, hint) found by the last ``load`` of this component manifest."""
-        with self._layout_guard:
-            return self._metadata.get(digest, ("absent", None))
-
-    def publish(self, image: Path, component: EnvironmentComponent, *, tag: str, metadata=None) -> str:
-        """Publish a signed component; ``metadata`` is its optional signed hint.
-
-        The hint is a manifest annotation, which old workers ignore
-        (environment_metadata). Without one the manifest bytes are unchanged.
-        """
+    def publish(self, image: Path, component: EnvironmentComponent, *, tag: str) -> str:
+        """Publish a signed component as one image blob and its manifest."""
         component.authenticate(self.trusted_keys)
         # One streamed upload of the whole image. A registry handles each blob
         # as a separate upload and commit; per-chunk blobs made publication of
@@ -558,10 +547,6 @@ class EnvironmentArtifactRegistry:
             "config": {"mediaType": COMPONENT_MEDIA_TYPE, "digest": config_digest, "size": len(config)},
             "layers": [{"mediaType": IMAGE_MEDIA_TYPE, "digest": component.image_digest,
                         "size": component.image_size}]}
-        if metadata is not None:
-            from .environment_metadata import METADATA_ANNOTATION
-            metadata.authenticate(self.trusted_keys, component_digest=config_digest, component=component)
-            document["annotations"] = {METADATA_ANNOTATION: metadata.encode()}
         _upload_blob(self.client, self.repository, config, config_digest)
         manifest = canonical_bytes(document)
         # The root is the commit point; interrupted chunk uploads are never a
@@ -628,17 +613,8 @@ class EnvironmentArtifactRegistry:
                 self._whole_images.add(component.image_digest)
         elif document.get("layers") != per_chunk:
             raise ValueError("environment OCI dependency closure differs from signed index")
-        # An absent or unverifiable prefetch hint never rejects the component.
-        from .environment_metadata import read_metadata_hint
-        hint = read_metadata_hint(document, config["digest"], component, self.trusted_keys)
-        with self._layout_guard:
-            # Only the backend reads a hint, right after its own load. A hint
-            # holds up to ~2 MiB of chunk tuples, and builders and gateways
-            # load many components they never prefetch: keep only a few.
-            self._metadata.pop(digest, None)
-            self._metadata[digest] = hint
-            while len(self._metadata) > _RETAINED_HINTS:
-                self._metadata.pop(next(iter(self._metadata)))
+        # Manifests of earlier builders may carry a metadata prefetch hint
+        # annotation; nothing reads it any more.
         return component
 
 ENVIRONMENT_ANNOTATION = "org.ucloud.immutable-environment.v1"

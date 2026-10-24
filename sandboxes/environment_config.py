@@ -391,9 +391,6 @@ class EnvironmentDeploymentConfig:
     # Builders convert each build into the chunk store (docs/images.md).
     builder_enabled: bool = False
     cache_bytes: int = 1024 ** 3
-    # Off switch for attach-time metadata and startup-trace prefetch (C2.2,
-    # C2.3). A backend reads it once at start; bootstrap never restarts one.
-    prefetch_enabled: bool = True
     # Concurrent component attaches per worker backend. 1 keeps attach serial,
     # as before 0.8.3: a 48-way burst ran first commands 7x slower in parallel.
     attach_concurrency: int = 1
@@ -409,9 +406,6 @@ class EnvironmentDeploymentConfig:
     # OCI-released image a build names from its chunk-store root (nydus-image
     # on the gateway); release-oci may then release build inputs.
     regenerate_bases: bool = False
-    # Workers share startup traces through the managed registry (plan C2.7),
-    # so a node that never attached a component replays another's trace.
-    shared_traces: bool = False
     # Chunk-store (RAFS) images, off by default (C2.13, design §9 M1).
     chunk_store: ChunkStoreConfig | None = None
     # Sandbox builds (docs/images.md); None: every recipe builds on builders.
@@ -435,6 +429,12 @@ class EnvironmentDeploymentConfig:
             raise ValueError("immutable environment preserve_mtimes must be boolean")
         if not isinstance(values.pop("allow_paths", []), list):
             raise ValueError("immutable environment allow_paths must be a list")
+        # Attach-time prefetch and startup traces are gone (configs written for
+        # 0.10.0 and earlier name both); every read loads on demand, as it did
+        # with nydusd, so either value means the same now.
+        for name in ("prefetch_enabled", "shared_traces"):
+            if not isinstance(values.pop(name, False), bool):
+                raise ValueError(f"immutable environment {name} must be boolean")
         if set(values) - {field.name for field in fields(cls)} or "trusted_keys_file" not in values:
             raise ValueError("invalid immutable_environments fields")
         if values.get("chunk_store") is not None:
@@ -445,8 +445,7 @@ class EnvironmentDeploymentConfig:
         import re
         if not isinstance(result.repository, str) or not re.fullmatch(r"[a-z0-9]+(?:[._/-][a-z0-9]+)*", result.repository):
             raise ValueError("invalid immutable environment repository")
-        for name in ("worker_enabled", "builder_enabled", "prefetch_enabled", "dispatch_roots",
-                     "shared_traces", "regenerate_bases"):
+        for name in ("worker_enabled", "builder_enabled", "dispatch_roots", "regenerate_bases"):
             if not isinstance(getattr(result, name), bool):
                 raise ValueError(f"immutable environment {name} must be boolean")
         if type(result.attach_concurrency) is not int or not 1 <= result.attach_concurrency <= 256:

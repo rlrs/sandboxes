@@ -426,17 +426,32 @@ class ResidentWaitMetrics:
         return cls(**raw)
 
 
+# Attach-time prefetch, startup traces and metadata hints are gone. Their
+# names stay in the set for one release, always 0 (``prefetch_enabled``
+# false): a gateway rejects any other set, so dropping them would drop the
+# heartbeats of 0.10.0 workers, or of this release's after a gateway rollback.
+RETIRED_ENVIRONMENT_IO_METRICS = frozenset((
+    "prefetch_enabled", "prefetch_jobs_active", "prefetch_ranges_inflight", "metadata_hint_present",
+    "metadata_hint_absent", "metadata_hint_unsupported", "trace_hint_present", "trace_hint_absent",
+    "trace_hint_invalid", "trace_recordings_started", "traces_recorded", "trace_chunks_recorded",
+    "metadata_prefetch_wait_timeouts", "prefetch_start_failures",
+    *(f"{kind}_prefetch_{name}" for kind in ("metadata", "trace") for name in (
+        "jobs", "chunks", "bytes", "failed_chunks", "skipped_chunks", "truncated", "seconds")),
+))
+
+
+def retired_environment_io_metrics() -> dict[str, int | float | bool]:
+    """The retired names as a backend reports them: 0, 0.0 or False."""
+    return {name: False if name == "prefetch_enabled" else 0.0 if name.endswith("_seconds") else 0
+            for name in RETIRED_ENVIRONMENT_IO_METRICS}
+
+
 # Exactly EnvironmentBackend.metrics() (docs/images.md).
 # Agents report None for a backend whose names differ, never a partial map. A
 # gateway rejects any other set: a new name needs readers of the old set first.
 ENVIRONMENT_IO_METRICS = frozenset((
     "hits", "misses", "downloaded_bytes", "corruptions", "fetch_retries", "cached_bytes", "pending_misses",
-    "active_components", "prefetch_enabled", "prefetch_joined_reads", "prefetch_jobs_active",
-    "prefetch_ranges_inflight", "metadata_hint_present", "metadata_hint_absent", "metadata_hint_unsupported",
-    "trace_hint_present", "trace_hint_absent", "trace_hint_invalid", "trace_recordings_started",
-    "traces_recorded", "trace_chunks_recorded", "metadata_prefetch_wait_timeouts", "prefetch_start_failures",
-    *(f"{kind}_prefetch_{name}" for kind in ("metadata", "trace") for name in (
-        "jobs", "chunks", "bytes", "failed_chunks", "skipped_chunks", "truncated", "seconds")),
+    "active_components", "prefetch_joined_reads", *RETIRED_ENVIRONMENT_IO_METRICS,
 ))
 
 
