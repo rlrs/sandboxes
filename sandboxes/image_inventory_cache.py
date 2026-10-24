@@ -17,7 +17,6 @@ class ImageInventorySnapshot:
 
     records: tuple[ImageInventoryRecord, ...]
     complete: bool
-    unobserved_references: frozenset[str] = frozenset()
 
     @classmethod
     def from_records(
@@ -25,13 +24,8 @@ class ImageInventorySnapshot:
         records: Iterable[Mapping[str, Any]],
         *,
         complete: bool,
-        unobserved_references: Iterable[str] = (),
     ) -> "ImageInventorySnapshot":
-        return cls(
-            records=tuple(dict(record) for record in records),
-            complete=complete,
-            unobserved_references=frozenset(unobserved_references),
-        )
+        return cls(records=tuple(dict(record) for record in records), complete=complete)
 
 
 ImageInventoryLoader = Callable[[], ImageInventorySnapshot]
@@ -77,8 +71,4 @@ class ImageInventoryCache:
 
 
 def _copy_snapshot(snapshot: ImageInventorySnapshot) -> ImageInventorySnapshot:
-    return ImageInventorySnapshot.from_records(
-        snapshot.records,
-        complete=snapshot.complete,
-        unobserved_references=snapshot.unobserved_references,
-    )
+    return ImageInventorySnapshot.from_records(snapshot.records, complete=snapshot.complete)
