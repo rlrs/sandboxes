@@ -162,7 +162,8 @@ python scripts/release/derive_builder_bundle.py --source <new sandbox bundle> \
 ```
 
 Its `--help` covers replacing `runsc`, the kernel module closure or Python
-dependencies. A bundle's modules match exactly one kernel; replace the closure
+dependencies; when `runtime/noded` changed, pass `--noded-build-dir` with the
+output of `runtime/noded/build_pinned.sh`. A bundle's modules match exactly one kernel; replace the closure
 whenever the kernel changes.
 
 **Every release repacks both bundles.** Placement only sends work to nodes

@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from scripts.release.repack_node_bundle import (
     add_chunk_serve,
+    add_noded,
     add_nydusd,
     add_runtime_debs,
     replace_direct_runtime,
@@ -69,6 +70,31 @@ class RepackNodeBundleTests(unittest.TestCase):
             self.assertTrue(os.access(root / entry["file"], os.X_OK))
             with self.assertRaises(ValueError):
                 add_chunk_serve(root, {"runtime": {"role": "builder"}}, build)
+
+    def test_noded_is_added_only_from_its_build_manifest(self):
+        with TemporaryDirectory() as raw:
+            root, build = Path(raw, "bundle"), Path(raw, "build")
+            build.mkdir()
+            (build / "ucloud-noded").write_bytes(b"daemon")
+
+            def built(**changes):
+                payload = {"schema": 1, "target": "x86_64-unknown-linux-musl", "source_tree": "a" * 40,
+                           "source_commit": "b" * 40, "rustc_version": "rustc 1.98.1",
+                           "artifact_sha256": sha256_file(build / "ucloud-noded"), **changes}
+                (build / "build-manifest.json").write_text(json.dumps(payload))
+            for changes in ({"target": "aarch64-unknown-linux-musl"}, {"source_tree": ""},
+                            {"artifact_sha256": "0" * 64}, {"schema": 2}):
+                built(**changes)
+                with self.subTest(changes=changes), self.assertRaises(ValueError):
+                    add_noded(root, {"runtime": {"role": "sandbox"}}, build)
+            built()
+            manifest = {"runtime": {"role": "sandbox"}}
+            entry = add_noded(root, manifest, build)
+            self.assertEqual((entry["file"], entry["sha256"], manifest["runtime"]["noded"]),
+                             ("runtime/noded/ucloud-noded", sha256_file(build / "ucloud-noded"), entry))
+            self.assertTrue(os.access(root / entry["file"], os.X_OK))
+            with self.assertRaises(ValueError):
+                add_noded(root, {"runtime": {"role": "builder"}}, build)
 
     def test_explicit_debian_extension_keeps_prior_closure_and_rejects_upgrade(self):
         with TemporaryDirectory() as temporary:

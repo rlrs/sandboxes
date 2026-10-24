@@ -673,6 +673,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="flat directory of .ko/.ko.* files for --kernel-release",
     )
+    parser.add_argument(
+        "--noded-build-dir",
+        type=Path,
+        help="replace ucloud-noded with runtime/noded/build_pinned.sh's output (sandbox bundles)",
+    )
     return parser.parse_args()
 
 
@@ -703,6 +708,8 @@ def main() -> None:
         raise SystemExit(
             f"kernel module directory does not exist: {args.kernel_module_dir}"
         )
+    if args.noded_build_dir is not None and not args.noded_build_dir.is_dir():
+        raise SystemExit(f"noded build directory does not exist: {args.noded_build_dir}")
     if args.output.resolve() == args.source.resolve():
         raise SystemExit("output must not replace the qualified source bundle")
     if args.agent_runtime_root is not None:
@@ -778,6 +785,8 @@ def main() -> None:
                 shutil.copyfile(module, target_kernel_dir / module.name)
         if args.direct_runsc is not None:
             replace_direct_runtime(bundle_root, manifest, *replacement)
+        if args.noded_build_dir is not None:
+            add_noded(bundle_root, manifest, args.noded_build_dir)
         manifest_bytes = update_manifest(
             manifest,
             agent_archive=agent_archive,
