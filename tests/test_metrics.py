@@ -611,7 +611,7 @@ class MetricsTests(unittest.TestCase):
                         }
                     ],
                     "effectivePolicy": {
-                        "parked_wake_consolidation_enabled": True,
+                        "drain_on_park_enabled": True,
                         "target_cpu_utilization": 0.7,
                     },
                 },
@@ -622,7 +622,7 @@ class MetricsTests(unittest.TestCase):
         self.assertNotIn("program_wake_plan", event.data)
         self.assertNotIn("program_signals", event.data)
         self.assertTrue(
-            event.data["effective_policy"]["parked_wake_consolidation_enabled"]
+            event.data["effective_policy"]["drain_on_park_enabled"]
         )
         execution = event.data["execution"]
         self.assertTrue(execution["controller_lock_held"])

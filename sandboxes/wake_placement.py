@@ -62,7 +62,7 @@ class WakePlacementPorts:
 
     owner: Callable[[str], NodeHeartbeat | None]
     occupants: Callable[[NodeHeartbeat], Sequence[PlacementOccupant]]
-    destination: Callable[..., NodeHeartbeat | None]
+    destination: Callable[[SandboxRoute], NodeHeartbeat | None]
     reserve_local: Callable[[SandboxRoute], SandboxRoute | None]
     finish_detach: Callable[[SandboxRoute], tuple[SandboxRoute | None, str]]
     advance_migration: Callable[..., SandboxMigration]
@@ -70,7 +70,6 @@ class WakePlacementPorts:
     refresh_capacity: Callable[[SandboxRoute], None]
     publish: Callable[[SandboxRoute], dict[str, Any] | None]
     decode_publication: Callable[[SandboxRoute, dict[str, Any]], SandboxRoute | None]
-    observe_consolidation: Callable[[SandboxRoute, SandboxMigration | None], None]
     atomic: Callable[[Callable[[], Any]], Any]
 
 
@@ -263,16 +262,7 @@ class WakePlacement:
                 and refresh_if_blocked
             ):
                 raise WakeCapacityRefreshRequired(route)
-            consolidation = None
-            if (
-                local_can_wake
-                and active_migration is None
-                and self.admission.consolidation_enabled
-            ):
-                consolidation = self.ports.destination(
-                    route, consolidation_source=owner
-                )
-            if local_can_wake and active_migration is None and consolidation is None:
+            if local_can_wake and active_migration is None:
                 return self.mark_waking(route)
             if route.worker_state == "attached" and not is_portable_parked_route(route):
                 if (
@@ -301,7 +291,7 @@ class WakePlacement:
                     route, self._demand(route, "wake_snapshot_publication_pending")
                 )
             if active_migration is None:
-                destination = consolidation or self.ports.destination(route)
+                destination = self.ports.destination(route)
                 if destination is None:
                     demand = self._demand(route, "wake_destination_unavailable")
                     raise WakePlacementStopped(
@@ -316,7 +306,7 @@ class WakePlacement:
                     )
                 active_migration = self.routes.begin_sandbox_migration(
                     route,
-                    migration_id=f"{'consolidate-wake' if consolidation else 'wake'}-{uuid4().hex}",
+                    migration_id=f"wake-{uuid4().hex}",
                     destination_node_id=destination.node_id,
                     destination_job_id=destination.job_id,
                     destination_node_url=destination.node_url or "",
@@ -327,8 +317,6 @@ class WakePlacement:
         if isinstance(planned, SandboxRoute):
             return planned
         active_migration = planned
-        if active_migration.migration_id.startswith("consolidate-wake-"):
-            self.ports.observe_consolidation(route, active_migration)
         # The durable migration is the destination claim; global placement may
         # now progress during image preparation, transfer, import and activation.
         self.routes.clear_pending(wake_pending_demand_id(route.sandbox_id))
@@ -342,8 +330,6 @@ class WakePlacement:
                     migration=migration,
                 )
             )
-        if migration.migration_id.startswith("consolidate-wake-"):
-            self.ports.observe_consolidation(route, None)
         # A completed journal is not permission to wake a replacement ID.
         return self.mark_waking(self.current(route))
 

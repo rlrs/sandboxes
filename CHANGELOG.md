@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Parked-wake consolidation is gone.** A parked sandbox wakes on its owner
+  when it fits there, and moves only when it does not; drain-on-park packs the
+  fleet instead. Production runs with `policy.parked_wake_consolidation_enabled`
+  false. A deployment.json that still has the key with `false` keeps loading;
+  `true` (or any other value) is refused at start with "delete the key". Configs
+  this release writes leave the key out, which 0.10.0 and earlier read as
+  false, so a rollback loads them unchanged. The `sandbox_wake_consolidation`
+  metric event is no longer written.
 - **Operator scripts**: `scripts/images/import_image_recipes.py` only exports
   bundles; register names with `build_image_index.py register`. The unused
   `preflight_environment.py`, `build_environment_canary.sh` and

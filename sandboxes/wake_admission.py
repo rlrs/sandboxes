@@ -16,7 +16,6 @@ from .models import NodeHeartbeat, ResourceQuantity, utc_now
 from .routing import (
     RoutingStore,
     SandboxRoute,
-    is_portable_parked_route,
     wake_pending_demand_id,
 )
 
@@ -52,14 +51,12 @@ class WakeAdmission:
             [NodeHeartbeat, Sequence[PlacementOccupant], ResourceQuantity], bool
         ],
         heartbeat_ttl_seconds: float,
-        consolidation_enabled: bool,
     ) -> None:
         self.routes = routes
         self.read_owner = read_owner
         self.read_placement = read_placement
         self.can_admit = can_admit
         self.heartbeat_ttl_seconds = heartbeat_ttl_seconds
-        self.consolidation_enabled = consolidation_enabled
 
     def reserve_batch(
         self, requested_routes: Sequence[SandboxRoute]
@@ -109,9 +106,6 @@ class WakeAdmission:
                     and current.worker_state == "attached"
                     and current.sandbox_id not in active_migrations
                     and self.owner_ready(view.owner)
-                    and not (
-                        is_portable_parked_route(current) and self.consolidation_enabled
-                    )
                     and self.can_admit(
                         view.owner,
                         view.occupants,

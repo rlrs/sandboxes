@@ -1043,7 +1043,6 @@ class ScalePolicy:
     pressure_scale_down_cooldown_seconds: int = 300
     provisioning_latency_lookback_seconds: int = 7 * 24 * 60 * 60
     provisioning_scale_down_multiplier: float = 2.0
-    parked_wake_consolidation_enabled: bool = False
     drain_on_park_enabled: bool = True
     drain_on_park_moves_per_cycle: int = 4
     default_node_resources: ResourceQuantity = ResourceQuantity(

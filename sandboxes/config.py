@@ -1136,13 +1136,15 @@ def _decode_policy(
     if not isinstance(raw, dict):
         raise ValueError("policy must be a JSON object")
     defaults = ScalePolicy()
-    # Existing deployments retain local wake placement until explicitly enabled.
-    raw = {"parked_wake_consolidation_enabled": False,
-           "max_io_psi_full_avg10": defaults.max_io_psi_full_avg10,
+    raw = {"max_io_psi_full_avg10": defaults.max_io_psi_full_avg10,
            "drain_on_park_enabled": defaults.drain_on_park_enabled,
            "drain_on_park_moves_per_cycle": defaults.drain_on_park_moves_per_cycle,
            "max_cpu_check_ms": defaults.max_cpu_check_ms,
            **raw}
+    # Configs written for 0.10.0 and earlier may still name the flag.
+    if raw.pop("parked_wake_consolidation_enabled", False) is not False:
+        raise ValueError("policy.parked_wake_consolidation_enabled is not supported: parked-wake "
+                         "consolidation was removed; delete the key")
     expected = {item.name for item in fields(defaults)} - _RUNTIME_POLICY_FIELDS
     _require_exact_keys("policy", raw, expected)
     values: dict[str, object] = {}
