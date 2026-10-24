@@ -37,7 +37,7 @@ from __future__ import annotations
 import atexit
 from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, field, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import partial
 import hashlib
 from http.client import HTTPConnection
@@ -84,7 +84,7 @@ from .fake_runsc import kill_exec_groups
 from .images import ImageCatalog, LocalRootfsStore
 from .pidfd import SyscallPidfdFencer, native_pidfd_available
 from .storage import FakeBlockBackend, FakeStorageHost
-from ..support import POSTGRES_DSN, POSTGRES_SKIP_REASON, create_routing_file, drop_routing_schema
+from ..support import POSTGRES_DSN, POSTGRES_SKIP_REASON, create_routing_file, drop_routing_schema, wait_until
 
 HARNESS = Path(__file__).resolve().parent
 PYTHON = Path(os.path.realpath(sys.executable))
@@ -467,6 +467,10 @@ class FleetNode:
             raise RuntimeError("node agent is already running")
         if self.fleet.node_processes:
             self._spawn()
+            # As in-process, return once the gateway kept a heartbeat from the
+            # new agent. Its own startup send, sampled after the same startup
+            # reconciliation, may still land after this one.
+            self.post_heartbeat()
             return
         config = self._agent_config()
         server, self.service = assemble_node_agent(
@@ -701,20 +705,34 @@ class FleetNode:
         """Send this node's heartbeat now; return the gateway's answer.
 
         An in-process agent's real sender sends it. A node-agent process is
-        relayed from its own heartbeat endpoint, which the sender also reads.
+        relayed from its own heartbeat endpoint, which the sender also reads,
+        until the gateway keeps a relayed sample: it keeps the latest receipt
+        and answers 200 with that one, so a send from the agent's own sender
+        received after the relay but committed first supersedes it, and that
+        send's routes may not be reconciled yet when the answer arrives.
         """
         if self.server is not None:
             result = self.server.heartbeat_sender.send_now()
         else:
             assert self.process is not None and self.url is not None
-            result = post_heartbeat_with_headers(
-                self.fleet.gateway_url + "/v1/nodes/heartbeat",
-                fetch_node_agent_heartbeat(self.url, bearer_token=self.fleet.tokens.node_control),
-                {"Authorization": f"Bearer {self.fleet.tokens.heartbeat}"},
-            )
+            result = wait_until(self._relay_heartbeat, timeout=30,
+                                message=f"the gateway kept no heartbeat relayed from {self.node_id}")
         if result.status != 200:
             raise AssertionError(f"heartbeat rejected ({result.status}): {result.payload}")
         return result.payload
+
+    def _relay_heartbeat(self):
+        """Relay one fresh sample; None if the gateway kept another send."""
+        sample = fetch_node_agent_heartbeat(self.url, bearer_token=self.fleet.tokens.node_control)
+        result = post_heartbeat_with_headers(
+            self.fleet.gateway_url + "/v1/nodes/heartbeat", sample,
+            {"Authorization": f"Bearer {self.fleet.tokens.heartbeat}"},
+        )
+        if result.status != 200:
+            return result
+        kept = result.payload["node"]["reported_at"]
+        sent = sample.reported_at or sample.updated_at
+        return result if kept is not None and datetime.fromisoformat(kept) == sent else None
 
     def registration(self, sandbox_id: str):
         if self.service is not None:
