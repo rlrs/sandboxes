@@ -412,21 +412,20 @@ def release_wave(roots, environments, usage, wave, *, keys=None, execute=False):
 
 # Lease owners a released image serves without its OCI manifest: catalog
 # owners (image_roots answers for the image), and routes and create pulls (both
-# carry the dispatched root). Any other owner (a build's FROM, an image pull or
-# warmup, one unknown) keeps the manifest.
+# carry the dispatched root). Any other owner (a build's FROM, an image pull,
+# one unknown) keeps the manifest.
 OCI_FREE_OWNERS = DURABLE_OWNERS + ("sandbox-route:", "create-image-pull:", "image-recipe-pinned:")
 
 
 def manifest_readers(routing_store):
     """(repository, digest or tag) that may still resolve through the manifest:
     a route without a pinned root (it predates dispatch, and a wake or move
-    reads the annotation), and every prepared sandbox and image warmup."""
+    reads the annotation), and every prepared sandbox."""
     from .managed_registry import manifest_digest_from_image_ref, registry_repository_tag_from_image_ref
     state = routing_store.load()
     refs = [str(route.spec.get("image") or "") for route in state.sandboxes.values()
             if isinstance(route.spec, dict) and not route.spec.get("environment_root")]
-    refs += [str(getattr(item, "image", "") or "") for item in (*state.prepared.values(),
-                                                                 *state.image_warmups.values())]
+    refs += [str(getattr(item, "image", "") or "") for item in state.prepared.values()]
     return {(coordinates[0], manifest_digest_from_image_ref(ref) or coordinates[1])
             for ref in refs if (coordinates := registry_repository_tag_from_image_ref(ref))}
 
@@ -448,9 +447,9 @@ def release_oci(roots, client, usage, wave, *, catalog_file, routing_store, keys
     is not a build input, after remembering its tags, so its tag and digest
     references resolve from image_roots. Deletes are fenced like retention's:
     in the usage store's writer transaction, a digest another lease owner holds
-    stays, as does one a route without a root, a prepared sandbox or a warmup
-    names. Workers must attach dispatched roots on pulls first. A rerun deletes
-    a manifest again that a racing protection-tag write restored. Bytes are
+    stays, as does one a route without a root or a prepared sandbox names.
+    Workers must attach dispatched roots on pulls first. A rerun deletes a
+    manifest again that a racing protection-tag write restored. Bytes are
     manifest layer sizes, an upper bound: a layer a kept image shares stays.
 
     ``include_build_inputs`` (volume-free builds): a build input goes too once

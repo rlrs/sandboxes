@@ -173,7 +173,6 @@ from .routing import (
     cold_offload_fence,
     ExecRoute,
     MAX_PREPARED_CAPACITY_COUNT,
-    PendingImageWarmup,
     PendingSandboxDemand,
     ProgramRequestState,
     RoutingStore,
@@ -192,8 +191,6 @@ _BUILDER_DISPATCH_COUNTS: dict[str, int] = {}
 _BUILDER_DISPATCH_INFLIGHT: dict[str, int] = {}
 _IMAGE_PULL_LOCKS_GUARD = RLock()
 _IMAGE_PULL_LOCKS: dict[tuple[str, str], RLock] = {}
-_IMAGE_WARMUP_TASKS_GUARD = RLock()
-_IMAGE_WARMUP_TASKS: set[tuple[str, str]] = set()
 DEFAULT_MAX_CONCURRENT_SANDBOX_CREATES = 0
 DEFAULT_MAX_GATEWAY_HTTP_REQUEST_THREADS = 2048
 SANDBOX_CREATE_BUSY_RETRY_AFTER_SECONDS = 2
@@ -567,8 +564,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         outcome = self.services.heartbeats.receive(raw)
-        if outcome.accepted:
-            self._schedule_image_warmups()
         self._write_json(outcome.payload, status=outcome.status, headers=outcome.headers)
 
     @traced_http_request
@@ -1687,9 +1682,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 item.to_dict() for item in self.routing_store.prepared_capacity()
             ],
             "prepared_builders": [item.to_dict() for item in prepared_builders],
-            "image_warmups": [
-                item.to_dict() for item in self.routing_store.image_warmups()
-            ],
         }
 
     def _metrics_response_bytes(
@@ -1872,28 +1864,11 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             ttl_seconds=ttl_seconds,
             image=image,
         )
-        warmup = (
-            self.routing_store.upsert_image_warmup(
-                prepare_id,
-                image,
-                resources,
-                count=count,
-                ttl_seconds=ttl_seconds,
-            )
-            if image
-            else None
-        )
-        warmup_summary = self._schedule_image_warmups() if warmup is not None else None
-        payload = {
-            "prepare": item.to_dict(),
-            "demand": self._demand_payload(),
-        }
-        if warmup is not None:
-            payload["image_warmup"] = warmup.to_dict()
-        if warmup_summary is not None:
-            payload["image_prewarm"] = warmup_summary
         self._write_json(
-            payload,
+            {
+                "prepare": item.to_dict(),
+                "demand": self._demand_payload(),
+            },
             status=HTTPStatus.CREATED,
         )
 
@@ -2518,10 +2493,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 spec = self._resolve_create_spec(group_request.member(), root)
                 if spec is None:
                     return
-                warmup = self._active_image_warmup_for_image(spec.image, spec.requested_resources())
-                if warmup is not None:
-                    self._write_image_warmup_pending(warmup)
-                    return
                 template = {key: value for key, value in spec.to_dict().items() if key != "id"}
                 group = self.routing_store.ensure_sandbox_group(SandboxGroup(
                     group_request.group_id, group_request.request_hash, template, group_request.count))
@@ -2651,36 +2622,10 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 )
                 return
 
-            active_warmup = self._active_image_warmup_for_image(
-                spec.image,
-                requested,
-            )
-            if active_warmup is not None:
-                # A capacity preparation already owns this pull. Keep create
-                # requests out of node placement and the per-node pull lock
-                # until that work completes; the SDK retries this explicit,
-                # short-lived admission response.
-                root.set_attribute("outcome", "image_warmup_pending")
-                root.set_attribute("image.warmup.id", active_warmup.warmup_id)
-                self._write_image_warmup_pending(active_warmup)
-                return
-
             self.services.creates.create(
                 self, spec, root, excluded_job_ids=excluded_job_ids,
                 last_failure_reason=last_failure_reason,
             )
-
-    def _write_image_warmup_pending(self, warmup: Any) -> None:
-        self._write_json(
-            {
-                "error": "prepared image warmup is still in progress",
-                "error_code": "image_warmup_pending",
-                "retryable": True,
-                "warmup_id": warmup.warmup_id,
-            },
-            status=HTTPStatus.SERVICE_UNAVAILABLE,
-            headers={"Retry-After": "1", "X-UCloud-Sandbox-Retryable": "true"},
-        )
 
     def _resolve_create_spec(self, spec: SandboxSpec, root: Any) -> SandboxSpec | None:
         """Image reference, external import and root dispatch, once per create
@@ -5089,188 +5034,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                     break
         return node_ids
 
-    def _schedule_image_warmups(self) -> dict[str, Any]:
-        warmups = self.routing_store.image_warmups()
-        if not warmups:
-            return {"scheduled": 0, "completed": 0, "warmups": []}
-        heartbeats = self.services.fleet.ready_sandbox_heartbeats()
-        summaries: list[dict[str, Any]] = []
-        scheduled = 0
-        completed = 0
-        for warmup in warmups:
-            summary = self._schedule_image_warmup(warmup, heartbeats)
-            scheduled += int(summary.get("scheduled", 0))
-            completed += 1 if summary.get("completed") else 0
-            summaries.append(summary)
-        return {
-            "scheduled": scheduled,
-            "completed": completed,
-            "warmups": summaries,
-        }
-
-    def _active_image_warmup_for_image(
-        self,
-        image: str,
-        requested: ResourceQuantity,
-    ) -> PendingImageWarmup | None:
-        requested_keys = _requested_image_cache_keys(
-            image,
-            "",
-            require_digest=self.services.registry_refs.requires_digest_identity(image),
-        )
-        if not requested_keys:
-            return None
-        with _IMAGE_WARMUP_TASKS_GUARD:
-            active_warmup_ids = {warmup_id for warmup_id, _node_id in _IMAGE_WARMUP_TASKS}
-        if not active_warmup_ids:
-            return None
-        matching_warmup: PendingImageWarmup | None = None
-        for warmup in self.routing_store.image_warmups():
-            if warmup.warmup_id not in active_warmup_ids:
-                continue
-            warmup_keys = _requested_image_cache_keys(
-                warmup.image,
-                warmup.image_id,
-                require_digest=self.services.registry_refs.requires_digest_identity(
-                    warmup.image
-                ),
-            )
-            if requested_keys.intersection(warmup_keys):
-                matching_warmup = warmup
-                break
-        if matching_warmup is None:
-            return None
-
-        routes = self.services.placement.routes()
-        for heartbeat in self.services.fleet.ready_sandbox_heartbeats():
-            if not _heartbeat_has_image(
-                heartbeat,
-                image,
-                require_digest=self.services.registry_refs.requires_digest_identity(
-                    image
-                ),
-            ):
-                continue
-            available = _node_available_resources(heartbeat, routes)
-            if _node_can_fit_available(heartbeat, requested, available):
-                return None
-        return matching_warmup
-
-    def _schedule_image_warmup(
-        self,
-        warmup: PendingImageWarmup,
-        heartbeats: list[NodeHeartbeat],
-    ) -> dict[str, Any]:
-        ready_units = 0
-        projected_units = 0
-        scheduled = 0
-        scheduled_nodes: list[str] = []
-        warmed_node_ids = set(warmup.warmed_node_ids)
-        candidate_heartbeats = [
-            heartbeat
-            for heartbeat in heartbeats
-            if _warmup_node_units(heartbeat, warmup.resources) > 0
-            and agent_version_is_schedulable(heartbeat.agent_version)
-        ]
-        for heartbeat in candidate_heartbeats:
-            if _heartbeat_has_image(
-                heartbeat,
-                warmup.image,
-                warmup.image_id,
-                require_digest=self.services.registry_refs.requires_digest_identity(
-                    warmup.image
-                ),
-            ):
-                if heartbeat.node_id not in warmed_node_ids:
-                    self.routing_store.mark_image_warmup_node(
-                        warmup.warmup_id,
-                        heartbeat.node_id,
-                        expected_image=warmup.image,
-                        expected_image_id=warmup.image_id,
-                    )
-                    warmed_node_ids.add(heartbeat.node_id)
-        for heartbeat in candidate_heartbeats:
-            if heartbeat.node_id in warmed_node_ids:
-                ready_units += _warmup_node_units(heartbeat, warmup.resources)
-        projected_units = ready_units
-        if ready_units >= warmup.count:
-            self.routing_store.delete_image_warmup(warmup.warmup_id)
-            return {
-                "warmup_id": warmup.warmup_id,
-                "image": warmup.image,
-                "requested": warmup.count,
-                "ready": ready_units,
-                "projected": projected_units,
-                "scheduled": 0,
-                "scheduled_nodes": [],
-                "completed": True,
-            }
-        for heartbeat in candidate_heartbeats:
-            if projected_units >= warmup.count:
-                break
-            if heartbeat.node_id in warmed_node_ids:
-                continue
-            if self._start_image_warmup_task(warmup, heartbeat):
-                node_units = _warmup_node_units(heartbeat, warmup.resources)
-                projected_units += node_units
-                scheduled += 1
-                scheduled_nodes.append(heartbeat.node_id)
-        return {
-            "warmup_id": warmup.warmup_id,
-            "image": warmup.image,
-            "requested": warmup.count,
-            "ready": ready_units,
-            "projected": projected_units,
-            "scheduled": scheduled,
-            "scheduled_nodes": scheduled_nodes,
-            "completed": False,
-        }
-
-    def _start_image_warmup_task(
-        self,
-        warmup: PendingImageWarmup,
-        heartbeat: NodeHeartbeat,
-    ) -> bool:
-        node_url = heartbeat.node_url or ""
-        if not node_url:
-            return False
-        key = (warmup.warmup_id, heartbeat.node_id)
-        try:
-            self.services.registry_refs.ensure_image_lease(
-                warmup.image,
-                _registry_operation_lease_owner(
-                    "image-warmup",
-                    {
-                        "warmup_id": warmup.warmup_id,
-                        "image_id": warmup.image_id,
-                        "node_id": heartbeat.node_id,
-                        "job_id": heartbeat.job_id,
-                    },
-                ),
-                touch=True,
-            )
-        except RegistryImageReferenceUnavailable:
-            # No pull thread is started when the lifetime fence is unavailable.
-            return False
-        with _IMAGE_WARMUP_TASKS_GUARD:
-            if key in _IMAGE_WARMUP_TASKS:
-                return False
-            _IMAGE_WARMUP_TASKS.add(key)
-        thread = Thread(
-            target=_run_image_warmup_task,
-            args=(
-                self.routing_store,
-                warmup,
-                heartbeat,
-                key,
-                self.node_control_bearer_token,
-            ),
-            daemon=True,
-            name=f"image-warmup-{warmup.warmup_id[:16]}-{heartbeat.node_id[:16]}",
-        )
-        thread.start()
-        return True
-
     def _node_has_image(
         self,
         heartbeat: NodeHeartbeat,
@@ -6293,60 +6056,6 @@ def _worker_delete(node_token: str, telemetry: Telemetry):
     return delete
 
 
-def _run_image_warmup_task(
-    routing_store: RoutingStore,
-    warmup: PendingImageWarmup,
-    heartbeat: NodeHeartbeat,
-    task_key: tuple[str, str],
-    node_control_bearer_token: str,
-) -> None:
-    try:
-        node_url = heartbeat.node_url or ""
-        if not node_url:
-            return
-        payload: dict[str, Any] = {"image": warmup.image}
-        if warmup.image_id:
-            payload["id"] = warmup.image_id
-        with _image_pull_lock(node_url, warmup.image):
-            req = request.Request(
-                node_url.rstrip("/") + "/v1/images/pull",
-                data=json.dumps(payload).encode("utf-8"),
-                method="POST",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {node_control_bearer_token}",
-                },
-            )
-            try:
-                with node_rpc._open_node_request(
-                    req,
-                    timeout=IMAGE_PULL_PROXY_TIMEOUT_SECONDS,
-                    authenticated=True,
-                ) as response:
-                    status = int(response.status)
-                    response.read()
-            except error.HTTPError as exc:
-                status = int(exc.code)
-                exc.read()
-            except (error.URLError, OSError):
-                return
-        if 200 <= status < 300:
-            updated = routing_store.mark_image_warmup_node(
-                warmup.warmup_id,
-                heartbeat.node_id,
-                expected_image=warmup.image,
-                expected_image_id=warmup.image_id,
-            )
-            if (
-                updated is not None
-                and _warmup_node_units(heartbeat, updated.resources) >= updated.count
-            ):
-                routing_store.delete_image_warmup(updated.warmup_id)
-    finally:
-        with _IMAGE_WARMUP_TASKS_GUARD:
-            _IMAGE_WARMUP_TASKS.discard(task_key)
-
-
 def _image_record_cache_keys(record: dict[str, Any]) -> set[str]:
     tag = str(record.get("tag") or "")
     image_id = str(record.get("id") or "")
@@ -6354,23 +6063,6 @@ def _image_record_cache_keys(record: dict[str, Any]) -> set[str]:
     digest_ref = canonical_image_digest_ref(tag, digest)
     keys = {item for item in (tag, image_id, digest_ref) if item}
     return keys
-
-
-def _warmup_node_units(
-    heartbeat: NodeHeartbeat,
-    resources: ResourceQuantity,
-) -> int:
-    free = heartbeat.free_resources
-    units: list[int] = []
-    if resources.vcpu > 0:
-        units.append(int(free.vcpu // resources.vcpu))
-    if resources.memory_mb > 0:
-        units.append(free.memory_mb // resources.memory_mb)
-    if resources.disk_mb > 0:
-        units.append(free.disk_mb // resources.disk_mb)
-    if not units:
-        return 0
-    return max(0, min(units))
 
 
 def _retryable_image_pull_response(response: ProxiedResponse) -> bool:

@@ -185,10 +185,6 @@ class RoutingStoreTests(unittest.TestCase):
                 "prepared", resources, count=2, ttl_seconds=600,
                 image="registry.example/image:latest",
             )
-            store.upsert_image_warmup(
-                "prepared", "registry.example/image:latest", resources,
-                count=2, ttl_seconds=600,
-            )
             store.upsert_prepared_builder("builder", count=1, ttl_seconds=600)
 
             snapshot = store.load(include_exec_sessions=False)
@@ -199,7 +195,6 @@ class RoutingStoreTests(unittest.TestCase):
             self.assertEqual(set(snapshot.image_builds), {"build"})
             self.assertEqual(set(snapshot.prepared), {"prepared"})
             self.assertEqual(set(snapshot.prepared_builders), {"builder"})
-            self.assertEqual(set(snapshot.image_warmups), {"prepared"})
             full = store.load()
             self.assertEqual(full.exec_sessions, {session.session_id: session})
             self.assertEqual(snapshot, replace(full, exec_sessions={}))
@@ -1729,78 +1724,6 @@ class RoutingStoreTests(unittest.TestCase):
         )
         self.assertEqual(after_delete.prepared_resources, ResourceQuantity())
 
-    def test_image_warmup_survives_automatic_prepared_capacity_claim(self) -> None:
-        with routing_store(self) as store:
-            store.upsert_prepared_capacity(
-                "prep-1",
-                ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024),
-                count=4,
-                ttl_seconds=600,
-                image="registry.example.org/image:latest",
-            )
-            warmup = store.upsert_image_warmup(
-                "prep-1",
-                "registry.example.org/image:latest",
-                ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024),
-                count=4,
-                ttl_seconds=600,
-            )
-            allocate_sandbox_create(
-                store,
-                sandbox_allocation(
-                    sandbox_id="sandbox-1",
-                    node_id="node-1",
-                    job_id="job-1",
-                    node_url="http://node-1:8090",
-                    resources=ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024),
-                    spec={
-                        "id": "sandbox-1",
-                        "image": "registry.example.org/image:latest",
-                    },
-                ),
-                spec_hash="1" * 64,
-            )
-            remaining = store.prepared_capacity()
-            warmups_after_claim = store.image_warmups()
-            store.upsert_image_warmup(
-                "prep-1",
-                "registry.example.org/replacement:latest",
-                ResourceQuantity(vcpu=1, memory_mb=512, disk_mb=1024),
-                count=4,
-                ttl_seconds=600,
-            )
-            stale = store.mark_image_warmup_node(
-                "prep-1",
-                "node-1",
-                expected_image="registry.example.org/image:latest",
-            )
-            marked = store.mark_image_warmup_node(
-                "prep-1",
-                "node-1",
-                expected_image="registry.example.org/replacement:latest",
-            )
-            repeated = store.mark_image_warmup_node(
-                "prep-1",
-                "node-1",
-                expected_image="registry.example.org/replacement:latest",
-            )
-            merged = store.mark_image_warmup_node("prep-1", "node-2")
-            deleted = store.delete_image_warmup("prep-1")
-            warmups_after_delete = store.image_warmups()
-
-        self.assertEqual(warmup.warmup_id, "prep-1")
-        self.assertEqual(
-            [(item.prepare_id, item.count) for item in remaining], [("prep-1", 3)]
-        )
-        self.assertEqual([item.warmup_id for item in warmups_after_claim], ["prep-1"])
-        self.assertIsNone(stale)
-        self.assertEqual(marked.warmed_node_ids, ("node-1",))
-        # A repeated observation is answered from the stored row, unchanged.
-        self.assertEqual(repeated, marked)
-        self.assertEqual(merged.warmed_node_ids, ("node-1", "node-2"))
-        self.assertEqual(deleted.warmed_node_ids, ("node-1", "node-2"))
-        self.assertEqual(warmups_after_delete, [])
-
     def test_transient_capacity_signals_are_consumable(self) -> None:
         cases = (
             (
@@ -1868,20 +1791,6 @@ class RoutingStoreTests(unittest.TestCase):
                 lambda store: store.pending_image_build_count(),
                 0,
                 "image_builds",
-            ),
-            (
-                "image warmup",
-                2,
-                lambda store: store.upsert_image_warmup(
-                    "expired",
-                    "registry.example.org/expired:latest",
-                    resources,
-                    count=1,
-                    ttl_seconds=1,
-                ),
-                lambda store: store.image_warmups(),
-                [],
-                "image_warmups",
             ),
         )
 

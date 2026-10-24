@@ -10,6 +10,17 @@
   this release writes leave the key out, which 0.10.0 and earlier read as
   false, so a rollback loads them unchanged. The `sandbox_wake_consolidation`
   metric event is no longer written.
+- **The gateway no longer warms images for prepared capacity.**
+  `POST /v1/capacity/prepare` with `image` still records the demand and stores
+  the image, but no longer starts pulls on ready workers, and its response
+  drops the `image_warmup` and `image_prewarm` keys. Creates no longer wait
+  behind a warmup; they pull the image themselves, and a pull still pending
+  answers the same retryable 503 `image_warmup_pending`. `/v1/demand` drops
+  `image_warmups`, and the metrics `images` block drops `pending_warmups`,
+  `oldest_warmup_seconds`, `next_warmup_expiration_seconds` and `warmups`.
+  Production had no warmup and no prepared capacity with an image. The
+  `image_warmups` PostgreSQL table stays in the schema, unused, so a rollback
+  to 0.10.0 finds it; it is dropped in a later release.
 - **Operator scripts**: `scripts/images/import_image_recipes.py` only exports
   bundles; register names with `build_image_index.py register`. The unused
   `preflight_environment.py`, `build_environment_canary.sh` and

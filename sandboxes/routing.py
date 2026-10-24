@@ -566,43 +566,6 @@ class PendingImageBuildDemand(_ExpiringDemand):
 
 
 @dataclass(frozen=True)
-class PendingImageWarmup:
-    warmup_id: str
-    image: str
-    resources: ResourceQuantity
-    count: int
-    created_at: str
-    updated_at: str
-    expires_at: str
-    image_id: str = ""
-    warmed_node_ids: tuple[str, ...] = ()
-    attempts: int = 1
-
-    @property
-    def total_resources(self) -> ResourceQuantity:
-        return self.resources.scaled(cpu=self.count, memory=self.count, disk=self.count)
-
-    def is_expired(self, now: datetime) -> bool:
-        expires_at = parse_iso_datetime(self.expires_at)
-        return expires_at is not None and expires_at <= now
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "warmup_id": self.warmup_id,
-            "image": self.image,
-            "image_id": self.image_id,
-            "resources": self.resources.to_dict(),
-            "count": self.count,
-            "total_resources": self.total_resources.to_dict(),
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "expires_at": self.expires_at,
-            "warmed_node_ids": list(self.warmed_node_ids),
-            "attempts": self.attempts,
-        }
-
-
-@dataclass(frozen=True)
 class PreparedCapacityDemand:
     prepare_id: str
     resources: ResourceQuantity
@@ -672,7 +635,6 @@ class RoutingState:
     image_builds: dict[str, PendingImageBuildDemand]
     prepared: dict[str, PreparedCapacityDemand] = field(default_factory=dict)
     prepared_builders: dict[str, PreparedBuilderDemand] = field(default_factory=dict)
-    image_warmups: dict[str, PendingImageWarmup] = field(default_factory=dict)
 
 
 # sandbox_losses.reason: why the worker incarnation ended. Every loss answers
@@ -1092,9 +1054,9 @@ class RoutingStore:
     def placement_routes_readonly(self) -> list[SandboxRoute]:
         """Fresh fleet routes for placement, reusing decodes of unchanged rows.
 
-        Choosing a wake or migration destination, and the image-warmup check,
-        read the whole fleet; decoding each route's JSON and validating its
-        identity costs several times the query itself. A row whose complete
+        Choosing a wake or migration destination reads the whole fleet;
+        decoding each route's JSON and validating its identity costs several
+        times the query itself. A row whose complete
         column values are identical to the previous scan yields the same
         immutable route object. Callers must treat the returned routes'
         ``spec`` and ``storage_snapshot`` mappings as read-only.
@@ -3155,110 +3117,6 @@ class RoutingStore:
             return []
         return consumed
 
-    def upsert_image_warmup(
-        self,
-        warmup_id: str,
-        image: str,
-        resources: ResourceQuantity,
-        *,
-        count: int,
-        ttl_seconds: int,
-        image_id: str = "",
-    ) -> PendingImageWarmup:
-        cleaned_warmup_id = warmup_id.strip()
-        cleaned_image = image.strip()
-        if not cleaned_warmup_id:
-            raise ValueError("warmup id is required.")
-        if not cleaned_image:
-            raise ValueError("image is required.")
-        now = utc_now()
-        with self._transaction() as conn:
-            existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
-            preserve_warmed_nodes = (
-                existing.warmed_node_ids
-                if existing is not None
-                and existing.image == cleaned_image
-                and existing.image_id == image_id.strip()
-                else ()
-            )
-            stored = PendingImageWarmup(
-                warmup_id=cleaned_warmup_id,
-                image=cleaned_image,
-                image_id=image_id.strip(),
-                resources=resources,
-                count=max(1, count),
-                created_at=existing.created_at if existing else now.isoformat(),
-                updated_at=now.isoformat(),
-                expires_at=(
-                    now + timedelta(seconds=max(1, ttl_seconds))
-                ).isoformat(),
-                warmed_node_ids=tuple(dict.fromkeys(preserve_warmed_nodes)),
-                attempts=(existing.attempts + 1) if existing else 1,
-            )
-            self._write_image_warmup(conn, stored)
-        return stored
-
-    def image_warmups(self) -> list[PendingImageWarmup]:
-        now = utc_now()
-        return list(self._active_image_warmups_unlocked(now).values())
-
-    def mark_image_warmup_node(
-        self,
-        warmup_id: str,
-        node_id: str,
-        *,
-        expected_image: str = "",
-        expected_image_id: str = "",
-    ) -> PendingImageWarmup | None:
-        cleaned_warmup_id = warmup_id.strip()
-        cleaned_node_id = node_id.strip()
-        if not cleaned_warmup_id or not cleaned_node_id:
-            return None
-        # Heartbeats often repeat the same observation. Do not open a write
-        # transaction just to refresh its timestamp.
-        with self._connect() as conn:
-            existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
-            if existing is None:
-                return None
-            if expected_image and existing.image != expected_image.strip():
-                return None
-            if expected_image_id and existing.image_id != expected_image_id.strip():
-                return None
-            if cleaned_node_id in existing.warmed_node_ids:
-                return existing
-        with self._transaction() as conn:
-            existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
-            if existing is None:
-                return None
-            if expected_image and existing.image != expected_image.strip():
-                return None
-            if expected_image_id and existing.image_id != expected_image_id.strip():
-                return None
-            if cleaned_node_id in existing.warmed_node_ids:
-                return existing
-            now = utc_now().isoformat()
-            stored = replace(
-                existing,
-                updated_at=now,
-                warmed_node_ids=tuple(
-                    dict.fromkeys((*existing.warmed_node_ids, cleaned_node_id))
-                ),
-            )
-            self._write_image_warmup(conn, stored)
-        return stored
-
-    def delete_image_warmup(self, warmup_id: str) -> PendingImageWarmup | None:
-        cleaned_warmup_id = warmup_id.strip()
-        if not cleaned_warmup_id:
-            return None
-        with self._transaction() as conn:
-            existing = self._get_image_warmup_unlocked(conn, cleaned_warmup_id)
-            conn.execute(
-                "DELETE FROM image_warmups WHERE warmup_id = ?",
-                (cleaned_warmup_id,),
-            )
-        return existing
-
     def upsert_prepared_capacity(
         self,
         prepare_id: str,
@@ -3299,10 +3157,6 @@ class RoutingStore:
             existing = self._get_prepared_unlocked(conn, prepare_id)
             conn.execute(
                 "DELETE FROM prepared_capacity WHERE prepare_id = ?",
-                (prepare_id,),
-            )
-            conn.execute(
-                "DELETE FROM image_warmups WHERE warmup_id = ?",
                 (prepare_id,),
             )
         return existing
@@ -3513,30 +3367,6 @@ class RoutingStore:
                 if item is not None
             }
 
-    def _active_image_warmups_unlocked(
-        self,
-        now: datetime,
-    ) -> dict[str, PendingImageWarmup]:
-        # Expiry filtering is a read. Normal state pruning removes expired rows;
-        # heartbeat warmup checks must not open a write transaction just to list.
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT warmup_id, image, image_id, resources_json, count,
-                       created_at, updated_at, expires_at,
-                       warmed_node_ids_json, attempts
-                FROM image_warmups
-                WHERE expires_at > ?
-                ORDER BY warmup_id
-                """,
-                (now.isoformat(),),
-            )
-            return {
-                item.warmup_id: item
-                for item in (_image_warmup_from_row(row) for row in rows)
-                if item is not None
-            }
-
     def _prune_expired_unlocked(
         self,
         conn: RoutingConnection,
@@ -3554,10 +3384,6 @@ class RoutingStore:
         )
         conn.execute(
             "DELETE FROM prepared_builders WHERE expires_at <= ?",
-            (timestamp,),
-        )
-        conn.execute(
-            "DELETE FROM image_warmups WHERE expires_at <= ?",
             (timestamp,),
         )
         terminal_cutoff = (
@@ -3782,22 +3608,6 @@ class RoutingStore:
                 )
                 if item is not None
             },
-            image_warmups={
-                item.warmup_id: item
-                for item in (
-                    _image_warmup_from_row(row)
-                    for row in conn.execute(
-                        """
-                        SELECT warmup_id, image, image_id, resources_json, count,
-                               created_at, updated_at, expires_at,
-                               warmed_node_ids_json, attempts
-                        FROM image_warmups
-                        ORDER BY warmup_id
-                        """
-                    )
-                )
-                if item is not None
-            },
         )
 
     def _sandbox_routes_for_node_url_unlocked(
@@ -3970,23 +3780,6 @@ class RoutingStore:
             (prepare_id,),
         ).fetchone()
         return _prepared_builder_from_row(row) if row is not None else None
-
-    def _get_image_warmup_unlocked(
-        self,
-        conn: RoutingConnection,
-        warmup_id: str,
-    ) -> PendingImageWarmup | None:
-        row = conn.execute(
-            """
-            SELECT warmup_id, image, image_id, resources_json, count,
-                   created_at, updated_at, expires_at,
-                   warmed_node_ids_json, attempts
-            FROM image_warmups
-            WHERE warmup_id = ?
-            """,
-            (warmup_id,),
-        ).fetchone()
-        return _image_warmup_from_row(row) if row is not None else None
 
     def _write_sandbox_lifecycle(self, conn, route: SandboxRoute) -> None:
         # The caller already checked an existing incarnation under this writer
@@ -4305,44 +4098,6 @@ class RoutingStore:
             ),
         )
 
-    def _write_image_warmup(
-        self,
-        conn: RoutingConnection,
-        item: PendingImageWarmup,
-    ) -> None:
-        conn.execute(
-            """
-            INSERT INTO image_warmups (
-                warmup_id, image, image_id, resources_json, count, created_at,
-                updated_at, expires_at, warmed_node_ids_json, attempts
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(warmup_id) DO UPDATE SET
-                image = excluded.image,
-                image_id = excluded.image_id,
-                resources_json = excluded.resources_json,
-                count = excluded.count,
-                created_at = excluded.created_at,
-                updated_at = excluded.updated_at,
-                expires_at = excluded.expires_at,
-                warmed_node_ids_json = excluded.warmed_node_ids_json,
-                attempts = excluded.attempts
-            """,
-            (
-                item.warmup_id,
-                item.image,
-                item.image_id,
-                _resources_json(item.resources),
-                item.count,
-                item.created_at,
-                item.updated_at,
-                item.expires_at,
-                json.dumps(list(item.warmed_node_ids), sort_keys=True),
-                item.attempts,
-            ),
-        )
-
-
 def _string(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -4626,26 +4381,3 @@ def _prepared_builder_from_row(row: Mapping[str, Any]) -> PreparedBuilderDemand:
         expires_at=str(row["expires_at"]),
     )
 
-
-def _image_warmup_from_row(row: Mapping[str, Any]) -> PendingImageWarmup:
-    try:
-        warmed_raw = json.loads(str(row["warmed_node_ids_json"] or "[]"))
-    except json.JSONDecodeError:
-        warmed_raw = []
-    warmed_node_ids = (
-        tuple(str(item) for item in warmed_raw if str(item))
-        if isinstance(warmed_raw, list)
-        else ()
-    )
-    return PendingImageWarmup(
-        warmup_id=str(row["warmup_id"]),
-        image=str(row["image"]),
-        image_id=str(row["image_id"] or ""),
-        resources=_resources_from_json(row["resources_json"]),
-        count=max(1, int(row["count"])),
-        created_at=str(row["created_at"]),
-        updated_at=str(row["updated_at"]),
-        expires_at=str(row["expires_at"]),
-        warmed_node_ids=tuple(dict.fromkeys(warmed_node_ids)),
-        attempts=max(1, int(row["attempts"])),
-    )

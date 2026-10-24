@@ -220,7 +220,7 @@ sample.
 
 `POST /v1/capacity/prepare` with `count`, resources, `ttl_seconds` (default
 900) and optionally `image` and `parkable` tells the autoscaler that demand is
-coming, so workers boot before the burst. With `image`, the gateway also warms
-that image on enough workers. A unit is consumed when a matching sandbox is
+coming, so workers boot before the burst. The `image` is stored with the
+demand but not pulled ahead; creates pull it. A unit is consumed when a matching sandbox is
 created or when its TTL expires. `/v1/builders/prepare` does the same for
 image builders.

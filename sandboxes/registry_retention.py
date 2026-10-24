@@ -395,8 +395,8 @@ def still_unreferenced_environment(
 # plus its EROFS environment copy; age rules never free them during a run.
 # Above the cleanup threshold the pressure unit evicts managed images oldest
 # use first until the projected usage reaches the target. An image is never
-# evicted while leased, while a route, prepared capacity, or warmup names it,
-# or within the grace period of its last push or use.
+# evicted while leased, while a route or prepared capacity names it, or within
+# the grace period of its last push or use.
 
 MANAGED_IMAGE_REPOSITORY_PREFIX = "ucloud-managed/"
 LRU_EVICTION_REASON = "lru_evicted_image"
@@ -465,7 +465,7 @@ def image_reference_identities(image_refs: Iterable[str]) -> set[str]:
 
 
 def routing_image_identities(routing_store: Any) -> set[str]:
-    """Images that routes, prepared capacity, and warmups still name."""
+    """Images that routes and prepared capacity still name."""
 
     state = routing_store.load()
     refs: list[str] = []
@@ -473,7 +473,6 @@ def routing_image_identities(routing_store: Any) -> set[str]:
         spec = route.spec if isinstance(route.spec, Mapping) else {}
         refs.append(str(spec.get("image") or ""))
     refs.extend(str(getattr(item, "image", "") or "") for item in state.prepared.values())
-    refs.extend(str(getattr(item, "image", "") or "") for item in state.image_warmups.values())
     return image_reference_identities(refs)
 
 
