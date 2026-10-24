@@ -92,12 +92,6 @@
   "private_patch": 1,
   "test_import": 1
  },
- "test_consolidation.py": {
-  "clock": 2,
-  "new": 1,
-  "private": 3,
-  "test_import": 1
- },
  "test_control_plane.py": {
   "new": 10,
   "private": 54,

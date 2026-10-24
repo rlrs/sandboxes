@@ -186,7 +186,7 @@ from .routing import (
     is_portable_parked_route,
     is_worker_detachable_parked_route,
 )
-from .consolidation import can_consolidate_wake, consolidation_rank, observed_memory_mb
+from .consolidation import consolidation_rank
 from .sandbox import SandboxSpec, sandbox_spec_fingerprint, sandbox_specs_match
 
 
@@ -454,7 +454,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
     max_sandbox_resources: ResourceQuantity
     services: GatewayServices
     wake_consolidation_policy: ScalePolicy = ScalePolicy()
-    wake_consolidation_next_at: float = 0.0
     server_version = "ucloud-sandboxes-control-plane/0.1"
     dispatch_environment_roots = False
     # Toolkit layers (docs/images.md); None without a signing key.
@@ -1058,17 +1057,9 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         *,
         requested_node_id: str,
         require_active_resources: bool = False,
-        consolidation_source: NodeHeartbeat | None = None,
     ) -> NodeHeartbeat | None:
-        if consolidation_source is not None and (
-            time.monotonic() < self.wake_consolidation_next_at
-            or not is_portable_parked_route(source)
-        ):
-            return None
         routes = self.services.placement.routes()
         active_migrations = self.routing_store.sandbox_migrations(active_only=True)
-        if consolidation_source is not None and active_migrations:
-            return None
         ready_heartbeats = self.services.fleet.ready_sandbox_heartbeats()
         source_heartbeat = next(
             (
@@ -1165,39 +1156,15 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 available,
             ):
                 continue
-            if consolidation_source is not None:
-                if not can_consolidate_wake(
-                    consolidation_source,
-                    heartbeat,
-                    source.resources,
-                    self.wake_consolidation_policy,
-                    now=utc_now(),
-                    observed_memory_mb=observed_memory_mb(
-                        source, (consolidation_source,), now=utc_now(),
-                        max_age_seconds=self.wake_consolidation_policy.live_pressure_window_seconds),
-                ) or not _heartbeat_has_image(
-                    heartbeat, str(source.spec.get("image") or "")
-                ):
-                    continue
-                # A fresh CPU sample cannot account for in-flight admission.
-                if any(
-                    route.node_id == heartbeat.node_id
-                    and route.worker_state != "detached"
-                    and route.state in {"creating", "waking", "unknown"}
-                    for route in node_routes
-                ):
-                    continue
             available_by_node[heartbeat.node_id] = available
             candidates.append(heartbeat)
         undrained = [item for item in candidates if not is_soft_drained(item)]
-        # Moves (plain migrations) and optional consolidation never target a
-        # soft-drained worker. A wake falls back to it rather than failing.
-        if undrained or consolidation_source is not None or not require_active_resources:
+        # Moves (plain migrations) never target a soft-drained worker. A wake
+        # falls back to it rather than failing.
+        if undrained or not require_active_resources:
             candidates = undrained
         if not candidates:
             return None
-        if consolidation_source is not None:
-            return min(candidates, key=consolidation_rank)
         image = str(source.spec.get("image") or "")
         return min(
             candidates,
@@ -4715,27 +4682,19 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         self._cache_parked_job(route, record)
         return _route_with_sandbox_record(route, record)
 
-    def _observe_wake_consolidation(self, route, migration) -> None:
-        type(self).wake_consolidation_next_at = time.monotonic() + 60
-        if migration is not None:
-            self.metrics_store.append("sandbox_wake_consolidation", {
-                "sandbox_id": route.sandbox_id, "migration_id": migration.migration_id,
-                "source_job_id": route.job_id, "destination_job_id": migration.destination_job_id})
-
     def _wake_placement(self) -> WakePlacement:
         placement = self.services.placement
         return WakePlacement(self.routing_store, self._wake_admission(), WakePlacementPorts(
             owner=lambda job_id: self._heartbeat_for_route(job_id=job_id),
             occupants=placement.routes_for_node,
-            destination=lambda route, **options: self._select_migration_destination(
-                route, requested_node_id="", require_active_resources=True, **options),
+            destination=lambda route: self._select_migration_destination(
+                route, requested_node_id="", require_active_resources=True),
             reserve_local=self._reserve_local_wake,
             finish_detach=self._finish_sandbox_detach,
             advance_migration=self._prepare_and_advance_sandbox_migration,
             refresh_capacity=self._refresh_wake_capacity,
             publish=self._request_wake_publication,
             decode_publication=self._decode_wake_publication,
-            observe_consolidation=self._observe_wake_consolidation,
             atomic=placement.atomic,
         ))
 
@@ -4768,7 +4727,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 )
             ),
             heartbeat_ttl_seconds=self.services.fleet.heartbeat_ttl_seconds,
-            consolidation_enabled=self.wake_consolidation_policy.parked_wake_consolidation_enabled,
         )
 
     def _reserve_local_wake_batch(self, batch):
@@ -5829,7 +5787,6 @@ def build_server(
         pass
 
     BoundHandler.wake_consolidation_policy = wake_consolidation_policy or ScalePolicy()
-    BoundHandler.wake_consolidation_next_at = 0.0
     BoundHandler.exec_routing = ExecRoutingService(
         store,
         routing_store,

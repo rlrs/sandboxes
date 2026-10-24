@@ -63,12 +63,11 @@ class WakePlacementTests(unittest.TestCase):
             read_placement=lambda owner: self.routes.sandbox_routes_readonly(),
             can_admit=lambda *_: self.local_capacity,
             heartbeat_ttl_seconds=120,
-            consolidation_enabled=False,
         )
         self.ports = WakePlacementPorts(
             owner=self.control.get_heartbeat,
             occupants=lambda _: self.routes.sandbox_routes_readonly(),
-            destination=lambda *_args, **_kwargs: (
+            destination=lambda _route: (
                 self.destination if self.destination_capacity else None
             ),
             reserve_local=lambda _: None,
@@ -77,7 +76,6 @@ class WakePlacementTests(unittest.TestCase):
             refresh_capacity=lambda _: False,
             publish=self.unexpected,
             decode_publication=lambda _route, payload: payload["candidate"],
-            observe_consolidation=lambda *_: None,
             atomic=self.atomic,
         )
 

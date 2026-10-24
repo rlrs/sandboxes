@@ -54,7 +54,6 @@ class WakeAdmissionTests(unittest.TestCase):
             read_placement=self.read_placement,
             can_admit=self.can_admit,
             heartbeat_ttl_seconds=30,
-            consolidation_enabled=False,
         )
 
     def read_owner(self, job_id):

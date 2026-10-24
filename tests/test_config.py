@@ -62,6 +62,16 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 DeploymentConfig.from_dict(raw)
 
+    def test_a_config_disabling_wake_consolidation_still_loads_and_enabling_it_is_refused(self):
+        raw = self._raw()
+        self.assertNotIn("parked_wake_consolidation_enabled", raw["policy"])
+        disabled = {**raw, "policy": {**raw["policy"], "parked_wake_consolidation_enabled": False}}
+        self.assertEqual(DeploymentConfig.from_dict(disabled), DeploymentConfig.from_dict(raw))
+        for value in (True, 0, None):
+            enabled = {**raw, "policy": {**raw["policy"], "parked_wake_consolidation_enabled": value}}
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "delete the key"):
+                DeploymentConfig.from_dict(enabled)
+
     def test_pause_tier_is_additive_off_by_default_and_requires_swap(self):
         raw = self._raw()
         self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_pause_tier)
