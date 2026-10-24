@@ -5,12 +5,17 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import RLock
 from types import SimpleNamespace
+import json
 import unittest
 from unittest.mock import Mock
 
 from sandboxes.control_plane import (
     ControlPlaneHandler,
+    ImageBuildLookupUnavailableError,
     ProxiedResponse,
+    node_image_build,
+    sandbox_image_record,
+    store_image_record,
 )
 from sandboxes.gateway.node_rpc import _node_transport_error_response
 from sandboxes.images import ImageRecord, ImageStore
@@ -424,3 +429,66 @@ class ImagePollingTests(unittest.TestCase):
         self.assertEqual(h._write_json.call_args.kwargs["status"], 502)
         self.assertTrue(h._write_json.call_args.args[0]["retryable"])
         h._record_successful_build_image.assert_not_called()
+
+
+class ImageBuildHelperTests(unittest.TestCase):
+    builder = SimpleNamespace(node_url="http://builder")
+
+    def answer(self, status, payload=None):
+        requests = []
+
+        def proxy(url, path, **kwargs):
+            requests.append((url, path, kwargs["method"]))
+            return ProxiedResponse(status, {}, json.dumps(payload or {}).encode())
+        return proxy, requests
+
+    def test_node_image_build_reads_one_builders_record(self):
+        proxy, requests = self.answer(200, {"build": {"build_id": "b/1", "status": "running"}})
+        self.assertEqual(node_image_build(proxy, self.builder, "b/1"),
+                         {"build_id": "b/1", "status": "running"})
+        self.assertEqual(requests, [("http://builder", "/v1/images/builds/b%2F1", "GET")])
+        proxy, _ = self.answer(404)
+        self.assertIsNone(node_image_build(proxy, self.builder, "absent"))
+
+    def test_node_image_build_never_reports_absence_from_a_failed_answer(self):
+        for status, payload, upstream in ((503, {}, 503), (403, {}, 502),
+                                          (200, {}, 502), (200, {"build": "x"}, 502)):
+            with self.subTest(status=status, payload=payload):
+                proxy, _ = self.answer(status, payload)
+                with self.assertRaises(ImageBuildLookupUnavailableError) as raised:
+                    node_image_build(proxy, self.builder, "build")
+                self.assertEqual(raised.exception.status, upstream)
+
+    def test_sandbox_image_record_pins_only_usable_images(self):
+        images = gateway_services().images
+        digest = "sha256:" + "a" * 64
+        usable = {"id": "image", "tag": "example:v1", "source": "registry",
+                  "manifest_digest": digest}
+        self.assertEqual(sandbox_image_record(images, usable)["manifest_digest"], digest)
+        for unusable in (None, "image", {"id": "image", "source": "build:local", "pushed": False}):
+            with self.subTest(image=unusable):
+                self.assertIsNone(sandbox_image_record(images, unusable))
+
+    def test_store_image_record_invalidates_inventory_after_a_write(self):
+        class Inventory:
+            invalidated = 0
+
+            def invalidate_inventory(self):
+                self.invalidated += 1
+
+        now = utc_now()
+        image = ImageRecord("image", "example:v1", "registry", "ready", now, now)
+        with TemporaryDirectory() as directory:
+            store = ImageStore(Path(directory) / "images.sqlite")
+            inventory = Inventory()
+            self.assertFalse(store_image_record(inventory, store, {"id": "image"}))
+            self.assertEqual((store.load(), inventory.invalidated), ({}, 0))
+            for _ in range(2):  # A dispatch or a recipe adoption always writes.
+                self.assertTrue(store_image_record(inventory, store, image.to_dict()))
+            self.assertEqual((store.get("image"), inventory.invalidated), (image, 2))
+            # A poll observing the same record leaves the inventory alone.
+            self.assertTrue(store_image_record(inventory, store, image.to_dict(), only_if_changed=True))
+            self.assertEqual(inventory.invalidated, 2)
+            changed = replace(image, tag="example:v2")
+            self.assertTrue(store_image_record(inventory, store, changed.to_dict(), only_if_changed=True))
+            self.assertEqual((store.get("image"), inventory.invalidated), (changed, 3))
