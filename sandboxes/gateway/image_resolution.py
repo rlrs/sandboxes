@@ -148,33 +148,24 @@ class ImageResolution:
             raw["location"] = "control-plane"
             images.append(raw)
         complete = True
-        unobserved_references: set[str] = set()
         for heartbeat in self.fleet.ready_heartbeats():
             response = ex._proxy_request(heartbeat.node_url or "", "/v1/images", method="GET")
             if response.status >= 400:
                 complete = False
-                if heartbeat.cached_images_known:
-                    unobserved_references.update(heartbeat.cached_images)
                 continue
             payload = response.json()
             raw_images = payload.get("images")
             if not isinstance(raw_images, list):
                 complete = False
-                if heartbeat.cached_images_known:
-                    unobserved_references.update(heartbeat.cached_images)
                 continue
             for record in raw_images:
                 if not isinstance(record, dict):
                     complete = False
-                    if heartbeat.cached_images_known:
-                        unobserved_references.update(heartbeat.cached_images)
                     continue
                 raw = dict(record)
                 raw["node"] = _node_metadata(heartbeat)
                 images.append(raw)
-        return ImageInventorySnapshot.from_records(
-            images, complete=complete, unobserved_references=unobserved_references,
-        )
+        return ImageInventorySnapshot.from_records(images, complete=complete)
 
     def enrich_records(
         self, records: tuple[dict[str, Any], ...], *, image_id: str | None = None,
@@ -383,12 +374,6 @@ class ImageResolution:
                     "retryable": False,
                     "image_id": image,
                 }
-            if (
-                not inventory.complete
-                and image in inventory.unobserved_references
-                and self.is_known_successful_build(image)
-            ):
-                return image, _incomplete_image_inventory_error(image)
             return image, None
         available = [
             record
@@ -426,20 +411,6 @@ class ImageResolution:
             "image_id": image,
             "matches": [_image_record_summary(record) for record in matches],
         }
-
-    def is_known_successful_build(self, image: str) -> bool:
-        get_build = getattr(self.image_manager, "get_build", None)
-        if not callable(get_build):
-            return False
-        try:
-            build = get_build(image)
-        except (OSError, TypeError, ValueError):
-            return False
-        return bool(
-            build is not None
-            and getattr(build, "image_id", None) == image
-            and getattr(build, "status", None) == "succeeded"
-        )
 
     def worker_reference(self, image_ref: str) -> str:
         if not self.registry_url:

@@ -1751,30 +1751,9 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 if self.telemetry is not None
                 else {"enabled": False}
             )
-            builds = self._cached_image_build_records()
-            active_builds = [
-                build
-                for build in builds
-                if build.get("status") not in {"succeeded", "failed"}
-            ]
-            failed_builds = [
-                build for build in builds if build.get("status") == "failed"
-            ]
-            active_build_count = max(
-                len(active_builds),
-                int(
-                    snapshot.get("resources", {})
-                    .get("fresh", {})
-                    .get("active_image_builds")
-                    or 0
-                ),
-            )
-            snapshot.setdefault("images", {}).update(
-                {
-                    "active_builds": active_build_count,
-                    "failed_builds": len(failed_builds),
-                    "builds": builds,
-                }
+            snapshot.setdefault("images", {})["active_builds"] = int(
+                snapshot.get("resources", {}).get("fresh", {}).get("active_image_builds")
+                or 0
             )
             snapshot["registry"] = self.services.images.registry_status_cached(
                 force_refresh=full or refresh_registry
@@ -2224,47 +2203,22 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                         self.image_build_owners.popitem(last=False)
             return build
 
-        def cached_matches() -> list[dict[str, Any]]:
-            return [
-                b for b in self._cached_image_build_records()
-                if build_key in (b.get("build_id"), b.get("image_id"))
-            ]
-
-        def terminal_exact_match() -> list[dict[str, Any]]:
-            return [
-                b for b in cached_matches()
-                if b.get("build_id") == build_key
-                and _image_build_response_terminal({"build": b})
-            ]
-
         if owner is not None and not any(
             identity(heartbeat)[:2] == owner[:2] for heartbeat in builders
         ):
             # A missing/stale heartbeat does not prove the owner's build gone.
             # A new incarnation of the same node may still recover its record.
-            terminal = terminal_exact_match()
-            if terminal:
-                return terminal
             raise ImageBuildLookupUnavailableError()
 
         tried = None
         for heartbeat in builders:
             if identity(heartbeat) == owner:
                 tried = identity(heartbeat)
-                try:
-                    build = fetch(heartbeat)
-                except ImageBuildLookupUnavailableError:
-                    terminal = terminal_exact_match()
-                    if terminal:
-                        return terminal
-                    raise
+                build = fetch(heartbeat)
                 if build is not None and build.get("build_id") == build_key:
                     return [build]
                 break
-        builds = cached_matches()
-        exact = [b for b in builds if b.get("build_id") == build_key]
-        if exact:
-            return exact
+        builds: list[dict[str, Any]] = []
         failure = None
         for heartbeat in builders:
             if identity(heartbeat) == tried:
@@ -2285,7 +2239,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         return builds
 
     def _image_build_records_across_nodes(self) -> list[dict[str, Any]]:
-        builds = self._cached_image_build_records()
+        builds: list[dict[str, Any]] = []
         for heartbeat in self.services.fleet.ready_heartbeats():
             if "image-build" not in heartbeat.capabilities:
                 continue
@@ -2307,17 +2261,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                     enriched["node"] = _node_metadata(heartbeat)
                     self._record_successful_build_image(enriched)
                     builds.append(enriched)
-        return builds
-
-    def _cached_image_build_records(self) -> list[dict[str, Any]]:
-        builds: list[dict[str, Any]] = []
-        for record in sorted(
-            self.image_manager.list_builds(),
-            key=lambda item: (item.created_at, item.build_id),
-        ):
-            enriched = record.to_dict()
-            enriched["location"] = "control-plane"
-            builds.append(enriched)
         return builds
 
     def _record_terminal_build_metrics(self, build: dict[str, Any]) -> None:

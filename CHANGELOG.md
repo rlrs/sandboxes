@@ -21,6 +21,15 @@
   Production had no warmup and no prepared capacity with an image. The
   `image_warmups` PostgreSQL table stays in the schema, unused, so a rollback
   to 0.10.0 finds it; it is dropped in a later release.
+- **The gateway reads image builds only from builders.** Its own
+  `image_state_v1_builds` table was never written (the gateway's image manager
+  is a dry run), so build listing, build polling and image resolution no longer
+  consult it, and build polls no longer fall back to a gateway-local terminal
+  record when the owning builder is unavailable; they return the retryable 503
+  or 504 they would return anyway. `/v1/metrics` drops `images.builds` and
+  `images.failed_builds`, which were always empty and 0; `images.active_builds`
+  still comes from builder heartbeats. The table stays in `images.sqlite`, so
+  existing files open unchanged and a rollback to 0.10.0 needs nothing.
 - **Operator scripts**: `scripts/images/import_image_recipes.py` only exports
   bundles; register names with `build_image_index.py register`. The unused
   `preflight_environment.py`, `build_environment_canary.sh` and

@@ -27,7 +27,6 @@ class ImagePollingTests(unittest.TestCase):
 
         h = object.__new__(Handler)
         h.services = gateway_services()
-        h._cached_image_build_records = lambda: []
         return h
 
     def test_terminal_build_timings_survive_builder_removal_without_log_payloads(self):
@@ -347,27 +346,10 @@ class ImagePollingTests(unittest.TestCase):
                     self.assertEqual(response.kwargs["status"], 503)
                     self.assertTrue(response.args[0]["retryable"])
 
-    def test_exact_terminal_local_record_survives_unavailable_owner(self):
-        for owner_ready in (True, False):
-            with self.subTest(owner_ready=owner_ready):
-                h = self.handler()
-                h.image_build_owners["build-id"] = ("owner", "owner", "one")
-                h.services.fleet.ready_heartbeats = lambda: [self.node("owner")] if owner_ready else []
-                terminal = {"build_id": "build-id", "image_id": "image", "status": "succeeded"}
-                h._cached_image_build_records = lambda: [terminal]
-                h._proxy_request = Mock(return_value=ProxiedResponse(504, {}, b"{}"))
-                h.routing_store = Mock()
-                h._write_json = Mock()
-                h._record_successful_build_image = Mock()
-                h._get_image_build("build-id")
-                self.assertEqual(h._write_json.call_args.args[0], {"build": terminal})
-                h.routing_store.clear_pending_image_build.assert_called_once_with("image")
-
     def test_image_name_cannot_use_older_terminal_record_during_incomplete_scan(self):
         h = self.handler()
         h.services.fleet.ready_heartbeats = lambda: [self.node("a"), self.node("b")]
         old = {"build_id": "older", "image_id": "image", "status": "succeeded"}
-        h._cached_image_build_records = lambda: [old]
         h._proxy_request = Mock(side_effect=[
             SimpleNamespace(status=200, json=lambda: {"build": old}),
             ProxiedResponse(503, {}, b"{}"),
