@@ -6226,6 +6226,7 @@ def dashboard_scale_policy_to_dict(policy: ScalePolicy) -> dict[str, Any]:
         ),
         "drain_on_park_enabled": policy.drain_on_park_enabled,
         "drain_on_park_moves_per_cycle": policy.drain_on_park_moves_per_cycle,
+        "drain_on_park_with_pending_enabled": policy.drain_on_park_with_pending_enabled,
         "default_node_resources": policy.default_node_resources.to_dict(),
     }
 

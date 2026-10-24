@@ -1087,6 +1087,7 @@ def _decode_policy(
     raw = {"max_io_psi_full_avg10": defaults.max_io_psi_full_avg10,
            "drain_on_park_enabled": defaults.drain_on_park_enabled,
            "drain_on_park_moves_per_cycle": defaults.drain_on_park_moves_per_cycle,
+           "drain_on_park_with_pending_enabled": defaults.drain_on_park_with_pending_enabled,
            "max_cpu_check_ms": defaults.max_cpu_check_ms,
            **raw}
     # Configs written for 0.10.0 and earlier may still name the flag.
