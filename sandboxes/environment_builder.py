@@ -249,7 +249,7 @@ class FreshEnvironmentBuilder:
                     # mounts both layouts (no feature bit), so it follows the switch.
                     self._mkfs(image, view, exclude_runtime_mounts=exclude, preserve_mtimes=self.preserve_mtimes)
                     component = sign_component(image, source_image=source.image_id, signing_key=self.signing_key)
-                    digest = self._publish_component(image, component, tag)
+                    digest = self.registry.publish(image, component, tag=tag)
                     return {"image_id": source.image_id, "component_digest": digest,
                             "component": component, "image_config": source.image_config}
         finally:
@@ -268,33 +268,11 @@ class FreshEnvironmentBuilder:
         except (ImageBuildTimeoutError, subprocess.TimeoutExpired):
             _LOG.warning("temporary builder image cleanup deferred after its deadline")
 
-    def _publish_component(self, image, component, tag):
-        """Publish with a signed metadata prefetch hint when the walker qualifies it.
-
-        Unqualified or non-EROFS bytes publish exactly the hint-free manifest.
-        """
-        from .environment_metadata import sign_metadata_hint
-        hint = None
-        try:
-            with _phase("metadata_hint"):
-                hint, metadata = sign_metadata_hint(image, component, self.signing_key,
-                                                    check=remaining_build_execution_seconds)
-        except (ValueError, OSError) as exc:
-            _measure("metadata_hint_unsupported")
-            _LOG.info("publishing environment component without a metadata hint: %s", exc)
-        else:
-            _measure("metadata_hints")
-            _measure("metadata_hint_chunks", len(hint.chunks))
-            _measure("metadata_hint_bytes", metadata.metadata_bytes)
-        if hint is None:
-            return self.registry.publish(image, component, tag=tag)
-        return self.registry.publish(image, component, tag=tag, metadata=hint)
-
     def _mkfs(self, image, view, *, exclude_runtime_mounts, preserve_mtimes, tar=False):
         # -T 0 alone (erofs-utils' default --all-time) sets every mtime to 0.
         # Layout 2: --mkfs-time fixes only the build time and keeps per-file
         # mtimes; --MZ packs inodes and directories into one metadata zone, so
-        # hints span few chunks. Neither sets a feature bit. mkfs stages the
+        # metadata spans few chunks. Neither sets a feature bit. mkfs stages the
         # zone in an unlinked $TMPDIR file, so it lives in this build's directory.
         options = ["-T", "0", *(["--mkfs-time", "--MZ"] if preserve_mtimes else []),
                    "-U", "00000000-0000-0000-0000-000000000000"]
@@ -430,7 +408,7 @@ class FreshEnvironmentBuilder:
                 component = sign_commit_component(image, diff_id=diff_id, parent_root=root,
                     policy_sha256=commit.policy.sha256, layer_format=layer_format, signing_key=self.signing_key)
             with _phase("publish_component"):
-                component_digest = self._publish_component(image, component, "commit-" + key)
+                component_digest = self.registry.publish(image, component, tag="commit-" + key)
             if not client.blob_exists(repository, layer_digest):
                 client.upload_blob_file(repository, layer, layer_digest, layer_size)
         if parent_repository != repository:

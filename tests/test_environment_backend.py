@@ -1,18 +1,23 @@
 import errno
+import json
 from pathlib import Path
 import socket
 import os
 import stat
 from types import SimpleNamespace
 from unittest.mock import patch
-from threading import Thread
+from threading import Event, Thread
 import time
 import unittest
 
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
+from tests.support import wait_until
 from sandboxes.environment_backend import EnvironmentBackend, EnvironmentBackendClient, EnvironmentBackendServer, mount_has_dependents
 from sandboxes.environment_nbd import EnvironmentReadWorkers, ReadOnlyEnvironmentDevice, ReadOnlyNbdExport, REQUEST, REPLY, REQUEST_MAGIC, REPLY_MAGIC
+from sandboxes.environment_rootfs import EnvironmentRootfsStore
+from sandboxes.models import (ENVIRONMENT_IO_METRICS, RETIRED_ENVIRONMENT_IO_METRICS, NodeRuntimeMetrics,
+                              retired_environment_io_metrics, utc_now)
 
 TEST_TIER = "contract"
 
@@ -144,6 +149,72 @@ class EnvironmentBackendTests(artifact_fixtures.EnvironmentArtifactTests):
         busy.clear()
         self.assertTrue(replacement.drop(self.digest))
         self.assertTrue(devices[0].closed)
+
+    def test_heartbeats_read_metrics_over_rpc_while_a_drop_holds_the_backend(self):
+        mounts, unmounting, release = set(), Event(), Event()
+
+        def unmount(target):
+            unmounting.set()
+            self.assertTrue(release.wait(10))
+            mounts.discard(target)
+
+        class Device:
+            def __init__(self, path, *args, **kwargs):
+                self.path = path
+
+            def close(self):
+                pass
+        backend = EnvironmentBackend(self.root / "backend", self.registry, devices=[Path("/dev/nbd-test")],
+                                     device_factory=Device, mount=lambda device, target: mounts.add(target),
+                                     unmount=unmount, mounted=lambda path: path in mounts, referenced=lambda _: False)
+        self.addCleanup(backend.close)
+        self.assertEqual(set(backend.metrics()), ENVIRONMENT_IO_METRICS)
+        backend.ensure(self.digest)
+        endpoint = self.root / "backend.sock"
+        server = EnvironmentBackendServer(endpoint, backend)
+        thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), thread.join(), server.server_close()))
+        store = EnvironmentRootfsStore(self.root / "store", self.registry, EnvironmentBackendClient(endpoint),
+                                       block_devices=1)
+        dropping = Thread(target=backend.drop, args=(self.digest,))
+        dropping.start()
+        self.addCleanup(dropping.join)
+        self.addCleanup(release.set)
+        self.assertTrue(unmounting.wait(10))  # The drop holds the attach guard inside unmount.
+        exported = store.io_metrics()
+        self.assertEqual(exported, backend.metrics())
+        # Prefetch is gone: its names report 0 and False for one release.
+        self.assertEqual({name: exported[name] for name in RETIRED_ENVIRONMENT_IO_METRICS},
+                         retired_environment_io_metrics())
+        self.assertEqual(exported["active_components"], 1)
+        heartbeat = NodeRuntimeMetrics(collected_at=utc_now(), environment_io=exported)
+        self.assertEqual(NodeRuntimeMetrics.from_dict(json.loads(json.dumps(heartbeat.to_dict()))), heartbeat)
+        release.set()
+        wait_until(lambda: backend.metrics()["active_components"] == 0)
+        for request in ({"method": "metrics", "digest": self.digest}, {"method": "ensure"}, {"method": ["drop"]}):
+            with self.subTest(request=request), socket.socket(socket.AF_UNIX) as client:
+                client.connect(str(endpoint))
+                client.sendall(json.dumps(request).encode() + b"\n")
+                with client.makefile("rb") as reader:
+                    self.assertIn("invalid", json.loads(reader.readline())["error"])
+
+        def rejected(*_args):
+            raise RuntimeError("invalid environment backend request")
+        # The backend outlives agent upgrades: an older one rejects the method,
+        # and a set with any other names is no evidence at all.
+        missing = {name: value for name, value in exported.items() if name != "metadata_hint_present"}
+        for reply in (rejected, lambda: exported | {"invented": 0}, lambda: missing):
+            store.backend = SimpleNamespace(metrics=reply)
+            self.assertIsNone(store.io_metrics())
+        # A stalled backend (accepted, never answered) costs a heartbeat
+        # nothing but its bounded wait.
+        stalled = socket.socket(socket.AF_UNIX)
+        self.addCleanup(stalled.close)
+        stalled.bind(str(self.root / "stalled.sock"))
+        stalled.listen()
+        store.backend = EnvironmentBackendClient(self.root / "stalled.sock")
+        self.assertIsNone(store.io_metrics())
 
     def test_a_device_cache_over_budget_detaches_the_least_recently_used_idle_components(self):
         # nydusd's shared filecache has no eviction of its own: cache_bytes bounds it.

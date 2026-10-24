@@ -1,18 +1,12 @@
-"""Byte ranges of EROFS metadata, for attach-time prefetch hints (C2.2).
+"""Symlink targets of an EROFS image or RAFS v6 bootstrap, read byte-exact.
 
-A strict reader of the on-disk layout in Linux fs/erofs/erofs_fs.h. It returns
-every byte a path walk, stat, readlink, listxattr/getxattr or first data map
-can touch: block 0 (superblock and compression configs), each inode record
-with its inline xattrs, tail-packed inline data and compressed or chunk index
-array, shared xattrs, and directory and symlink blocks. Regular-file data
-blocks are never read. A feature or layout whose completeness has not been
-qualified is refused with ``UnsupportedErofs``; callers then publish no hint
-rather than an incomplete one.
+A strict reader of the on-disk layout in Linux fs/erofs/erofs_fs.h: block 0
+(superblock and compression configs), inode records with their inline
+xattrs, tail-packed inline data and compressed or chunk index arrays, shared
+xattrs, and directory and symlink blocks. Regular-file data blocks are never
+read. A feature or layout that has not been qualified is refused with
+``UnsupportedErofs`` rather than guessed.
 """
-from dataclasses import dataclass
-import mmap
-import os
-from pathlib import Path
 import stat
 import struct
 
@@ -30,46 +24,10 @@ FLAT_PLAIN, COMPRESSED_FULL, FLAT_INLINE, COMPRESSED_COMPACT, CHUNK_BASED = rang
 _COMPACTED_2B, _BIG_PCLUSTER = 0x1, 0x2 | 0x4
 _CHUNK_FORMAT_KNOWN, _CHUNK_INDEXES = 0x3F, 0x20
 _SPECIAL = {stat.S_IFCHR, stat.S_IFBLK, stat.S_IFIFO, stat.S_IFSOCK}
-_MAX_INODES = 1 << 24
 
 
 class UnsupportedErofs(ValueError):
     """The image is not EROFS or uses a layout this walker has not qualified."""
-
-
-@dataclass(frozen=True)
-class ErofsMetadata:
-    image_bytes: int
-    block_bytes: int
-    ranges: tuple[tuple[int, int], ...]  # Sorted, disjoint, non-adjacent [start, end).
-    inodes: int
-    directories: int
-    symlinks: int
-
-    @property
-    def metadata_bytes(self):
-        return sum(end - start for start, end in self.ranges)
-
-    def chunk_bytes(self, chunk_bytes):
-        """Sorted (chunk index, metadata bytes in it) for every touched chunk."""
-        counts = {}
-        for start, end in self.ranges:
-            while start < end:
-                index = start // chunk_bytes
-                take = min(end, (index + 1) * chunk_bytes) - start
-                counts[index] = counts.get(index, 0) + take
-                start += take
-        return tuple(sorted(counts.items()))
-
-
-def _merge(ranges):
-    merged = []
-    for start, end in sorted(ranges):
-        if merged and start <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-    return tuple((start, end) for start, end in merged)
 
 
 def _align(value, unit):
@@ -100,17 +58,13 @@ def _compact_index_end(base, total, advise):
 class _Walker:
     def __init__(self, view, size):
         self.view, self.size = view, size
-        self.ranges = []
         self.shared = set()
 
     def need(self, start, length, what):
         if start < 0 or length < 0 or start + length > self.size:
             raise ValueError(f"EROFS {what} lies outside the image")
 
-    def add(self, start, length, what):
-        self.need(start, length, what)
-        if length:
-            self.ranges.append((start, start + length))
+    add = need  # Metadata the kernel reads: it must lie inside the image.
 
     def unpack(self, layout, offset):
         self.need(offset, struct.calcsize(layout), "field")
@@ -252,35 +206,6 @@ class _Walker:
                 self.add(i_u << self.blkszbits, full << self.blkszbits, "metadata block")
         return kind, layout, size, tail, i_u, blocks, end
 
-    def children(self, size, tail, i_u, blocks, layout):
-        """Child nids, read per directory block as the kernel's readdir does."""
-        full = blocks if layout == FLAT_PLAIN else blocks - 1
-        pieces = [((i_u + index) << self.blkszbits, min(self.blksz, size - (index << self.blkszbits)))
-                  for index in range(max(full, 0))]
-        if layout == FLAT_INLINE and size:
-            pieces.append((tail, size - ((blocks - 1) << self.blkszbits)))
-        for start, length in pieces:
-            self.need(start, length, "directory block")
-            if length < 12:
-                raise ValueError("EROFS directory block is truncated")
-            (first,) = self.unpack("<H", start + 8)
-            if first < 12 or first % 12 or first > length:
-                raise ValueError("EROFS directory block has an invalid entry table")
-            entries = [self.unpack("<QHB", start + 12 * index) for index in range(first // 12)]
-            for index, (nid, name_offset, _type) in enumerate(entries):
-                name_end = entries[index + 1][1] if index + 1 < len(entries) else length
-                if not first <= name_offset < name_end <= length:
-                    raise ValueError("EROFS directory entry names are out of order")
-                name = bytes(self.view[start + name_offset:start + name_end])
-                if index + 1 == len(entries):
-                    name = name.split(b"\0", 1)[0]
-                if not name or b"/" in name:
-                    raise ValueError("EROFS directory entry has an invalid name")
-                if name not in (b".", b".."):
-                    self.need(self.meta_base + 32 * nid, 32, "directory entry inode")
-                    yield nid
-
-
 def _inline_data(walker, size, tail, i_u, blocks, layout):
     """A directory's or symlink's bytes: whole blocks at ``i_u``, then the tail."""
     full = blocks if layout == FLAT_PLAIN else max(blocks - 1, 0)
@@ -322,50 +247,3 @@ def symlink_targets(view):
                     pending.append((child, f"{path}/{name}" if path else name))
     return targets
 
-
-def walk(view, size=None, *, check=lambda: None, on_inode=None):
-    """Metadata ranges of an EROFS image held in ``view`` (bytes or mmap).
-
-    ``on_inode(nid, file type, layout, start, end)`` observes each distinct
-    inode once, with the bytes of its record, inline data and index array.
-    """
-    walker = _Walker(view, len(view) if size is None else size)
-    root = walker.superblock()
-    pending, seen = [root], {root}
-    directories = symlinks = visited = 0
-    while pending:
-        if len(seen) > _MAX_INODES:
-            raise UnsupportedErofs("EROFS image has too many inodes")
-        nid = pending.pop()
-        visited += 1
-        if visited % 1024 == 1:
-            check()
-        kind, layout, size_, tail, i_u, blocks, end = walker.inode(nid)
-        if on_inode is not None:
-            on_inode(nid, kind, layout, walker.meta_base + 32 * nid, end)
-        if kind == stat.S_IFLNK:
-            symlinks += 1
-        elif kind == stat.S_IFDIR:
-            directories += 1
-            for child in walker.children(size_, tail, i_u, blocks, layout):
-                if child not in seen:
-                    seen.add(child)
-                    pending.append(child)
-    # Every valid inode is reachable from the root; a mismatch means this
-    # walk misread a directory, so publish no hint instead of a partial one.
-    if len(seen) != walker.inos:
-        raise ValueError("EROFS reachable inodes differ from the superblock count")
-    return ErofsMetadata(walker.size, walker.blksz, _merge(walker.ranges), len(seen), directories, symlinks)
-
-
-def metadata_ranges(path, *, check=lambda: None, on_inode=None):
-    """Walk an EROFS image file; regular-file data pages are never touched."""
-    descriptor = os.open(Path(path), os.O_RDONLY | os.O_NOFOLLOW)
-    try:
-        size = os.fstat(descriptor).st_size
-        if size < 4096:
-            raise UnsupportedErofs("EROFS image is too small")
-        with mmap.mmap(descriptor, size, access=mmap.ACCESS_READ) as view:
-            return walk(view, size, check=check, on_inode=on_inode)
-    finally:
-        os.close(descriptor)

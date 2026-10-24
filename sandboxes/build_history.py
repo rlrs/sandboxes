@@ -25,9 +25,7 @@ _TOTALS = frozenset(("total_ms", "queue_wait_ms", "preparation_ms", "end_to_end_
 _PHASES = frozenset(("docker_build_and_push_ms", "docker_build_ms", "docker_push_ms",
                      "immutable_environment_ms", "cleanup_ms", "cache_prepare_ms", "cache_mount_ms",
                      "finishing_wait_ms"))
-_ENVIRONMENT = frozenset(("total_ms", "docker_pull_ms", "mkfs_ms", "sign_ms", "publish_component_ms",
-    "metadata_hint_ms", "metadata_hints", "metadata_hint_unsupported", "metadata_hint_chunks",
-    "metadata_hint_bytes"))
+_ENVIRONMENT = frozenset(("total_ms", "docker_pull_ms", "mkfs_ms", "sign_ms", "publish_component_ms"))
 
 
 def _timestamp(value):

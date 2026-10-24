@@ -3,7 +3,7 @@
 The read path (docs/images.md): the bootstrap is served from
 memory, a block resolves to a chunk id through the signed chunk map, and the
 unsigned locator says which pack range holds it. Misses fetch 1 MiB windows
-(prefetch up to 4 MiB) with plain HTTP ranges, from S3 or, when configured,
+(bulk blob rebuilds up to 4 MiB) with plain HTTP ranges, from S3 or, when configured,
 only from the store node (C2.6); every chunk is decompressed
 and checked against its id before it is cached or served. The cache is keyed
 by chunk id, so images share chunks. C2.1's Rust device implements the same
@@ -77,7 +77,6 @@ class RafsImage:
         self.digest, self.component, self.bootstrap, self.map = digest, component, bootstrap, chunk_map
         self.image_digest, self.image_size = component.image_digest, component.device_size
         self.chunks = tuple(Chunk("sha256:" + chunk_id.hex(), size) for chunk_id, size in zip(chunk_map.ids, chunk_map.sizes))
-        self.chunk_ids = tuple(chunk.digest[7:] for chunk in self.chunks)
         self._first = {}
         for index, chunk in enumerate(self.chunks):
             self._first.setdefault(chunk.digest, index)
@@ -120,7 +119,7 @@ class RafsImage:
         return True
 
     def prefetch_order(self, indices):
-        """Trace replay order: by pack, then offset, so ranges coalesce."""
+        """Bulk read order (blob rebuilds): by pack, then offset, so ranges coalesce."""
         with self._guard:
             entries = self._locator.entries
         unique = dict.fromkeys(self._first[self.chunks[index].digest] for index in indices
@@ -196,9 +195,9 @@ class RafsImage:
         raise ValueError("chunk store bytes do not verify against the chunk id")
 
     def next_run(self, queue, busy, limit=PREFETCH_RANGE_BYTES):
-        """Pop one prefetch run off ``queue`` (reversed, as PrefetchJob keeps
-        it): same pack, gaps under 64 KiB, within ``limit``; returns
-        (run of indices, skipped count)."""
+        """Pop one bulk run off ``queue`` (reversed, so pop() yields
+        ``prefetch_order``): same pack, gaps under 64 KiB, within ``limit``;
+        returns (run of indices, skipped count)."""
         with self._guard:
             entries = self._locator.entries
         run, skipped = [], 0
@@ -218,7 +217,7 @@ class RafsImage:
         return run, skipped
 
     def fetch_run(self, run, timeout, limit=PREFETCH_RANGE_BYTES):
-        """Prefetch: one GET, no retries; {digest: verified bytes}. A locator
+        """Bulk read: one GET, no retries; {digest: verified bytes}. A locator
         refreshed since planning may split the run: then nothing is fetched."""
         with self._guard:
             locator = self._locator
@@ -363,7 +362,6 @@ def read_image(cache, image, offset, length, cancel=None):
         output[:len(piece)] = piece
     starts = image.map.offsets
     for index in image.map.overlapping(offset, end):
-        cache.observe(image, index)
         data = cache.chunk(image.chunks[index], cancel=cancel, source=image)
         start = starts[index]
         low, high = max(offset, start), min(end, start + len(data))

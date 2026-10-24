@@ -99,6 +99,21 @@
   to 0.10.0: restore the previous `deployment.json`. Without `builder_format:
   "rafs"` 0.10.0 builders publish EROFS, and without `allow_paths` 0.10.0
   refuses `builder_enabled`.
+- **Attach-time prefetch, startup traces and metadata hints are gone.** With
+  `chunk_store.nydusd` the environment backend never prefetched (every
+  production worker reports `environment_io.prefetch_enabled` false); now no
+  backend does, and every read loads on demand. `immutable_environments`
+  `prefetch_enabled` and `shared_traces` still load with any boolean and are
+  ignored; neither is written any more, and 0.10.0 reads their absence as its
+  defaults, so a rollback loads configs this release writes. The heartbeat's
+  `environment_io` keeps every prefetch, trace and hint name for one release,
+  always 0 (`prefetch_enabled` false), so gateways and workers of 0.10.0 and
+  this release accept each other's heartbeats. `serve-environment-io` accepts
+  and ignores `--disable-prefetch` and `--shared-traces`. `publish-environment`
+  no longer signs a metadata hint into toolkit manifests (older annotations are
+  ignored), build history drops the `metadata_hint_*` counters, and
+  `registry-prune` no longer exempts the `environment-traces` repository
+  (empty unless `shared_traces` was on).
 - **Operator scripts**: `scripts/images/import_image_recipes.py` only exports
   bundles; register names with `build_image_index.py register`. The unused
   `preflight_environment.py`, `build_environment_canary.sh` and

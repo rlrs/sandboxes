@@ -74,7 +74,7 @@ Group=root
 PrivateMounts=no
 RuntimeDirectory=ucloud-environment
 RuntimeDirectoryMode=0700
-ExecStart=$UCLOUD_AGENT_BIN serve-environment-io --root $UCLOUD_STATE_DIR/environment-io --socket {SOCKET} --cache-bytes {options.environment_cache_bytes}{"" if options.environment_prefetch_enabled else " --disable-prefetch"}{"" if options.environment_attach_concurrency == 1 else f" --attach-concurrency {int(options.environment_attach_concurrency)}"}{" --shared-traces" if options.environment_shared_traces else ""}{chunk_flags}{registry_flags}
+ExecStart=$UCLOUD_AGENT_BIN serve-environment-io --root $UCLOUD_STATE_DIR/environment-io --socket {SOCKET} --cache-bytes {options.environment_cache_bytes}{"" if options.environment_attach_concurrency == 1 else f" --attach-concurrency {int(options.environment_attach_concurrency)}"}{chunk_flags}{registry_flags}
 Restart=no
 # Every attached image holds NBD connections, sockets and, for RAFS, its
 # bootstrap: a 512-rollout burst hit the default 1024 at about 140 images.
@@ -131,8 +131,6 @@ def validate(options):
         "trusted_keys_file": TRUST_FILE, "signing_key_file": KEY_FILE if options.role == "builder" else "",
         "repository": options.environment_repository, "worker_enabled": options.role == "sandbox",
         "builder_enabled": options.role == "builder", "cache_bytes": options.environment_cache_bytes,
-        "prefetch_enabled": options.environment_prefetch_enabled,
-        "shared_traces": options.environment_shared_traces,
         "device_budget_percent": options.environment_device_budget_percent,
         "chunk_store": json.loads(options.chunk_store_config_json or "null") if options.role == "builder" else None,
     })

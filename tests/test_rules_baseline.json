@@ -186,7 +186,7 @@
   "test_import": 2
  },
  "test_environment_bootstrap.py": {
-  "private": 20,
+  "private": 17,
   "test_import": 4
  },
  "test_environment_builder.py": {
@@ -203,20 +203,9 @@
   "private": 1,
   "test_import": 1
  },
- "test_environment_metadata.py": {
-  "private": 5,
-  "private_patch": 1,
-  "test_import": 2
- },
- "test_environment_prefetch.py": {
-  "clock": 12,
-  "private": 14,
-  "sleep": 4,
-  "test_import": 2
- },
  "test_environment_rafs.py": {
   "clock": 3,
-  "private": 6,
+  "private": 5,
   "sleep": 5,
   "test_import": 1
  },
