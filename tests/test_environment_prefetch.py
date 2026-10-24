@@ -657,14 +657,14 @@ class BackendPrefetchTests(PrefetchFixture):
         self.assertIsNone(store.io_metrics())
         self.assertLess(time.monotonic() - started, 1.5)
 
-    def test_heartbeat_schema_is_strict_and_older_workers_report_none(self):
+    def test_heartbeat_schema_is_strict(self):
         exported = self.backend().metrics()
         wire = NodeRuntimeMetrics(collected_at=utc_now(), environment_io=exported).to_dict()
         # Every rejection below is then attributable to its one change.
         self.assertEqual(NodeRuntimeMetrics.from_dict(wire).environment_io, exported)
-        legacy = dict(wire)
-        del legacy["environment_io"]
-        self.assertIsNone(NodeRuntimeMetrics.from_dict(legacy).environment_io)
+        absent = dict(wire)
+        del absent["environment_io"]
+        self.assertIsNone(NodeRuntimeMetrics.from_dict(absent))
         for change in ({"hits": True}, {"hits": -1}, {"misses": 1.5}, {"trace_prefetch_seconds": 1},
                        {"trace_prefetch_seconds": float("inf")}, {"prefetch_enabled": 1}, {"invented": 0}):
             with self.subTest(change=change):

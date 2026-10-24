@@ -116,9 +116,8 @@ class WakeOwnerAdmissionTests(unittest.TestCase):
 
 
 class DurableRelayGatewayTests(unittest.TestCase):
-    def test_fenced_payload_requires_capable_owner_and_stale_park_is_skipped(self):
+    def test_fenced_payload_is_forwarded_and_stale_park_is_skipped(self):
         import json
-        from sandboxes.capabilities import RELAY_WAKE_FENCE_CAPABILITY
         with TemporaryDirectory() as raw:
             server=_gateway_server(self, Path(raw))
             try:
@@ -127,12 +126,7 @@ class DurableRelayGatewayTests(unittest.TestCase):
                 route=_sandbox_route(sandbox_id='agent',node_id='worker',job_id='job',node_url='http://worker',
                                      state='running',spec={'parkable':True,'managed_process':True})
                 handler.routing_store.upsert_sandbox(route)
-                owner=build_heartbeat(node_id='worker',job_id='job',node_url='http://worker',capabilities=('sandbox',))
-                handler.services.fleet.store.upsert_heartbeat(owner)
                 payload={'operation_id':'relay-park:r','request_id':'r','rollout_id':'rollout','generation':route.generation,'durable_lifecycle':True}
-                self.assertIsNone(handler._lifecycle_proxy_body(route,'park',payload))
-                self.assertEqual(handler._write_json.call_args.kwargs['status'],503)
-                handler.services.fleet.store.upsert_heartbeat(replace(owner,capabilities=('sandbox',RELAY_WAKE_FENCE_CAPABILITY)))
                 forwarded=json.loads(handler._lifecycle_proxy_body(route,'park',payload))
                 self.assertEqual(forwarded,{'operation_id':'relay-park:r','generation':route.generation,'relay_request_id':'r'})
                 handler._record_program_request_transition(route,payload,state='ready_to_wake')

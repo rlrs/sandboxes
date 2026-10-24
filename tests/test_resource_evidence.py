@@ -1,4 +1,3 @@
-from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -55,12 +54,12 @@ class ResourceEvidenceTests(unittest.TestCase):
         backing.mkdir()
         self.assertEqual(sample_memory_backing(backing, proc_root=self.proc), MemoryBackingCapacity())
 
-    def test_backing_capacity_wire_retains_unknown_and_old_worker_defaults(self):
+    def test_backing_capacity_wire_retains_unknown_and_requires_the_field(self):
         metrics = NodeRuntimeMetrics(collected_at=utc_now(), memory_backing=MemoryBackingCapacity())
         self.assertEqual(NodeRuntimeMetrics.from_dict(metrics.to_dict()), metrics)
         raw = metrics.to_dict()
         raw.pop('memory_backing')
-        self.assertIsNone(NodeRuntimeMetrics.from_dict(raw).memory_backing)
+        self.assertIsNone(NodeRuntimeMetrics.from_dict(raw))
         for invalid in ({'total_bytes': 1, 'available_bytes': 2, 'identity': 'mount'},
                         {'total_bytes': 10**1000, 'available_bytes': 1, 'identity': 'mount'},
                         {'total_bytes': True, 'available_bytes': 1, 'identity': 'mount'},
@@ -147,9 +146,7 @@ class ResourceEvidenceTests(unittest.TestCase):
         raw = metrics.to_dict()
         raw["resource_evidence"].pop("host_cpu_usage_usec")
         raw["resource_evidence"].pop("host_cpu_steal_usec")
-        older = NodeRuntimeMetrics.from_dict(raw)
-        self.assertIsNotNone(older)
-        self.assertIsNone(older.resource_evidence.host_cpu_usage_usec)
+        self.assertIsNone(NodeRuntimeMetrics.from_dict(raw))
         for bad in (-1, True, 1.5, "100"):
             raw = metrics.to_dict()
             raw["resource_evidence"]["host_cpu_usage_usec"] = bad
@@ -199,7 +196,7 @@ class ResourceEvidenceTests(unittest.TestCase):
         self.assertEqual(device.read_bytes, 108 * 512)
         self.assertEqual(device.write_bytes, 204 * 512)
 
-    def test_device_totals_accept_older_readers_payload_but_not_partial_totals(self):
+    def test_device_totals_are_required(self):
         self.disk()
         (self.proc / "diskstats").write_text("254 0 vda 10 0 100 20 5 0 200 30 0 10 30")
         metrics = NodeRuntimeMetrics(collected_at=utc_now(), resource_evidence=self.sampler.collect())
@@ -208,10 +205,7 @@ class ResourceEvidenceTests(unittest.TestCase):
         device.pop("read_bytes")
         self.assertIsNone(NodeRuntimeMetrics.from_dict(raw))
         device.pop("write_bytes")
-        restored = NodeRuntimeMetrics.from_dict(raw)
-        self.assertIsNotNone(restored)
-        self.assertIsNone(restored.resource_evidence.devices[0].read_bytes)
-        self.assertIsNone(restored.resource_evidence.devices[0].write_bytes)
+        self.assertIsNone(NodeRuntimeMetrics.from_dict(raw))
         for value in (-1, True, 1.5, "123"):
             raw = metrics.to_dict()
             raw["resource_evidence"]["devices"][0]["write_bytes"] = value
@@ -265,17 +259,14 @@ class ResourceEvidenceTests(unittest.TestCase):
         self.assertEqual(result.cgroup_memory_file_bytes, 200)
         self.assertIsNone(result.cgroup_refault_file)
 
-    def test_wire_roundtrip_and_gateway_first_rolling_upgrade(self):
+    def test_wire_roundtrip_rejects_missing_or_invalid_evidence(self):
         metrics = NodeRuntimeMetrics(
             collected_at=utc_now(), resource_evidence=self.sampler.collect()
         )
         self.assertEqual(NodeRuntimeMetrics.from_dict(metrics.to_dict()), metrics)
-        legacy = metrics.to_dict()
-        legacy.pop("resource_evidence")
-        self.assertEqual(
-            NodeRuntimeMetrics.from_dict(legacy),
-            replace(metrics, resource_evidence=None),
-        )
+        missing = metrics.to_dict()
+        missing.pop("resource_evidence")
+        self.assertIsNone(NodeRuntimeMetrics.from_dict(missing))
         for invalid in (-1, True, float("nan"), "0", 10**1000):
             raw = metrics.to_dict()
             raw["resource_evidence"]["cgroup_cpu_usage_usec"] = invalid

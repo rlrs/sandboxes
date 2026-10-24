@@ -49,15 +49,12 @@ from .worker_receipts import (
 
 from .admission import FairCapacity
 from .capabilities import (
-    ARCHIVE_UPLOAD_CAPABILITY,
-    REQUEST_BODY_KEEPALIVE_CAPABILITY,
     STORAGE_NATIVE_CAPABILITY,
     STORAGE_NATIVE_MIGRATION_CAPABILITY,
     SPLIT_CHECKPOINT_CAPABILITY,
     HOST_EROFS_CAPABILITY,
     RUNTIME_COMPATIBILITY_CAPABILITY_PREFIX,
     RUNTIME_CPU_CAPABILITY_PREFIX,
-    RESOURCE_PHASE_CAPABILITY,
 )
 from .build_admission import BUILD_ADMISSION_CAPACITY_LABEL, build_admission_capacity
 from .build_context_store import (
@@ -3893,15 +3890,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 return
             self._write_route_worker_unreachable(route)
             return
-        if sandbox_http_route is not None and sandbox_http_route.action == "archive":
-            owner = self._heartbeat_for_route(job_id=route.job_id, include_inventory=False)
-            if owner is not None and ARCHIVE_UPLOAD_CAPABILITY not in owner.capabilities:
-                # The SDK then uploads the files one by one.
-                self._write_json({"error": "the sandbox's worker predates archive upload",
-                                  "error_code": "archive_upload_unsupported", "retryable": False},
-                                 status=HTTPStatus.NOT_IMPLEMENTED)
-                return
-
         if implicit_wake:
             completed_wake = self._perform_implicit_wake(route)
             if completed_wake is None:
@@ -4091,37 +4079,11 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         action: str,
         payload: dict[str, Any],
     ) -> bytes | None:
-        node_payload: dict[str, Any] = {
-            "operation_id": str(payload["operation_id"]).strip(),
-        }
-        if payload.get("durable_lifecycle"):
-            from .capabilities import RELAY_WAKE_FENCE_CAPABILITY
-            # Only capabilities are read; skip copying the full inventory.
-            owner = self._heartbeat_for_route(
-                job_id=route.job_id, include_inventory=False,
-            )
-            if owner is None or RELAY_WAKE_FENCE_CAPABILITY not in owner.capabilities:
-                self._write_json(
-                    {"error": "worker upgrade required for durable relay lifecycle", "retryable": True},
-                    status=HTTPStatus.SERVICE_UNAVAILABLE,
-                    headers={"X-UCloud-Sandbox-Retryable": "true"},
-                )
-                return None
-            node_payload["relay_request_id"] = payload["request_id"]
-            node_payload["generation"] = route.generation
-            if (action == "park" and payload.get("resource_phase") is not None
-                    and RESOURCE_PHASE_CAPABILITY in owner.capabilities):
-                node_payload["resource_phase"] = payload["resource_phase"]
-        if action == "wake":
-            node_payload["generation"] = route.generation
-        elif "background" in payload:
-            if not isinstance(payload["background"], bool):
-                self._write_json(
-                    {"error": "park background must be a boolean"},
-                    status=HTTPStatus.BAD_REQUEST,
-                )
-                return None
-            node_payload["background"] = payload["background"]
+        try:
+            node_payload = lifecycle_node_payload(route.generation, action, payload)
+        except ValueError as exc:
+            self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return None
         return json.dumps(node_payload, separators=(",", ":")).encode("utf-8")
 
     def _parse_lifecycle_request(
@@ -4781,10 +4743,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         except ExecRouteUnavailable as exc:
             self._write_json(exc.payload, status=exc.status, headers=exc.headers)
             return
-        self._pooled_node_body_origin = (
-            heartbeat.node_url.rstrip("/")
-            if REQUEST_BODY_KEEPALIVE_CAPABILITY in heartbeat.capabilities else None
-        )
+        self._pooled_node_body_origin = heartbeat.node_url.rstrip("/")
         try:
             body = (
                 self._read_raw_body(max_bytes=DEFAULT_MAX_PROXY_BODY_BYTES)
@@ -5111,7 +5070,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 continue
             # Keep gateway-owned metadata (for example quarantine labels),
             # but take this scheduling hint from the same live sample as the
-            # admitted count. A legacy live response must clear a stale hint.
+            # admitted count. A response without it closes admission.
             labels = dict(heartbeat.labels)
             labels.pop(BUILD_ADMISSION_CAPACITY_LABEL, None)
             if BUILD_ADMISSION_CAPACITY_LABEL in current.labels:
@@ -6308,12 +6267,10 @@ def _reserve_builder_candidate(
             # is a hard safety ceiling, not a throughput target. Consolidate
             # a trickle up to two builds, then use idle peers before queuing
             # more output behind the two publication workers. Once every
-            # peer has work, prefer the least loaded. Legacy builders retain
-            # their original packing behavior. Dispatch reservations count
-            # here as well, so a simultaneous burst cannot defeat spreading.
+            # peer has work, prefer the least loaded. Dispatch reservations
+            # count here as well, so a simultaneous burst cannot defeat spreading.
             active = load(heartbeat)
-            pipelined = BUILD_ADMISSION_CAPACITY_LABEL in heartbeat.labels
-            saturated = pipelined and active >= 2
+            saturated = active >= 2
             return (
                 int(saturated),
                 active if saturated else -active,
@@ -6487,6 +6444,23 @@ def _image_build_response_terminal(payload: dict[str, Any]) -> bool:
     if not isinstance(build, dict):
         return "image" in payload
     return str(build.get("status") or "").lower() in {"succeeded", "failed"}
+
+
+def lifecycle_node_payload(generation: int, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """The worker's body for a parsed park or wake request on this route generation."""
+    node_payload: dict[str, Any] = {"operation_id": str(payload["operation_id"]).strip()}
+    if payload.get("durable_lifecycle"):
+        node_payload["relay_request_id"] = payload["request_id"]
+        node_payload["generation"] = generation
+        if action == "park" and payload.get("resource_phase") is not None:
+            node_payload["resource_phase"] = payload["resource_phase"]
+    if action == "wake":
+        node_payload["generation"] = generation
+    elif "background" in payload:
+        if not isinstance(payload["background"], bool):
+            raise ValueError("park background must be a boolean")
+        node_payload["background"] = payload["background"]
+    return node_payload
 
 
 def _lifecycle_proxy_error(response: ProxiedResponse) -> str:

@@ -1,4 +1,4 @@
-"""Backward-compatible builder admission hints carried in heartbeat labels."""
+"""Builder admission hints carried in heartbeat labels."""
 
 from collections.abc import Mapping
 
@@ -7,17 +7,15 @@ BUILD_ADMISSION_CAPACITY_LABEL = "ucloud.image-build-admission-capacity"
 
 
 def build_admission_capacity(labels: Mapping[str, str]) -> int:
-    """Return the current total admission ceiling, or the legacy four slots.
+    """Return the current total admission ceiling.
 
-    A present but malformed hint closes new admission. Zero is a valid
+    A missing or malformed hint closes new admission. Zero is a valid
     temporary closure; existing-build retries do not require another slot.
     This is a scheduling hint, not a reservation: the node must enforce its
     own limit atomically when admitting a new build.
     """
 
-    if BUILD_ADMISSION_CAPACITY_LABEL not in labels:
-        return 4
-    value = labels[BUILD_ADMISSION_CAPACITY_LABEL]
+    value = labels.get(BUILD_ADMISSION_CAPACITY_LABEL)
     # Bound parsing independently of Python's integer-string limit and accept
     # only canonical ASCII decimal, as emitted by str(node_capacity).
     if (

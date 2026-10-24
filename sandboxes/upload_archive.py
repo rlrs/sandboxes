@@ -48,15 +48,8 @@ def sandbox_archive_extract_script() -> str:
     )
 
 
-def archive_helper_unsupported(exit_code: int, stderr: bytes, *, static: bool) -> bool:
-    """Whether a failed extraction means "cannot extract", not a failed write."""
-    if static:
-        # A static helper older than `files extract` (installed in the rootfs
-        # when the sandbox was created) rejects the operation this way.
-        return exit_code == 3 and (
-            b"unsupported file operation" in stderr
-            or b"usage: files read|write absolute-path max-bytes | stat" in stderr
-        )
+def archive_helper_unsupported(exit_code: int, stderr: bytes) -> bool:
+    """Whether a failed shell extraction means "cannot extract", not a failed write."""
     return exit_code == _SHELL_UNAVAILABLE_EXIT and b"tar is unavailable" in stderr
 
 

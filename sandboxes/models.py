@@ -451,33 +451,11 @@ def environment_io_metrics(raw: object) -> dict[str, int | float | bool] | None:
     return dict(raw)
 
 
-# Additive telemetry fields must be accepted consistently on the wire and in
-# canonical persisted heartbeat records during a rolling upgrade.
-NODE_RUNTIME_METRIC_DEFAULTS = {
-    "environment_io": None,
-    "memory_backing": None,
-    "resource_evidence": None,
-    "resident_wait": None,
-    "storage_ublk_max_devices": 0,
-    "memory_working_set_mb": 0,
-    "io_psi_some_avg10": None,
-    "io_psi_full_avg10": None,
-    "storage_publication_active": 0,
-    "storage_publication_waiting": 0,
-    "storage_publication_limit": 0,
-    "storage_publication_queue_wait_ms_total": 0,
-    "storage_publication_queue_wait_ms_max": 0,
-    "storage_publication_duration_ms_total": 0,
-    "storage_publication_duration_ms_max": 0,
-    "storage_snapshot_publications": 0,
-    "storage_snapshot_compactions": 0,
-    "storage_snapshot_uploaded_bytes": 0,
-    "storage_workspace_grant_mb": 0,
-    "storage_memory_idle_claim_mb": 0,
-    "storage_workspace_growths": 0,
-    "storage_workspace_growth_refusals": 0,
-    "cpu_check_ms": 0,
-}
+# A new runtime metric field goes here with its default for one release, so a
+# gateway upgraded before its workers accepts their heartbeats and its own
+# persisted rows (control_state._heartbeat_payload_is_canonical). Empty while
+# every field is older than the previous release.
+NODE_RUNTIME_METRIC_DEFAULTS: dict[str, object] = {}
 
 
 @dataclass(frozen=True)
@@ -558,8 +536,6 @@ class NodeRuntimeMetrics:
         field_names = {item.name for item in fields(cls)}
         if not isinstance(raw, dict):
             return None
-        # A gateway may be upgraded before all workers. Newly introduced
-        # storage signals remain optional at that rolling-upgrade boundary.
         raw = dict(raw)
         for name, default in NODE_RUNTIME_METRIC_DEFAULTS.items():
             raw.setdefault(name, default)

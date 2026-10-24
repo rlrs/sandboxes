@@ -75,7 +75,7 @@ class RuntimeMetricsTests(unittest.TestCase):
             raw = metrics.to_dict()
             self.assertEqual(NodeRuntimeMetrics.from_dict(raw), metrics)
             raw.pop("memory_working_set_mb")
-            self.assertEqual(NodeRuntimeMetrics.from_dict(raw).memory_working_set_mb, 0)
+            self.assertIsNone(NodeRuntimeMetrics.from_dict(raw))
             for invalid in (-1, True, "79000"):
                 raw["memory_working_set_mb"] = invalid
                 self.assertIsNone(NodeRuntimeMetrics.from_dict(raw))
@@ -323,8 +323,7 @@ if __name__ == "__main__":
 
 
 class ResidentWaitMetricsTests(unittest.TestCase):
-    def test_worker_snapshot_roundtrips_and_gateway_accepts_older_workers(self):
-        from dataclasses import replace
+    def test_worker_snapshot_roundtrips_and_absent_demand_is_unknown(self):
         from types import SimpleNamespace
         from sandboxes.background_io import Pressure
         from sandboxes.models import ResidentWaitMetrics
@@ -345,16 +344,16 @@ class ResidentWaitMetricsTests(unittest.TestCase):
         for name in ("admitted_demand_bytes", "pending_demand_bytes",
                      "unknown_transition_memory_costs", "admitted_ram_backing_bytes", "pending_ram_backing_bytes"):
             del wire['resident_wait'][name]
-        # Readers precede workers: old reports mean unknown, never zero demand.
+        # A snapshot without demand counters means unknown, never zero demand.
         self.assertEqual(NodeRuntimeMetrics.from_dict(wire), metrics)
         current = metrics.to_dict()
         current['resident_wait'].update(admitted_demand_bytes=4096,
                                        pending_demand_bytes=2048,
                                        unknown_transition_memory_costs=1)
         self.assertEqual(NodeRuntimeMetrics.from_dict(current).to_dict(), current)
-        legacy = metrics.to_dict()
-        del legacy['resident_wait']
-        self.assertEqual(NodeRuntimeMetrics.from_dict(legacy), replace(metrics, resident_wait=None))
+        missing = metrics.to_dict()
+        del missing['resident_wait']
+        self.assertIsNone(NodeRuntimeMetrics.from_dict(missing))
         for field, value in [('reason', []), ('reason', 'invented'), ('resident_waits', True),
                              ('reclaim_target_bytes', -1), ('checkpoint_inflight', 1.5),
                              ('admitted_demand_bytes', True), ('pending_demand_bytes', -1),

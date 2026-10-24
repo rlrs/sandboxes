@@ -2585,7 +2585,7 @@ class DirectSandboxService:
             sandbox_id, (*command, *plan.empty_directories), expected_generation=expected_generation,
             max_stdout_bytes=64 * 1024, max_stderr_bytes=64 * 1024, fenced=fenced, **stdin,
         )
-        if archive_helper_unsupported(result.exit_code, result.stderr, static=static):
+        if not static and archive_helper_unsupported(result.exit_code, result.stderr):
             raise SandboxArchiveUnsupportedError("this sandbox cannot extract archives; upload files one by one")
         if result.exit_code != 0:
             detail = result.stderr.decode(errors="replace").strip()[-300:]

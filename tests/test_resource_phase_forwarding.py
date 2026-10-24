@@ -5,45 +5,27 @@ from unittest.mock import Mock
 
 from tests import test_control_plane as fixtures
 from tests import test_resident_wait_ranking as ranking_fixtures
-from sandboxes.capabilities import (
-    RELAY_WAKE_FENCE_CAPABILITY,
-    RESOURCE_PHASE_CAPABILITY,
-)
-from sandboxes.control_plane import ControlPlaneHandler
+from sandboxes.control_plane import ControlPlaneHandler, lifecycle_node_payload
 from sandboxes.node_agent import NodeAgentHandler
 from sandboxes.warm_park import WarmParkDeferred
 
 
 class ResourcePhaseForwardingTests(TestCase):
-    def test_gateway_forwards_hint_only_to_capable_owner_on_bound_park(self):
-        handler = object.__new__(ControlPlaneHandler)
-        handler._write_json = Mock()
-        route = fixtures._sandbox_route(
-            sandbox_id="agent", node_id="node", job_id="node", node_url="http://node"
-        )
+    def test_gateway_forwards_hint_only_on_bound_park(self):
         payload = dict(
             operation_id="park:r",
             durable_lifecycle=True,
             request_id="r",
             resource_phase=ranking_fixtures.ResidentWaitRankingTests.hint(),
         )
-        for enabled in (False, True):
-            caps = (
-                (RELAY_WAKE_FENCE_CAPABILITY, RESOURCE_PHASE_CAPABILITY)
-                if enabled
-                else (RELAY_WAKE_FENCE_CAPABILITY,)
-            )
-            handler._heartbeat_for_route = lambda **_: SimpleNamespace(
-                capabilities=caps
-            )
-            result = json.loads(handler._lifecycle_proxy_body(route, "park", payload))
-            self.assertEqual("resource_phase" in result, enabled)
-            self.assertEqual(result["generation"], route.generation)
-            self.assertEqual(result["relay_request_id"], "r")
-        self.assertNotIn(
-            "resource_phase",
-            json.loads(handler._lifecycle_proxy_body(route, "wake", payload)),
-        )
+        result = lifecycle_node_payload(3, "park", payload)
+        self.assertEqual(result, {"operation_id": "park:r", "relay_request_id": "r", "generation": 3,
+                                  "resource_phase": payload["resource_phase"]})
+        self.assertNotIn("resource_phase", lifecycle_node_payload(3, "wake", payload))
+        unbound = {key: value for key, value in payload.items() if key != "durable_lifecycle"}
+        self.assertNotIn("resource_phase", lifecycle_node_payload(3, "park", unbound))
+        with self.assertRaisesRegex(ValueError, "background"):
+            lifecycle_node_payload(3, "park", {**payload, "background": "yes"})
 
     def test_node_validates_advice_before_forwarding_it_under_existing_identity(self):
         handler = object.__new__(NodeAgentHandler)
