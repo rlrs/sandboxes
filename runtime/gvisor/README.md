@@ -107,19 +107,11 @@ Actual UCloud qualification and artifact identity are recorded in
 
 ## Image root filesystems
 
-Workers with `immutable_environments.worker_enabled`, including the Hetzner
-production workers, use the EROFS adapter `EnvironmentRootfsStore`, which reads
-image chunks on demand over NBD; see
-[Images](../../docs/images.md).
-
-Without `immutable_environments`, `DockerOverlay2RootfsStore` is the code
-default. It mounts Docker's immutable overlay2 layers without flattening or
-exporting the image, and pins every referenced image by digest so pruning cannot
-remove layers below a live or parked sandbox. Startup calls `reconcile_images()`
-to recover the mounted image set from durable metadata before admitting work.
-
-The canonical overlay2 production measurement is
-`rootfs-overlay2-production-2026-08-02.json`.
+Sandbox workers use the EROFS adapter `EnvironmentRootfsStore`, which reads
+image chunks on demand; see [Images](../../docs/images.md). Startup calls
+`reconcile_images()` to recover the mounted image set from durable metadata
+before admitting work. Only builders still read Docker's overlay2 layers
+(`DockerOverlay2RootfsStore`).
 
 ## Runtime verification
 

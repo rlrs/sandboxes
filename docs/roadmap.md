@@ -49,7 +49,10 @@ under [Open decisions](#open-decisions).
 
 - **Python off the image data path:** serve toolkits and unconverted EROFS through nydusd, then
   delete `environment_nbd.py`, `environment_cache.py` and the RAFS reader in `environment_rafs.py`.
-- **Docker off sandbox workers** (`DockerOverlay2RootfsStore` in `image_rootfs.py`, `image_eviction.py`).
+- **Docker off sandbox workers:** workers no longer use Docker's image store. Left: release the
+  `sandbox.docker_quota_image_gb` reservation on fresh workers (the image cache root lives on that
+  mount), an explicit FORWARD DROP policy and another `tini` before dockerd can stop, and deleting
+  `DockerOverlay2RootfsStore` (`image_rootfs.py`) once builders stop using it.
 - **No per-create init copy:** mount `/.ucloud-init` read-only (`runtime/noded/src/guest.rs`).
 - **Placement by chunk residency** (`gateway/heartbeats.py`, `placement_choice.py`).
 - **S3 outages** still fail commits and fills until S3 recovers (stalls are bounded since 0.9.67).

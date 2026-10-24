@@ -236,7 +236,7 @@ validation rule. The keys that select behaviour:
 
 | Key | Effect |
 | --- | --- |
-| `immutable_environments.worker_enabled` / `builder_enabled` | Workers run the environment backend; builders convert builds into the chunk store |
+| `immutable_environments.builder_enabled` | Builders convert builds into the chunk store (sandbox workers always run the environment backend; `worker_enabled` is retired, `true` only) |
 | `immutable_environments.dispatch_roots` | Gateway pins the signed root into every create spec |
 | `immutable_environments.chunk_store` | Enables the chunk store (S3 location, index, tokens); `store_node` and `nydusd` inside it |
 | `immutable_environments.sandbox_builds.enabled` | Build eligible recipes in sandboxes; needs `dispatch_roots` and a store node |

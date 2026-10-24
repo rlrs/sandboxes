@@ -10,7 +10,6 @@ import shutil
 from threading import Lock
 from typing import Any
 
-from .image_eviction import ImageCacheEvictor
 from .storage_native_migration import (
     StorageNativeMigrationError,
     MIGRATION_CONNECTION_POLICY_DISCONNECT,
@@ -85,10 +84,6 @@ class DirectSandboxProvisioner:
         self._image_gc_failure_generation = 1
         self._image_gc_reconciled_generation = 0
         image_store = getattr(overlays, "image_store", None)
-        self.image_evictor: ImageCacheEvictor | None = (
-            ImageCacheEvictor(image_store, is_referenced=self.image_referenced)
-            if callable(getattr(image_store, "evict_image", None)) else None
-        )
         # The environment store keeps a deleted sandbox's image mounted and
         # collects idle images under its own node budget; its sweep (also run
         # from inside a mount that found the device pool exhausted) needs the
@@ -632,13 +627,11 @@ class DirectSandboxProvisioner:
         return True
 
     def evict_images_if_needed(self) -> tuple[str, ...]:
-        """Evict least recently used unreferenced images when the node is over budget."""
+        """Collect least recently used idle images when the node is over budget."""
 
         if self.idle_image_store is not None:
             return self.idle_image_store.collect_idle()
-        if self.image_evictor is None:
-            return ()
-        return self.image_evictor.evict_if_needed()
+        return ()
 
     def note_image_used(self, image_id: str | None) -> None:
         """A sandbox of this image was just created (runtime/noded's included)."""
@@ -652,10 +645,6 @@ class DirectSandboxProvisioner:
             # image; the store's sweep collects it when the node is over budget.
             self.idle_image_store.note_used(image_id)
             return
-        if self.image_evictor is not None:
-            # The pulled image stays cached for the next sandbox of this task;
-            # eviction under disk pressure starts from the least recently used.
-            self.image_evictor.note_used(image_id)
         try:
             self.overlays.collect_image(
                 image_id,

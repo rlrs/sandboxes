@@ -117,7 +117,7 @@ class GvisorDistributionTests(unittest.TestCase):
             runsc = self.fixture(root)
 
             def boot_config():
-                return boot_config_sha256(runsc, GVISOR_COMMIT, network="none", host_erofs=True,
+                return boot_config_sha256(runsc, GVISOR_COMMIT, network="none",
                                           reflink_memory_restore=False, ram_backing=False)
 
             before = boot_config()

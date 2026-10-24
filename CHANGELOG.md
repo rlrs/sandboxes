@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Sandbox workers only run immutable environments; their Docker image path
+  is gone.** `immutable_environments.worker_enabled` is retired: a deployment
+  file may still name it, but only as `true` (anything else is refused at
+  load), and the gateway writes it `true`. Production runs every worker with
+  `immutable-environment-host-erofs-v1`, so behaviour does not change there. A
+  deployment without `immutable_environments` can no longer start sandbox
+  workers: the agent refuses to start without the environment registry and
+  backend socket.
+  - Gone: the Docker image store on workers (`build_direct_runtime_service`'s
+    `DockerOverlay2RootfsStore` branch and `docker_binary`, the agent's
+    `--docker-binary`), the LRU Docker image evictor (`image_eviction.py`) and
+    its pull-time and post-delete hooks, and the store's worker-only Docker
+    methods. The gateway imports external images whenever
+    `immutable_environments` is set, and every create waits up to 30 s for its
+    image attach (the 2 s wait and the 32-pull cap for OCI pulls are gone).
+  - Unchanged: `sandbox.max_concurrent_image_pulls` (it bounds environment
+    attaches), `sandbox.docker_quota_image_gb` (its quota mount holds the image
+    cache root), and dockerd on workers (its FORWARD DROP policy and
+    `docker-init` are still needed). Builders still use Docker.
+  - Rollback to 0.10.0: keep `worker_enabled: true` in deployment.json (0.10.0
+    reads a missing key as false and would start workers on Docker images).
+
 - **Workers no longer clean up after releases older than the move to UCloud.**
   Every production worker was first set up on UCloud, and none carries the
   leftovers, so these one-off cleanups are gone: per-sandbox

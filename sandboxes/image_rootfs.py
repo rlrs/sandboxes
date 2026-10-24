@@ -51,30 +51,6 @@ def _mount_present(path: Path, runner: CommandRunner, binary: str) -> bool:
     )
 
 
-def _docker_time_seconds(value: str) -> float:
-    """Parse a Docker UTC time, else 0.
-
-    Accepts ``2026-09-26T18:40:01.123456789Z`` and the older
-    ``2026-09-26 18:40:01.123456789 +0000 UTC``. Docker reports year 1 for an
-    image that was never tagged locally.
-    """
-
-    from datetime import datetime, timezone
-
-    text = value.strip().replace("T", " ", 1)
-    day, _, rest = text.partition(" ")
-    clock = rest.split(" ")[0].rstrip("Z")
-    whole, _, fraction = clock.partition(".")
-    try:
-        stamp = datetime.strptime(f"{day} {whole}", "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return 0.0
-    if stamp.year < 1970:
-        return 0.0
-    seconds = stamp.replace(tzinfo=timezone.utc).timestamp()
-    return seconds + (float("0." + fraction[:6]) if fraction.isdigit() else 0.0)
-
-
 def _canonical_json(payload: object) -> bytes:
     return json.dumps(
         payload,
@@ -680,89 +656,6 @@ class DockerOverlay2RootfsStore:
             if digest in pins:
                 self._unpin_image(image_id)
             return True
-
-    def list_image_ids(self) -> tuple[str, ...]:
-        """Every Docker image in the data root, by content ID."""
-
-        output = self._checked(
-            self.docker_binary, "image", "ls", "--no-trunc", "--quiet",
-        )
-        ids = []
-        for line in output.splitlines():
-            image_id = line.strip()
-            if image_id.startswith("sha256:") and _DIGEST.fullmatch(image_id[7:]):
-                ids.append(image_id)
-        return tuple(dict.fromkeys(ids))
-
-    def image_tag_times(self, image_ids: Iterable[str]) -> dict[str, float]:
-        """When each image was last pulled or tagged (epoch seconds, 0 if unknown)."""
-
-        ids = [item for item in image_ids if item]
-        if not ids:
-            return {}
-        result = self.runner.run(
-            (
-                self.docker_binary, "image", "inspect",
-                "--format={{.Id}} {{.Metadata.LastTagTime}}", *ids,
-            ),
-            timeout=remaining_build_execution_seconds(60),
-        )
-        times: dict[str, float] = {}
-        for line in result.stdout.splitlines():
-            image_id, _, stamp = line.strip().partition(" ")
-            if image_id in ids:
-                times[image_id] = _docker_time_seconds(stamp)
-        return times
-
-    def image_present(self, image_ref: str) -> bool:
-        return self.image_content_id(image_ref) is not None
-
-    def image_content_id(self, image_ref: str) -> str | None:
-        result = self.runner.run(
-            (self.docker_binary, "image", "inspect", "--format={{.Id}}", image_ref),
-            timeout=remaining_build_execution_seconds(60),
-        )
-        image_id = result.stdout.strip()
-        return image_id if result.returncode == 0 and image_id.startswith("sha256:") else None
-
-    def evict_image(
-        self,
-        image_id: str,
-        *,
-        is_referenced: Callable[[str], bool],
-    ) -> bool:
-        """Remove an unreferenced image: its rootfs cache entry, pin and Docker image.
-
-        Skips (returns False) when a create, mount or collection holds the
-        digest lock, or when a registration still references the image. The
-        reference check runs under the exclusive digest lock, like
-        ``collect_image``.
-        """
-
-        if not image_id.startswith("sha256:") or not _DIGEST.fullmatch(image_id[7:]):
-            raise ValueError("rootfs image id is invalid")
-        digest = image_id[7:]
-        descriptor = self._open_digest_lock(digest)
-        try:
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                return False
-            try:
-                if is_referenced(image_id):
-                    return False
-                target = self.images / digest
-                if target.exists():
-                    _require_private_directory(target)
-                    self._discard_overlay2_target(target)
-                # Direct sandboxes never run as Docker containers, so forcing
-                # removes every tag of this content ID without stopping work.
-                self._checked(self.docker_binary, "image", "rm", "--force", image_id)
-                return True
-            finally:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-        finally:
-            os.close(descriptor)
 
     def _pin_image(self, image_id: str) -> None:
         self._checked(
