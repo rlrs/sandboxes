@@ -223,29 +223,20 @@ class ImageRecipeStore:
         os.close(os.open(self.path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600))
         db = sqlite3.connect(self.path, timeout=30)
         try:
+            # oci: present | released (chunk store only) | kept (an EROFS build).
+            # kind: build (a recipe) | prepared (already in the chunk store).
+            # base: a recipe's prepared base, {kind, reference}, as registration matched it.
             db.executescript("""
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS recipes (
                     name TEXT PRIMARY KEY, image_id TEXT NOT NULL, retention TEXT NOT NULL,
-                    registered REAL NOT NULL);
+                    registered REAL NOT NULL, environment TEXT, source TEXT NOT NULL DEFAULT '{}');
                 CREATE TABLE IF NOT EXISTS recipe_images (
                     image_id TEXT PRIMARY KEY, recipe_sha256 TEXT NOT NULL, recipe TEXT NOT NULL,
                     state TEXT NOT NULL DEFAULT 'absent', build_id TEXT, error TEXT,
-                    attempts INTEGER NOT NULL DEFAULT 0, changed REAL NOT NULL);
+                    attempts INTEGER NOT NULL DEFAULT 0, changed REAL NOT NULL,
+                    oci TEXT NOT NULL DEFAULT 'present', kind TEXT NOT NULL DEFAULT 'build', base TEXT);
                 CREATE INDEX IF NOT EXISTS recipes_by_image ON recipes (image_id);
-            """)
-            columns = {row[1] for row in db.execute("PRAGMA table_info(recipe_images)")}
-            if "oci" not in columns:  # present | released (chunk store only) | kept (an EROFS build)
-                db.execute("ALTER TABLE recipe_images ADD COLUMN oci TEXT NOT NULL DEFAULT 'present'")
-            if "kind" not in columns:  # build (a recipe) | prepared (already in the chunk store)
-                db.execute("ALTER TABLE recipe_images ADD COLUMN kind TEXT NOT NULL DEFAULT 'build'")
-            if "base" not in columns:  # A recipe's prepared base, {kind, reference}, as registration matched it.
-                db.execute("ALTER TABLE recipe_images ADD COLUMN base TEXT")
-            columns = {row[1] for row in db.execute("PRAGMA table_info(recipes)")}
-            if "environment" not in columns:
-                db.execute("ALTER TABLE recipes ADD COLUMN environment TEXT")
-                db.execute("ALTER TABLE recipes ADD COLUMN source TEXT NOT NULL DEFAULT '{}'")
-            db.executescript("""
                 CREATE TABLE IF NOT EXISTS name_tasks (
                     environment TEXT NOT NULL, task_id TEXT NOT NULL, name TEXT NOT NULL,
                     PRIMARY KEY (environment, task_id));

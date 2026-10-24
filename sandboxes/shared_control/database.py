@@ -62,15 +62,6 @@ class PostgresDatabase:
     schema_file = "relay_schema.sql"
     schema_version = 1
     schema_prefix = "ucloud_shared"
-    # Idempotent, compatible statements applied by migrate() to an existing
-    # schema without changing its version. Relay maintenance runs every
-    # second; these keep its compaction and caller scans off full table scans.
-    additive_ddl: tuple[str, ...] = (
-        "CREATE INDEX IF NOT EXISTS relay_compaction ON relay_requests(deployment_id, request_id) WHERE state='completed' AND reserved_bytes>completed_bytes+65536",
-        "CREATE INDEX IF NOT EXISTS relay_outstanding_callers ON relay_requests(deployment_id, sandbox_id, sandbox_generation) WHERE state!='completed' OR delivery_pending",
-        # Node-local model waits: the node pauses and thaws; the relay wakes only unacknowledged answers.
-        "ALTER TABLE relay_requests ADD COLUMN IF NOT EXISTS local_wait boolean NOT NULL DEFAULT false",
-    )
 
     def __init__(
         self, dsn: str, deployment_id: str, *, schema: str = "ucloud_shared",
@@ -156,8 +147,6 @@ class PostgresDatabase:
             )).fetchone()
             if row["name"] is None:
                 await conn.execute(files(__package__).joinpath(self.schema_file).read_text())
-            for statement in self.additive_ddl:
-                await conn.execute(statement)
             await self._check_version(conn)
 
     @asynccontextmanager

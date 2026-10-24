@@ -122,32 +122,6 @@ def _transactional(method, isolation=None):
 
 _AUTHORITY_RECHECK_SECONDS = 1.0
 
-SANDBOX_GROUP_DDL = (
-    """CREATE TABLE IF NOT EXISTS sandbox_groups (
-        group_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL, spec_json TEXT NOT NULL,
-        member_count INTEGER NOT NULL CHECK (member_count > 0),
-        state TEXT NOT NULL CHECK (state IN ('active', 'deleted')),
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL)""",
-    """CREATE TABLE IF NOT EXISTS sandbox_group_members (
-        sandbox_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, generation INTEGER NOT NULL)""",
-    "CREATE INDEX IF NOT EXISTS sandbox_group_members_group ON sandbox_group_members(group_id)",
-)
-
-# Statements added after version 1 that old code ignores, so old and new code
-# share the schema version; ``migrate`` applies them idempotently.
-ROUTING_ADDITIVE_DDL = (
-    # Gateways up to 0.10.0 delete a sandbox's exec_sessions rows on detach,
-    # migration, owner loss and delete. Later gateways never touch the table;
-    # drop both together once no 0.10.0 process can share the schema.
-    "CREATE INDEX IF NOT EXISTS exec_sessions_sandbox ON exec_sessions(sandbox_id)",
-    # C3.2 group creates: their tables, and their durable command kind (old
-    # placement workers claim only create and wake commands).
-    *SANDBOX_GROUP_DDL,
-    "ALTER TABLE gateway_commands DROP CONSTRAINT IF EXISTS gateway_commands_kind_check",
-    "ALTER TABLE gateway_commands ADD CONSTRAINT gateway_commands_kind_check"
-    " CHECK(kind IN ('create','wake','group')) NOT VALID",
-)
-
 
 class PostgresRoutingStore(RoutingStore):
     def __init__(
@@ -566,10 +540,7 @@ class PostgresRoutingStore(RoutingStore):
             return super().confirm_creates(routes, **kwargs)
 
     def migrate(self):
-        """Explicit offline initialization; constructing the store never runs DDL.
-
-        Also applies ROUTING_ADDITIVE_DDL to an existing version-1 schema.
-        """
+        """Explicit offline initialization; constructing the store never runs DDL."""
         with self.pool.connection() as conn, conn.transaction():
             conn.execute(
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (self.schema,)
@@ -588,8 +559,6 @@ class PostgresRoutingStore(RoutingStore):
                 conn.execute(
                     files(__package__).joinpath("routing_schema.sql").read_text()
                 )
-            for statement in ROUTING_ADDITIVE_DDL:
-                conn.execute(statement)
         self.check_schema()
 
     def check_schema(self):
