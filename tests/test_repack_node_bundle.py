@@ -247,7 +247,7 @@ class RepackNodeBundleTests(unittest.TestCase):
             manifest_path = complete / "package-bundle.json"
             manifest_path.write_text(json.dumps(full_manifest))
             script = render_vm_init_script(VmInitTests._options(
-                direct_runsc_commit=GVISOR_COMMIT, direct_split_memory_backing=True,
+                direct_runsc_commit=GVISOR_COMMIT,
             ))
             start = script.index("import hashlib\nimport json\nimport os")
             validator = script[start:script.index('\nPY\n)"', start)]

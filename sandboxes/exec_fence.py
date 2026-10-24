@@ -1,7 +1,7 @@
 """The exec fence the agent shares with runtime/noded through the kernel (phase 2a).
 
-docs/architecture.md. With ``--rust-execs`` noded runs execs
-on running, unpaused sandboxes without asking the agent, so the agent's
+docs/architecture.md. noded runs execs on running, unpaused
+sandboxes without asking the agent, so the agent's
 in-process lifecycle coordinator cannot see them. Two flock files per sandbox
 id (the coordinator is keyed by id, not generation), in the Warden's lock
 directory, carry the fence across processes:
@@ -12,9 +12,8 @@ directory, carry the fence across processes:
 - ``.<id>.activity`` (A): noded holds it shared for a whole exec session, from
   before its running check until the session is reaped. Park and pause need it
   exclusively and fail fast; delete and wake never take it, so they tolerate
-  running execs exactly as the in-process ``allow_shared`` does. With
-  ``--rust-pause-tier`` the agent's own ops hold it shared too, against
-  noded's pauses (``hold_activity``).
+  running execs exactly as the in-process ``allow_shared`` does. The agent's
+  own ops hold it shared too, against noded's pauses (``hold_activity``).
 
 Lock order is T, then A, everywhere. A's mtime is the activity clock: noded
 touches it when an exec starts and completes, and the agent's own activity
@@ -45,6 +44,7 @@ _FLAGS = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
 class ExecFence:
     def __init__(self, directory: Path) -> None:
         self.directory = directory
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         # Ids this process holds T for; only a holder may discard the files.
         self._held: set[str] = set()
         self._held_guard = Lock()
@@ -89,7 +89,7 @@ class ExecFence:
             os.close(transition)
 
     def hold_activity(self, sandbox_id: str, *, timeout_seconds: float) -> int:
-        """A shared for one of the agent's own ops (--rust-pause-tier): its descriptor.
+        """A shared for one of the agent's own ops: its descriptor.
 
         T shared first, then A shared, then T goes, as noded's exec start does;
         noded's pauses take A exclusively and non-blocking, so none lands on

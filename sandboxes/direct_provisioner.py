@@ -149,7 +149,7 @@ class DirectSandboxProvisioner:
                     )
                 results.append(item)
             else:
-                # RACE (phase 1, --rust-creates): runtime/noded may be running
+                # RACE (phase 1): runtime/noded may be running
                 # this create right now. An agent restarted mid-burst advances
                 # it here concurrently with the daemon; the registry's revision
                 # fences make one of them fail, but the loser's side effects
@@ -169,9 +169,6 @@ class DirectSandboxProvisioner:
                 first_id,
                 first_error,
             )
-        if self.network_manager is not None:
-            # After recovery, so refill never competes with it.
-            self.network_manager.start_pool()
         return tuple(results)
 
     def create(
@@ -202,7 +199,7 @@ class DirectSandboxProvisioner:
 
     def image_referenced(self, image_id: str) -> bool:
         # Image GC must see a registration runtime/noded committed just now.
-        return self.registry.references_image(image_id, fresh=not self.registry.is_owner)
+        return self.registry.references_image(image_id, fresh=True)
 
     def create_layout(self, spec: SandboxSpec) -> tuple[bool, DiskClaim | None]:
         """Whether a new sandbox takes the split layout, and its initial claim."""

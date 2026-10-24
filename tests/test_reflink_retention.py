@@ -368,13 +368,14 @@ class ReflinkRetentionTests(unittest.TestCase):
         self.warden.memory_backing.delete(self.sandbox.memory, sandbox_id=self.spec.id, sandbox_generation=1)
         self.assertGreater(self.registry.reflink_overlap_bytes(), 0)
         with (patch('sandboxes.direct_runtime.installed_sidecar_fingerprints', return_value={}),
+              patch('sandboxes.direct_runtime.require_capture_barrier_runtime'),
               patch('sandboxes.direct_runtime._cpu_features_sha256', return_value='a'*64),
               patch('sandboxes.direct_runtime.StorageNativeNodeClient.wait_ready', return_value={'metrics': {}}),
               patch('sandboxes.direct_runtime.DirectRunscWarden') as constructor):
             with self.assertRaisesRegex(ValueError, 'overlap capacity drains'):
                 build_direct_runtime_service(state_root=self.root, volume_mount_root=self.config.memory_root,
                     runsc=self.config.runsc, runsc_commit='a'*40, init_binary=self.root/'init',
-                    storage_native_socket=self.root/'storage.sock')
+                    storage_native_socket=self.root/'storage.sock', memory_backing_hard_capacity_bytes=1 << 30)
             constructor.assert_not_called()
 
     def test_same_parked_incarnation_reimport_gets_fresh_retention_project(self):

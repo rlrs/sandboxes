@@ -1,4 +1,4 @@
-//! `warm_park.decide_resident_wait` and its inputs (`background_io.Pressure`,
+//! The agent's former `warm_park.decide_resident_wait` and its inputs (`background_io.Pressure`,
 //! `transition_admission.MemoryDemand`, `resource_evidence.MemoryBackingCapacity`),
 //! and `pause_tier.swap_room_bytes`. Pure; the float arithmetic is Python's.
 
@@ -97,7 +97,7 @@ pub const REASONS: [&str; 7] = [
     "memory_backing_unavailable",
 ];
 
-/// `warm_park.ResidentWaitDecision`.
+/// The agent's former `warm_park.ResidentWaitDecision`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Decision {
     pub memory_reclaim: bool,

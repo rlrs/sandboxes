@@ -252,9 +252,8 @@ def admission_config(service: Any, *, rust_admission_enabled: bool) -> dict[str,
     }
 
 
-def create_config(service: Any, *, node_epoch: str, rust_creates_enabled: bool,
-                  rust_execs_enabled: bool = False, exec_sessions: Any = None,
-                  rust_pause_enabled: bool = False, rust_admission_enabled: bool = False) -> dict[str, Any]:
+def create_config(service: Any, *, node_epoch: str, exec_sessions: Any = None,
+                  rust_admission_enabled: bool = False) -> dict[str, Any]:
     """The agent's effective create configuration, read from the assembled node.
 
     Python stays the single source of truth for flags and assembly checks;
@@ -299,7 +298,7 @@ def create_config(service: Any, *, node_epoch: str, rust_creates_enabled: bool,
         "journal_root": str(config.journal_root),
         "network": config.network,
         "network_mtu": NETWORK_MTU,
-        # The daemon's pre-created pair pool (it owns the pool under --rust-creates).
+        # The daemon's pre-created pair pool (only the daemon has one).
         "network_pool_size": NETWORK_POOL_SIZE,
         "direct_network_allow_tcp": [{"ip": item.address, "port": item.port}
                                      for item in allowed if not item.is_dynamic],
@@ -319,7 +318,6 @@ def create_config(service: Any, *, node_epoch: str, rust_creates_enabled: bool,
         "environment": environment,
         "runtime_compatibility_sha256": provisioner.runtime_compatibility_sha256,
         "node_epoch": node_epoch,
-        "rust_creates_enabled": bool(rust_creates_enabled),
         "exec": {
             "runsc": str(config.runsc),
             "runtime_root": str(config.runtime_root),
@@ -337,8 +335,7 @@ def create_config(service: Any, *, node_epoch: str, rust_creates_enabled: bool,
                 "output_idle_timeout_seconds": exec_sessions.output_idle_timeout_seconds,
             },
             "admission_wait_seconds": service.admission_wait_seconds,
-            "rust_execs_enabled": bool(rust_execs_enabled),
         },
-        "pause": pause_config(service, rust_pause_enabled=rust_pause_enabled),
+        "pause": pause_config(service),
         "admission": admission_config(service, rust_admission_enabled=rust_admission_enabled),
     }

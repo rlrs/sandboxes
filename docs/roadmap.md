@@ -16,6 +16,9 @@ under [Open decisions](#open-decisions).
   registry commit set node-side create p95 (`runtime/noded/src/`: `create.rs`, `storage.rs`, `registry/`).
 - **CPU QoS for background work** (`cpu.idle`/`cpu.weight` for prefetch, publication, offload, cache fill).
 - **IPv6 off on the agent's relay-egress veths** (`direct_network.py`).
+- **Drop the retired noded flag keys** (`direct_node_front_door`, `direct_node_rust_create/exec/pause`,
+  `direct_pause_tier`, `direct_local_model_waits`, `direct_split_memory_backing`) from
+  deployment files and their true-only check in `config.py`, once no rollback to 0.10.0 is possible.
 
 ## Admission
 
@@ -72,9 +75,6 @@ under [Open decisions](#open-decisions).
 ## Open decisions
 
 - **Turn on `sandbox.direct_node_rust_admission`** once the two gates pass.
-- **Default the noded flags on** (`direct_node_front_door`, `direct_node_rust_create/exec/pause`,
-  `direct_pause_tier`, `direct_local_model_waits`; production already runs them) and delete
-  the Python create, exec and pause paths.
 - **Retire relay-driven park and wake** once every trainer sets `guest_relay_url`.
 - **Registry disk guard on a shared drive:** replace `statvfs` percentages with a byte bound, or turn it off.
 - **One memory mode:** pick one of split, RAM or reflink-restore backing and delete the rest.

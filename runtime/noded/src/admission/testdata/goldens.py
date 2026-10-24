@@ -431,7 +431,7 @@ def growth_forecast_trace(rng, steps):
 
 def managed_growth_cases():
     """tests/test_managed_growth.py:319-427, at the forecast level: the
-    intent each service call commits, then what warm_park_demand bills."""
+    intent each service call commits, then what reclaim demand bills."""
     clock = Clock()
     cases = []
     with fake_time(clock):

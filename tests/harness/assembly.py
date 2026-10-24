@@ -111,8 +111,7 @@ class NodeAgentConfig:
     heartbeat_token: str
     # Scenarios send heartbeats explicitly; the periodic one never fires in a test.
     heartbeat_interval_seconds: float = 3600.0
-    # Node admission in a real noded (LocalFleet(rust_admission=True)): noded
-    # owns the registry and this agent is a foreign writer, as in production.
+    # Node admission in a real noded (LocalFleet(rust_admission=True)).
     rust_admission: bool = False
     # Environment images (LocalFleet(environments=True)): the registry, its
     # environments repository and trusted keys (key id -> raw key, hex), and
@@ -198,8 +197,8 @@ def assemble_node_agent(config: NodeAgentConfig, *, rootfs_store, fencer, sample
         fencer=fencer,
     )
     provisioner = DirectSandboxProvisioner(
-        registry=DirectSandboxRegistry(state_root / "direct-registry.sqlite", owner=not config.rust_admission,
-                                       cached_reads=config.rust_admission),
+        # A foreign writer, as under noded; without noded nothing owns the file.
+        registry=DirectSandboxRegistry(state_root / "direct-registry.sqlite", cached_reads=True),
         overlays=overlays,
         # The fake runtime never runs either init; the managed one only has to be
         # a trusted binary for managed_process sandboxes to be created.

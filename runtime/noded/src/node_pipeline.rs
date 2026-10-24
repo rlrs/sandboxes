@@ -116,9 +116,9 @@ async fn blocking<T: Send + 'static>(
 pub struct NodePipeline {
     /// One materialization in flight per (image, root).
     materializing: std::sync::Mutex<std::collections::HashMap<(String, Option<String>), Arc<tokio::sync::Mutex<()>>>>,
-    pause: Option<Arc<PauseTier>>,
+    pause: Arc<PauseTier>,
     /// The pause policy and local waits, while the daemon owns the pause tier.
-    pause_runtime: Option<crate::pause_runtime::PauseRuntime>,
+    pause_runtime: crate::pause_runtime::PauseRuntime,
     /// The node's own admission (`--rust-admission`, step 3c.2).
     admission: Option<Arc<AdmissionService>>,
     config: CreateConfig,
@@ -135,7 +135,7 @@ pub struct NodePipeline {
 
 impl NodePipeline {
     /// Open everything the node's configuration names. The daemon becomes the
-    /// registry owner here; the agent runs with `--registry-foreign`.
+    /// registry owner here; the agent writes as a foreign process.
     pub fn open(config: CreateConfig, agent: Arc<AgentClient>) -> Result<NodePipeline, String> {
         let environment = config.environment.clone().ok_or("no environment image store")?;
         let hard_capacity_mb = if config.split_memory_backing {
@@ -217,11 +217,9 @@ impl NodePipeline {
             command_timeout: Duration::from_secs(60),
             stop_timeout: Duration::from_secs(30),
         };
-        // Phase 3a: the daemon owns the pause tier only when the agent says so.
-        let pause = config.pause.rust_pause_enabled.then(|| {
-            let modes = memory.clone().map(|memory| memory as Arc<dyn crate::pause::ModeSource>);
-            Arc::new(PauseTier::new(PauseConfig::new(warden_config.clone(), true), modes))
-        });
+        // Phase 3a: the daemon owns the pause tier.
+        let modes = memory.clone().map(|memory| memory as Arc<dyn crate::pause::ModeSource>);
+        let pause = Arc::new(PauseTier::new(PauseConfig::new(warden_config.clone()), modes));
         let warden = Warden::new(warden_config);
         let registry = Arc::new(registry);
         // Step 3c.2: with --rust-admission and the agent's say-so, the node's
@@ -251,25 +249,21 @@ impl NodePipeline {
                 Some((AdmissionService::open(service_config, drain.admission_open, sources)?, observations))
             }
         };
-        let pause_runtime = pause.as_ref().map(|tier| {
-            let settings = config.pause.settings.clone();
-            // Phase 3b: with --rust-admission and the agent's say-so (the
-            // `admission` block), sample managed sandboxes and publish them.
-            let resident_sampling = config.admission.rust_admission_enabled;
-            crate::pause_runtime::PauseRuntime::start(crate::pause_runtime::PauseInputs {
-                resident_sampling,
-                admission: admission.as_ref().map(|(service, _)| service.clone()),
-                agent: agent.clone(),
-                tier: tier.clone(),
-                registry: registry.clone(),
-                state_root: config.state_root.clone(),
-                warden_locks_dir: config.runtime_root.join("warden-locks"),
-                cgroup_root: tier.config().cgroup_root.clone(),
-                settings,
-            })
+        // Phase 3b: with --rust-admission and the agent's say-so (the
+        // `admission` block), sample managed sandboxes and publish them.
+        let pause_runtime = crate::pause_runtime::PauseRuntime::start(crate::pause_runtime::PauseInputs {
+            resident_sampling: config.admission.rust_admission_enabled,
+            admission: admission.as_ref().map(|(service, _)| service.clone()),
+            agent: agent.clone(),
+            tier: pause.clone(),
+            registry: registry.clone(),
+            state_root: config.state_root.clone(),
+            warden_locks_dir: config.runtime_root.join("warden-locks"),
+            cgroup_root: pause.config().cgroup_root.clone(),
+            settings: config.pause.clone(),
         });
         let admission = admission.map(|(service, observations)| {
-            if let Some(sampler) = pause_runtime.as_ref().and_then(|runtime| runtime.sampler()) {
+            if let Some(sampler) = pause_runtime.sampler() {
                 observations.set_sampler(sampler);
             }
             service.start_recovery(Some(Arc::new(AgentSocketProbe(agent.socket().to_path_buf()))));
@@ -277,8 +271,7 @@ impl NodePipeline {
         });
         // Last, once nothing can fail: a failed open is retried, and a pool
         // left running would hold the ownership flock against the next one.
-        // Under --rust-creates the daemon owns the pool; the agent leaves
-        // state["pool"] alone.
+        // The daemon owns the pool; the agent leaves state["pool"] alone.
         if let Some(network) = &network {
             network.start_pool();
         }
@@ -314,17 +307,15 @@ impl NodePipeline {
 
     /// Stop the daemon's loops (the pause tier, the network pool) before the process exits.
     pub async fn shutdown(&self) {
-        if let Some(runtime) = &self.pause_runtime {
-            runtime.stop().await;
-        }
+        self.pause_runtime.stop().await;
         if let Some(network) = self.network.clone() {
             let _ = tokio::task::spawn_blocking(move || network.stop_pool()).await;
         }
     }
 
-    /// The pause tier, when the daemon owns it (phase 3a).
-    pub fn pause_tier(&self) -> Option<&Arc<PauseTier>> {
-        self.pause.as_ref()
+    /// The node's pause tier (phase 3a).
+    pub fn pause_tier(&self) -> &Arc<PauseTier> {
+        &self.pause
     }
 
     /// The node's own admission, when it runs one (step 3c.2).

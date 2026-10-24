@@ -8,8 +8,8 @@
 //!
 //! One process owns the pool (the `network-slots.json.lock.pool` flock), and
 //! hands out only slots it configured while owning it; any other process
-//! treats pooled slots as used. Under `--rust-creates` that is this daemon:
-//! the agent leaves `state["pool"]` alone. On taking ownership, every durable
+//! treats pooled slots as used. That is this daemon: the agent leaves
+//! `state["pool"]` alone. On taking ownership, every durable
 //! pool slot, whoever configured it, is rechecked before it is handed out,
 //! and stray `ucloud-pool-<slot>` names of unowned slots join the pool to be
 //! rechecked or trimmed.
@@ -186,7 +186,7 @@ impl NetworkManager {
             });
             match attempt.and_then(|()| FileLock::try_acquire(&owner, false)) {
                 Ok(Some(lock)) => break lock,
-                // An agent from before --rust-creates handed the pool over
+                // An agent from before noded created handed the pool over
                 // may still be trimming its own; take over once it is done.
                 Ok(None) if !waiting => {
                     eprintln!("ucloud-noded: another process owns the direct network pool; waiting for it");

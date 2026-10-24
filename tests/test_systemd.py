@@ -200,66 +200,20 @@ class SystemdHelperTests(unittest.TestCase):
         )
         self.assertEqual(calls[3][0][0], "systemctl")
 
-    def test_gateway_reconcile_uses_snapshot_backend_as_single_timer_policy(
-        self,
-    ) -> None:
-        def commands_for(config: DeploymentConfig) -> tuple[list[list[str]], list[str]]:
-            commands: list[list[str]] = []
-            health: list[str] = []
+    def test_gateway_reconcile_disables_the_s3_snapshot_gc_timer(self) -> None:
+        # Sandbox workers publish split checkpoints to the registry only.
+        commands: list[list[str]] = []
+        health: list[str] = []
 
-            def runner(
-                command: list[str],
-                *,
-                check: bool,
-                text: bool,
-            ) -> subprocess.CompletedProcess[str]:
-                self.assertTrue(text)
-                commands.append(command)
-                return subprocess.CompletedProcess(command, 0, "", "")
+        def runner(command: list[str], *, check: bool, text: bool) -> subprocess.CompletedProcess[str]:
+            self.assertTrue(text)
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
 
-            reconcile_gateway_services(
-                config=config,
-                runner=runner,
-                wait_for=lambda name, _url: health.append(name),
-            )
-            return commands, health
-
-        registry_commands, registry_health = commands_for(
-            DeploymentConfig.default("project")
-        )
-        raw = DeploymentConfig.default("project").to_dict()
-        raw["snapshot_store"] = {
-            "kind": "s3",
-            "endpoint": "https://hel1.your-objectstorage.com",
-            "bucket": "snapshots",
-            "region": "hel1",
-            "prefix": "prod",
-            "access_key_id_env": "SNAPSHOT_ACCESS_KEY",
-            "secret_access_key_env": "SNAPSHOT_SECRET_KEY",
-            "security_token_env": "SNAPSHOT_SECURITY_TOKEN",
-        }
-        s3_commands, s3_health = commands_for(DeploymentConfig.from_dict(raw))
-
-        self.assertIn(
-            [
-                "systemctl",
-                "disable",
-                "--now",
-                "ucloud-sandbox-snapshot-gc.timer",
-            ],
-            registry_commands,
-        )
-        self.assertIn(
-            [
-                "systemctl",
-                "enable",
-                "--now",
-                "ucloud-sandbox-snapshot-gc.timer",
-            ],
-            s3_commands,
-        )
-        self.assertEqual(registry_health, ["registry", "gateway", "relay"])
-        self.assertEqual(s3_health, registry_health)
+        reconcile_gateway_services(config=DeploymentConfig.default("project"), runner=runner,
+                                   wait_for=lambda name, _url: health.append(name))
+        self.assertIn(["systemctl", "disable", "--now", "ucloud-sandbox-snapshot-gc.timer"], commands)
+        self.assertEqual(health, ["registry", "gateway", "relay"])
 
 
 if __name__ == "__main__":

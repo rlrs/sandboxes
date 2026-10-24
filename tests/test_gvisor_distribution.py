@@ -108,34 +108,17 @@ class GvisorDistributionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "legacy"):
                 installed_sidecar_fingerprints(runsc, "9" * 40)
 
-    def test_service_fences_same_runsc_with_changed_companion(self):
-        from unittest.mock import patch
-        from sandboxes.direct_runtime import build_direct_runtime_service
+    def test_node_fences_same_runsc_with_changed_companion(self):
+        from sandboxes.direct_runtime import boot_config_sha256
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runsc = self.fixture(root)
-            with (
-                patch(
-                    "sandboxes.direct_runtime._cpu_features_sha256",
-                    return_value="a" * 64,
-                ),
-                patch("sandboxes.direct_runtime.StorageNativeNodeClient"),
-            ):
 
-                def assemble(name):
-                    service = build_direct_runtime_service(
-                        state_root=root / name,
-                        volume_mount_root=root / (name + "-volumes"),
-                        runsc=runsc,
-                        runsc_commit=GVISOR_COMMIT,
-                        init_binary=root / "init",
-                        storage_native_socket=root / "storage.sock",
-                    )
-                    return service.warden.config.runtime_fingerprint
+            def boot_config():
+                return boot_config_sha256(runsc, GVISOR_COMMIT, network="none", host_erofs=True,
+                                          reflink_memory_restore=False, ram_backing=False)
 
-                before = assemble("before")
-                (root / "gvisor-bin/gvisor_sentry").write_bytes(b"changed kernel")
-                after = assemble("after")
-                self.assertEqual(before.runsc_sha256, after.runsc_sha256)
-                self.assertNotEqual(before.boot_config_sha256, after.boot_config_sha256)
+            before = boot_config()
+            (root / "gvisor-bin/gvisor_sentry").write_bytes(b"changed kernel")
+            self.assertNotEqual(boot_config(), before)

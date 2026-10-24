@@ -80,8 +80,6 @@ impl ModeSource for MemoryBackingStore {
 pub struct PauseConfig {
     /// The node's Warden configuration (runsc, roots, proc root, timeout).
     pub warden: WardenConfig,
-    /// `sandbox.direct_pause_tier`; `pause` refuses without it.
-    pub enabled: bool,
     pub cgroup_root: PathBuf,
     /// `/sys/module/zswap/parameters/enabled`.
     pub zswap_enabled: PathBuf,
@@ -90,10 +88,9 @@ pub struct PauseConfig {
 }
 
 impl PauseConfig {
-    pub fn new(warden: WardenConfig, enabled: bool) -> Self {
+    pub fn new(warden: WardenConfig) -> Self {
         PauseConfig {
             warden,
-            enabled,
             cgroup_root: PathBuf::from("/sys/fs/cgroup"),
             zswap_enabled: PathBuf::from("/sys/module/zswap/parameters/enabled"),
             prefetch_seconds: PREFETCH_SECONDS,
@@ -227,9 +224,6 @@ impl PauseTier {
     /// journal is not RUNNING (nothing changed). The caller holds T and A
     /// exclusively (spec §6.2 item 1).
     pub async fn pause(&self, sandbox: &Sandbox) -> Result<bool, WardenError> {
-        if !self.inner.config.enabled {
-            return Err(fail("the pause tier is disabled on this node"));
-        }
         let lock = self.lock(sandbox).await?;
         match self.journal_record(sandbox).await? {
             Some(record) if is_running(&record) => {

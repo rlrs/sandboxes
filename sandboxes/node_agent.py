@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from .warm_park import WarmParkDeferred
-
 import base64
 import logging
 import sqlite3
@@ -116,6 +114,7 @@ from .sandbox import (
     SandboxSnapshotPublicationPendingError,
     SandboxSpec,
     SandboxStartupBusyError,
+    WarmParkDeferred,
     sandbox_spec_fingerprint,
 )
 from .sandbox_exec import ExecSessionCapacityError, ExecSessionManager, SandboxExecSpec
@@ -225,7 +224,7 @@ class NodeAgentHandler(BuildContextHttpHandler):
     rootfs_metrics_provider: Callable[[], dict[str, int]] | None = None
     node_control_bearer_token: str
     # runtime/noded's internal routes (Unix socket only): the create
-    # configuration, and with --rust-creates the create handoff.
+    # configuration and the create handoff (direct agents only).
     internal_routes_enabled = False
     create_handoff: CreateHandoff | None = None
     # --rust-admission: the handshake with noded's internal socket.
@@ -422,14 +421,13 @@ class NodeAgentHandler(BuildContextHttpHandler):
         if parsed.path == "/v1/drain":
             self._configure_drain()
             return
-        if parsed.path in ("/internal/v1/pauses/escalate", "/internal/v1/growth/events") and (
-                self.internal_routes_enabled and getattr(self.manager, "rust_pause_tier", False)):
+        if parsed.path in ("/internal/v1/pauses/escalate", "/internal/v1/growth/events") and self.internal_routes_enabled:
             self._internal_pause_route(parsed.path)
             return
         if parsed.path in MANAGED_GROWTH_CALLS and self.internal_routes_enabled:
             self._internal_managed_route(parsed.path)
             return
-        if parsed.path.startswith("/internal/v1/") and self.create_handoff is not None:
+        if parsed.path.startswith("/internal/v1/") and self.internal_routes_enabled and self.create_handoff is not None:
             self._internal_create_route(parsed.path)
             return
         if not self.sandboxes_enabled and parsed.path not in {
@@ -665,10 +663,7 @@ class NodeAgentHandler(BuildContextHttpHandler):
         cached = type(self).__dict__.get("_create_config_cache")
         if cached is None:
             config = create_config(self.manager.service, node_epoch=self.node_epoch,
-                                   rust_creates_enabled=self.create_handoff is not None,
-                                   rust_execs_enabled=getattr(self.manager, "exec_fence", None) is not None,
                                    exec_sessions=self.exec_manager,
-                                   rust_pause_enabled=getattr(self.manager, "rust_pause_tier", False),
                                    rust_admission_enabled=self.noded_link is not None)
             digest = hashlib.sha256(json.dumps(config, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
             cached = type(self)._create_config_cache = dict(config, config_sha256=digest)
@@ -2210,33 +2205,25 @@ def build_direct_node_agent_server(
     telemetry: Telemetry | None = None,
     heartbeat: HeartbeatSenderConfig | None = None,
     unix_socket: Path | None = None,
-    rust_creates: bool = False,
-    rust_execs: bool = False,
-    rust_pause_tier: bool = False,
     rust_admission: bool = False,
 ) -> NodeAgentHTTPServer:
     """Serve a sandbox node with direct runsc and storage-native ownership.
 
-    ``rust_creates``: runtime/noded, in front on the node's port, runs creates
-    and owns the registry; this agent holds their admission (create_handoff).
-    ``rust_execs``: noded runs execs on running sandboxes; lifecycle
-    transitions fence them through flock files (exec_fence).
-    ``rust_pause_tier``: noded owns the pause tier and local waits; this
-    agent runs neither (pause_handoff).
+    runtime/noded, in front on the node's port, reaches this agent on
+    ``unix_socket``: it runs creates and owns the registry, while this agent
+    holds their admission (create_handoff); it runs execs on running
+    sandboxes, which lifecycle transitions fence through flock files
+    (exec_fence); it owns the pause tier and local waits (pause_handoff).
+    Without ``unix_socket`` the agent serves ``host:port`` with its internal
+    routes off (tests).
     ``rust_admission``: node admission moves to noded
     (docs/architecture.md): this agent admits through noded's internal
     socket (admission_backend.NodedAdmission, step 3c.3), says hello there
     with the claims it holds, and reads noded's resident samples instead of
     sampling (3b).
     """
-    if rust_creates and (unix_socket is None or service.provisioner.registry.is_owner):
-        raise ValueError("Rust creates need the agent on its Unix socket and a foreign registry")
-    if rust_execs and unix_socket is None:
-        raise ValueError("Rust execs need the agent on its Unix socket")
-    if rust_pause_tier and not (rust_execs and service.warden.config.pause_tier):
-        raise ValueError("the Rust pause tier needs Rust execs and the pause tier")
-    if rust_admission and not (rust_creates and rust_execs and rust_pause_tier):
-        raise ValueError("Rust admission needs Rust creates, Rust execs and the Rust pause tier")
+    if rust_admission and unix_socket is None:
+        raise ValueError("Rust admission needs the agent on its Unix socket")
     node_control_bearer_token = node_control_bearer_token.strip()
     if not node_control_bearer_token:
         raise ValueError("node control bearer token cannot be empty")
@@ -2262,8 +2249,7 @@ def build_direct_node_agent_server(
         # Before start(): its parked managed records are noded's to observe.
         service.use_noded_admission(NodedAdmission(service, link))
     service.start()
-    manager = DirectNodeRuntime(service, rust_execs=rust_execs, rust_pause_tier=rust_pause_tier,
-                                rust_admission=rust_admission)
+    manager = DirectNodeRuntime(service, rust_admission=rust_admission)
     manager.start()
     exec_manager = ExecSessionManager(manager, telemetry=resolved_telemetry)
     from .environment_manifest import HOST_EROFS_ABI
@@ -2480,7 +2466,7 @@ def build_direct_node_agent_server(
     DirectBoundHandler.telemetry = resolved_telemetry
     # Only noded reaches the socket; it must not forward /internal/ itself.
     DirectBoundHandler.internal_routes_enabled = unix_socket is not None
-    handoff = DirectBoundHandler.create_handoff = CreateHandoff(service) if rust_creates else None
+    handoff = DirectBoundHandler.create_handoff = CreateHandoff(service)
     DirectBoundHandler.noded_link = link
 
     class DirectServiceHTTPServer(NodeAgentHTTPServer):
@@ -2489,8 +2475,7 @@ def build_direct_node_agent_server(
             self.stop_heartbeats()
             if link is not None:
                 link.stop()
-            if handoff is not None:
-                handoff.close()
+            handoff.close()
             try:
                 manager.stop()
             finally:

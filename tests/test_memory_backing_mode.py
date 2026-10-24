@@ -230,35 +230,3 @@ class WardenFileModeTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'expected parked'):
                 f.warden.resume(f.sandbox, operation_id='invalid-wake')
             select.assert_not_called()
-
-    def test_flush_retains_allocation_but_does_not_hold_lifecycle_lock(self):
-        import fcntl
-        import os
-        f = self.fixture
-        active = f.warden._active_memory_root(f.sandbox) / 'application_memory.active'
-        active.write_bytes(b'dirty file backed heap')
-        active.chmod(0o600)
-        def check_flush(fd):
-            self.assertEqual(os.fstat(fd).st_ino, active.stat().st_ino)
-            lock = f.config.runtime_root / 'warden-locks' / '.sandbox-1.sandbox-1.warden.lock'
-            descriptor = os.open(lock, os.O_RDWR)
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            finally:
-                os.close(descriptor)
-            with self.assertRaisesRegex(MemoryBackingError, 'readers'):
-                with f.warden.memory_backing._allocation_lock(f.sandbox.memory, exclusive=True):
-                    self.fail('flush lost its backing capacity lease')
-        with patch('sandboxes.direct_warden.os.fdatasync', side_effect=check_flush, create=True):
-            self.assertTrue(f.warden.flush_reclaimable_memory(f.sandbox))
-
-    def test_flush_rejects_a_replaced_active_file(self):
-        f = self.fixture
-        active = f.warden._active_memory_root(f.sandbox) / 'application_memory.active'
-        active.write_bytes(b'old')
-        active.chmod(0o600)
-        def replace_file(fd):
-            active.unlink()
-            active.write_bytes(b'new')
-        with patch('sandboxes.direct_warden.os.fdatasync', side_effect=replace_file, create=True):
-            self.assertFalse(f.warden.flush_reclaimable_memory(f.sandbox))

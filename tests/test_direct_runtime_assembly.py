@@ -96,7 +96,7 @@ class DirectRuntimeAssemblyTests(unittest.TestCase):
                     def filesystem_probe(args, *a, **kw):
                         if args[0] == "findmnt" and args[-1] == str(active):
                             return subprocess.CompletedProcess(
-                                args, 0, stdout="tmpfs rw,noswap\n"
+                                args, 0, stdout="tmpfs rw\n"
                             )
                         return original_run(args, *a, **kw)
 
@@ -113,7 +113,6 @@ class DirectRuntimeAssemblyTests(unittest.TestCase):
                     runsc_commit="a" * 40,
                     init_binary=root / "init",
                     storage_native_socket=socket,
-                    split_memory_backing=True,
                     memory_backing_hard_capacity_bytes=capacity,
                     application_memory_root=active,
                     reflink_memory_restore=reflink,

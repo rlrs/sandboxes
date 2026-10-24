@@ -889,7 +889,7 @@ fn the_real_pause_tier_pauses_an_idle_sandbox() {
         command_timeout: Duration::from_secs(10),
         stop_timeout: Duration::from_secs(1),
     };
-    let mut pause = crate::pause::PauseConfig::new(warden, true);
+    let mut pause = crate::pause::PauseConfig::new(warden);
     pause.cgroup_root = root.join("cgroup");
     pause.zswap_enabled = root.join("zswap");
     let tier = crate::pause::PauseTier::new(pause.clone(), None);

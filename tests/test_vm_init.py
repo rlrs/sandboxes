@@ -47,7 +47,11 @@ m runtime.kernel.release "wrong"
 f runtime/kernel/{release}/runtime.ko
 m runtime.direct_runsc.commit "0"
 f runtime/direct/runsc
+f runtime/direct/build-manifest.json
+m runtime.direct_runsc.build_manifest null
 f runtime/direct/ucloud-sandbox-init
+f runtime/noded/ucloud-noded
+m runtime.noded null
 m runtime.storage_native.host_architecture "wrong"
 f runtime/storage-native/backend
 f runtime/storage-native/build-manifest.json
@@ -91,8 +95,10 @@ def write_bundle(root: Path, role: str) -> dict:
         }
         build_metadata = artifact("runtime/storage-native/build-manifest.json", (json.dumps(build) + "\n").encode())
         runtime.update(
-            direct_runsc=artifact("runtime/direct/runsc", commit=RUNSC_COMMIT),
+            direct_runsc=artifact("runtime/direct/runsc", commit=RUNSC_COMMIT,
+                                  build_manifest=artifact("runtime/direct/build-manifest.json")),
             managed_init=artifact("runtime/direct/ucloud-sandbox-init"),
+            noded=artifact("runtime/noded/ucloud-noded"),
             storage_native=backend | {
                 "agentenv_commit": PINNED_STORAGE_NATIVE_AGENTENV_COMMIT, "host_architecture": HOST_ARCHITECTURE,
                 "license_file": license_metadata["file"], "license_sha256": license_metadata["sha256"],
@@ -345,66 +351,27 @@ else:
         return script, script[start:end]
 
     def test_pause_tier_swaps_ram_backing_with_zswap_optional_and_off(self):
-        ram = {"direct_split_memory_backing": True, "direct_ram_memory_backing": True}
-        off = render_vm_init_script(self._options(**ram, swap_gb=8))
-        self.assertIn("UCLOUD_DIRECT_PAUSE_TIER=0", off)
-        self.assertNotIn(" --pause-tier", off)
-        self.assertNotIn("--ram-swappable\n", off)
-        on = render_vm_init_script(self._options(**ram, swap_gb=8, direct_pause_tier=True))
-        self.assertIn("UCLOUD_DIRECT_PAUSE_TIER=1", on)
-        self.assertIn(" --pause-tier", on)
+        on = render_vm_init_script(self._options(swap_gb=8, direct_ram_memory_backing=True))
         self.assertIn("--ram-capacity-bytes $UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES --ram-swappable\n", on)
-        self.assertIn("UCLOUD_RAM_MEMORY_ARGS+=(--ram-swappable)", on)
+        self.assertIn('--ram-capacity-bytes "$UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES" --ram-swappable)', on)
         # zswap is optional and off by default: random heaps do not compress,
         # and a full reclaim through zswap was 2-5x slower (qualification).
         self.assertIn("UCLOUD_DIRECT_PAUSE_TIER_ZSWAP=0", on)
         self.assertIn("random heaps do not\n  # compress at all", on)
-        self.assertIn('elif [ "$UCLOUD_DIRECT_PAUSE_TIER" -eq 1 ] && [ -e /sys/module/zswap/parameters/enabled ]'
+        self.assertIn('elif [ "$UCLOUD_NODE_ROLE" = sandbox ] && [ -e /sys/module/zswap/parameters/enabled ]'
                       "; then\n    echo N | $SUDO tee /sys/module/zswap/parameters/enabled", on)
-        zswap = render_vm_init_script(self._options(
-            **ram, swap_gb=8, direct_pause_tier=True, direct_pause_tier_zswap=True))
+        zswap = render_vm_init_script(self._options(swap_gb=8, direct_pause_tier_zswap=True))
         self.assertIn("UCLOUD_DIRECT_PAUSE_TIER_ZSWAP=1", zswap)
         self.assertIn('if [ "$UCLOUD_DIRECT_PAUSE_TIER_ZSWAP" -eq 1 ]; then\n'
                       "    echo zstd | $SUDO tee /sys/module/zswap/parameters/compressor", zswap)
         # The swapfile is the existing swap_gb file, prepared before zswap.
         self.assertLess(on.index('fallocate -l "${UCLOUD_SWAP_GB}G"'), on.index("zswap/parameters/enabled"))
-        with self.assertRaisesRegex(ValueError, "requires a swapfile"):
-            render_vm_init_script(self._options(**ram, swap_gb=0, direct_pause_tier=True))
-        with self.assertRaisesRegex(ValueError, "zswap requires the pause tier"):
-            render_vm_init_script(self._options(**ram, swap_gb=8, direct_pause_tier_zswap=True))
-        # Node-local model waits ride on the pause tier.
-        self.assertNotIn("--local-model-waits", on)
-        self.assertIn(" --pause-tier --local-model-waits", render_vm_init_script(self._options(
-            **ram, swap_gb=8, direct_pause_tier=True, direct_local_model_waits=True)))
-        with self.assertRaisesRegex(ValueError, "local model waits require the pause tier"):
-            render_vm_init_script(self._options(**ram, swap_gb=8, direct_local_model_waits=True))
 
     def test_split_checkpoint_rejects_s3_before_rendering_worker(self):
         with self.assertRaisesRegex(ValueError, "requires registry checkpoint"):
-            render_vm_init_script(self._options(
-                direct_split_memory_backing=True, storage_native_snapshot_backend="s3"))
-        script = render_vm_init_script(self._options(direct_split_memory_backing=True))
+            render_vm_init_script(self._options(storage_native_snapshot_backend="s3"))
+        script = render_vm_init_script(self._options())
         self.assertIn("--checkpoint-registry-url", script)
-
-    def test_s3_snapshot_backend_configures_native_agentenv_reads(self) -> None:
-        script = render_vm_init_script(
-            self._options(
-                storage_native_snapshot_backend="s3",
-                storage_native_s3_endpoint="https://fsn1.your-objectstorage.com",
-                storage_native_s3_bucket="sandbox-snapshots",
-                storage_native_s3_region="fsn1",
-                storage_native_s3_prefix="production",
-                storage_native_s3_access_key_id="test-access",
-                storage_native_s3_secret_access_key="test-secret",
-            )
-        )
-
-        self.assertIn(
-            "--snapshot-backend ${UCLOUD_STORAGE_NATIVE_SNAPSHOT_BACKEND}", script
-        )
-        node_env = script.split("<<NODE_ENV\n", 1)[1].split("\nNODE_ENV", 1)[0]
-        self.assertNotIn("test-access", node_env)
-        self.assertNotIn("test-secret", node_env)
 
     @staticmethod
     def _run_bundle_validator(validator, root):
@@ -691,7 +658,7 @@ else:
                         runtime[name]["sha256"]
                         for name in "direct_runsc managed_init storage_native".split()
                     )
-                    expected.append("none")  # ucloud-noded: the front door is off.
+                    expected.append(runtime["noded"]["sha256"])
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(completed.stdout.strip().split("\t"), expected)
 
@@ -723,31 +690,9 @@ else:
                 else:
                     self.assertNotEqual(completed.returncode, 0)
 
-    def test_an_enabled_front_door_requires_the_bundled_noded(self) -> None:
-        _script, validator = self._bundle_validator(direct_node_front_door=True)
-        for corruption in (None, "binary", "absent"):
-            with self.subTest(corruption=corruption), TemporaryDirectory() as raw_dir:
-                root = Path(raw_dir)
-                manifest = write_bundle(root, "sandbox")
-                path = root / "runtime/noded/ucloud-noded"
-                path.parent.mkdir(parents=True)
-                path.write_bytes(b"noded")
-                entry = {"file": "runtime/noded/ucloud-noded", "sha256": hashlib.sha256(b"noded").hexdigest(), "size": 5}
-                if corruption == "binary":
-                    path.write_bytes(b"NODED")
-                if corruption != "absent":
-                    manifest["runtime"]["noded"] = entry
-                (root / "package-bundle.json").write_text(json.dumps(manifest), encoding="utf-8")
-                completed = self._run_bundle_validator(validator, root)
-                if corruption is None:
-                    self.assertEqual(completed.returncode, 0, completed.stderr)
-                    self.assertEqual(completed.stdout.strip().split("\t")[-1], entry["sha256"])
-                else:
-                    self.assertNotEqual(completed.returncode, 0)
-
     def test_bundle_validator_fails_closed_on_provenance_corruption(self) -> None:
         _script, validator = self._bundle_validator()
-        self.assertEqual(len(CORRUPTIONS), 18)
+        self.assertEqual(len(CORRUPTIONS), 22)
         for corruption in CORRUPTIONS:
             with self.subTest(corruption=corruption), TemporaryDirectory() as raw_dir:
                 root = Path(raw_dir)
@@ -819,21 +764,26 @@ else:
         self.assertEqual(total, 24100)
 
     def test_node_front_door_owns_the_port_and_the_agent_serves_its_socket(self) -> None:
-        on = render_vm_init_script(self._options(direct_node_front_door=True))
-        self.assertIn("--unix-socket /run/ucloud-sandboxes/node-agent/agent.sock", on)
-        self.assertNotIn("--host ${UCLOUD_NODE_AGENT_HOST} --port", on)
+        sandbox = render_vm_init_script(self._options())
+        self.assertIn("--unix-socket /run/ucloud-sandboxes/node-agent/agent.sock", sandbox)
+        self.assertNotIn("--host ${UCLOUD_NODE_AGENT_HOST} --port", sandbox)
         self.assertIn("ExecStart=/usr/local/libexec/ucloud-noded --listen 0.0.0.0:8090 "
-                      "--upstream-unix /run/ucloud-sandboxes/node-agent/agent.sock", on)
-        self.assertIn('the node front door is enabled but the bundle carries no ucloud-noded', on)
-        self.assertIn('"$UCLOUD_BUNDLED_NODED_SHA256" /usr/local/libexec/ucloud-noded | sha256sum --check', on)
+                      "--upstream-unix /run/ucloud-sandboxes/node-agent/agent.sock "
+                      "--node-control-token-file /run/ucloud/node-token\n", sandbox)
+        # The agent and noded take no switches for what they always do.
+        for retired in ("--rust-", "--registry-foreign", "--pause-tier", "--local-model-waits",
+                        "--split-memory-backing"):
+            self.assertNotIn(retired, sandbox)
+        self.assertIn("the sandbox bundle carries no ucloud-noded", sandbox)
+        self.assertIn('"$UCLOUD_BUNDLED_NODED_SHA256" /usr/local/libexec/ucloud-noded | sha256sum --check', sandbox)
         # The front door starts before the agent, whose health check goes through it.
-        self.assertLess(on.index("systemctl restart ucloud-sandbox-noded.service"),
-                        on.index("systemctl restart ucloud-sandbox-node.service"))
-        off = render_vm_init_script(self._options())
-        self.assertIn("--host ${UCLOUD_NODE_AGENT_HOST} --port ${UCLOUD_NODE_AGENT_PORT}", off)
-        self.assertIn("systemctl disable --now ucloud-sandbox-noded.service", off)
-        self.assertNotIn("systemctl restart ucloud-sandbox-noded.service", off)
-        for script in (on, off):
+        self.assertLess(sandbox.index("systemctl restart ucloud-sandbox-noded.service"),
+                        sandbox.index("systemctl restart ucloud-sandbox-node.service"))
+        builder = render_vm_init_script(self._options(role="builder"))
+        self.assertIn("--host ${UCLOUD_NODE_AGENT_HOST} --port ${UCLOUD_NODE_AGENT_PORT}", builder)
+        self.assertIn("systemctl disable --now ucloud-sandbox-noded.service", builder)
+        self.assertNotIn("systemctl restart ucloud-sandbox-noded.service", builder)
+        for script in (sandbox, builder):
             bash = subprocess.run(["bash", "-n"], input=script, text=True, capture_output=True)
             self.assertEqual(bash.returncode, 0, bash.stderr)
 

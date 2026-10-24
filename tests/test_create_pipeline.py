@@ -15,7 +15,7 @@ import shutil
 import unittest
 from unittest.mock import patch
 
-from tests.test_direct_network_pool import FakeKernel, wait_for
+from tests.support import FakeKernel
 from tests.test_direct_provisioner import FakeImageStore, FakeOverlays, FakeStorage, FakeWarden
 from sandboxes.direct_network import DirectNetworkManager
 from sandboxes.direct_oci import DirectOciConfigBuilder
@@ -97,21 +97,19 @@ class CreatePipelineTests(unittest.TestCase):
         self.registries: list[DirectSandboxRegistry] = []
 
     def tearDown(self) -> None:
-        for network in self.networks:
-            network.stop_pool()
         for registry in self.registries:
             registry.close()
         self._directory.cleanup()
 
-    def node(self, *, pool_size: int = 0) -> SimpleNode:
+    def node(self) -> SimpleNode:
         """One node-agent process over the durable state in ``self.root``."""
         network = self.kernel.install(DirectNetworkManager(
             self.root / "network-slots.json",
             namespace_root=self.root / "netns",
-            pool_size=pool_size,
         ))
         self.networks.append(network)
-        registry = DirectSandboxRegistry(self.root / "registry.sqlite", owner=True)
+        # The agent writes as a foreign process (runtime/noded owns the file).
+        registry = DirectSandboxRegistry(self.root / "registry.sqlite", cached_reads=True)
         self.registries.append(registry)
         provisioner = DirectSandboxProvisioner(
             registry=registry,
@@ -150,7 +148,7 @@ class CreatePipelineTests(unittest.TestCase):
                 self.create(node)
         finally:
             delattr(target, method)
-        node.registry.close()  # Process death releases registry ownership.
+        node.registry.close()  # Process death.
 
     def assert_one_owned_sandbox(self, node, registration) -> None:
         self.assertEqual(registration.phase, "owned")
@@ -160,9 +158,6 @@ class CreatePipelineTests(unittest.TestCase):
         self.assertEqual(self.warden.creates, 1)
         lease = node.network.lease("sandbox", 7)
         self.assertEqual(self.kernel.links[lease.host_interface], self.kernel.namespace(lease.namespace))
-        self.assertNotIn(f"ucloud-pool-{lease.slot}", self.kernel.names())
-        state = node.network._load()
-        self.assertFalse(set(state.get("pool", ())) & set(state["leases"].values()))
 
     def test_create_writes_three_commits(self) -> None:
         node = self.node()
@@ -189,22 +184,17 @@ class CreatePipelineTests(unittest.TestCase):
             with self.subTest(boundary=boundary[0]):
                 self.tearDown()
                 self.setUp()
-                crashed = self.node(pool_size=2)
+                crashed = self.node()
                 crashed.provisioner.start()
-                wait_for(lambda: len(crashed.network._pool_ready) == 2)
-                self.crash_at(crashed, boundary)  # After a pooled hand-off.
-                crashed.network.stop_pool()  # Process death frees the pool's flock.
-                restarted = self.node(pool_size=2)
+                self.crash_at(crashed, boundary)
+                restarted = self.node()
                 results = restarted.provisioner.start()
                 self.assertEqual(len(results), 1)
                 self.assert_one_owned_sandbox(restarted, results[0])
-                # Pooled slot 1, unless the crash preceded the network lease.
-                self.assertEqual(restarted.network.lease("sandbox", 7).slot,
-                                 3 if boundary[0] in {"plan", "storage_prepare"} else 1)
+                self.assertEqual(restarted.network.lease("sandbox", 7).slot, 1)
                 # Storage prepare replays only while the quota is unrecorded.
                 replayed = boundary[0] in {"storage_prepare", "network_ensure", "rootfs_prepare"}
                 self.assertEqual(self.storage.prepares, 2 if replayed else 1)
-                wait_for(lambda: len(restarted.network._pool_ready) == 2)
 
     def test_delete_after_a_crash_at_every_boundary(self) -> None:
         for boundary in BOUNDARIES:
@@ -238,7 +228,7 @@ class CreatePipelineTests(unittest.TestCase):
         self.assertEqual(self.storage.prepares, 1)
         self.assert_one_owned_sandbox(node, results[0])
 
-    def test_owner_commits_are_durable_and_plain_owned_commits_skip_fsync(self) -> None:
+    def test_only_the_owned_commit_skips_fsync(self) -> None:
         node = self.node()
         levels: list[tuple[str, int]] = []
         write = node.registry._write
@@ -250,11 +240,9 @@ class CreatePipelineTests(unittest.TestCase):
         node.registry._write = recorded_write
         self.create(node)
         node.provisioner.delete("sandbox")
-        # 2 is FULL. The owner's writers share durable group commits, so its
-        # owned commit no longer skips an fsync of its own.
-        self.assertEqual(levels, [("planned", 2), ("rootfs_ready", 2), ("owned", 2), ("deleting", 2)])
-        connections = [node.registry._owner_entry, *node.registry._connections]
-        for entry in connections:
+        # 2 is FULL, 1 NORMAL; a connection returns to the pool at FULL.
+        self.assertEqual(levels, [("planned", 2), ("rootfs_ready", 2), ("owned", 1), ("deleting", 2)])
+        for entry in node.registry._connections:
             self.assertEqual(entry.connection.execute("PRAGMA synchronous").fetchone()[0], 2)
         plain = DirectSandboxRegistry(self.root / "plain.sqlite")
         planned = plain.plan(spec=self.spec(), sandbox_generation=7, operation_id="create:sandbox:7",
@@ -274,7 +262,7 @@ class CreatePipelineTests(unittest.TestCase):
             with self.subTest(state=state.value):
                 self.tearDown()
                 self.setUp()
-                node = self.node(pool_size=1)
+                node = self.node()
                 node.provisioner.start()
                 synced: dict[str, bytes | None] = {}
                 commit_owned = node.registry.commit_owned
@@ -293,7 +281,6 @@ class CreatePipelineTests(unittest.TestCase):
                 # Power loss before any later sync: the agent dies and the disk
                 # holds the synced bytes. SQLite rebuilds its shared memory.
                 node.registry.close()
-                node.network.stop_pool()
                 for suffix, data in synced.items():
                     path = Path(f"{node.registry.path}{suffix}")
                     if data is None:
@@ -301,7 +288,7 @@ class CreatePipelineTests(unittest.TestCase):
                     else:
                         path.write_bytes(data)
                 Path(f"{node.registry.path}-shm").unlink(missing_ok=True)
-                restarted = self.node(pool_size=1)
+                restarted = self.node()
                 self.assertEqual(restarted.registry.get("sandbox").phase, "rootfs_ready")
 
                 reconciled = []
@@ -321,10 +308,9 @@ class CreatePipelineTests(unittest.TestCase):
                 self.assertEqual(reconciled, [] if state is settled else [state])
                 self.assertIs(self.warden.records[("sandbox", 7)].state, settled)
 
-    def test_concurrent_creates_with_a_partly_empty_pool(self) -> None:
-        node = self.node(pool_size=8)
+    def test_concurrent_creates_own_distinct_slots_and_quotas(self) -> None:
+        node = self.node()
         node.provisioner.start()
-        wait_for(lambda: len(node.network._pool_ready) == 8)
         before = node.registry.activity_revision()
         names = [f"s{index:02d}" for index in range(32)]
         with ThreadPoolExecutor(max_workers=32) as pool:
@@ -337,7 +323,6 @@ class CreatePipelineTests(unittest.TestCase):
         for lease in leases:
             self.assertEqual(self.kernel.links[lease.host_interface], self.kernel.namespace(lease.namespace))
         self.assertEqual(len({item.quota_project_id for item in created}), len(names))
-        wait_for(lambda: len(node.network._pool_ready) == 8)
 
 
 if __name__ == "__main__":

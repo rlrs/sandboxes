@@ -1,7 +1,6 @@
 """Phase 3a of the Rust node daemon, the agent's half (docs/architecture.md).
 
-runtime/noded owns the pause tier with --rust-pause-tier: the agent starts none
-of its loops, fences its own ops with A shared, marks its thaws on the marker's
+runtime/noded owns the pause tier: the agent runs none of its loops, fences its own ops with A shared, marks its thaws on the marker's
 flock, executes escalations and growth events for noded, publishes the demand
 paused reclaim bills and adds noded's counters to its heartbeat
 (sandboxes/pause_handoff.py). Subprocesses play noded's locks.
@@ -16,24 +15,18 @@ import sys
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
 import time
-from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from tests import test_direct_provisioner as fixtures
-from tests import test_vm_init as vm_init_fixtures
 from tests.test_pause_tier import PauseWardenTests, _PausingWarden
 from tests.test_rust_exec_fence import TOKEN, _UnixConnection
-from sandboxes import local_wait, pause_handoff, pause_tier
-from sandboxes.cli import build_parser, vm_init_options_to_dict
-from sandboxes.config import DeploymentConfig
-from sandboxes.sandbox import SandboxExecAdmissionDeferredError
+from sandboxes import pause_handoff, pause_tier
+from sandboxes.sandbox import SandboxExecAdmissionDeferredError, WarmParkDeferred
 from sandboxes.direct_service import DirectSandboxService
 from sandboxes.models import ResidentWaitMetrics
 from sandboxes.node_runtime import DirectNodeRuntime
 from sandboxes.transition_admission import MemoryDemand
-from sandboxes.vm_init import render_vm_init_script
-from sandboxes.warm_park import WarmParkDeferred
 
 TEST_TIER = "contract"
 # noded's lock attempts, one per argument "<path>:<operation>", in order:
@@ -76,17 +69,16 @@ class _Holder:
         self.process.stdout.close()
 
 
-def runtime_fixture(test, *, rust_pause_tier=True, local_model_waits=False):
+def runtime_fixture(test):
     directory = TemporaryDirectory()
     test.addCleanup(directory.cleanup)
     root = Path(directory.name).resolve()
     with patch.object(fixtures, "FakeWarden", _PausingWarden):
         provisioner, _, _, _, warden = fixtures.DirectProvisionerTests().make(root)
     warden.config.runtime_root = root / "runsc"
-    warden.config.local_model_waits = local_model_waits
     (root / "runsc" / "warden-locks").mkdir(parents=True)
     service = DirectSandboxService(provisioner, process_runner=fixtures.FakeProcessRunner())
-    runtime = DirectNodeRuntime(service, rust_execs=True, rust_pause_tier=rust_pause_tier)
+    runtime = DirectNodeRuntime(service)
     test.addCleanup(runtime.stop)
     spec = replace(fixtures.DirectProvisionerTests.spec(), parkable=True)
     record = fixtures.DirectProvisionerTests.create(service, spec)
@@ -151,12 +143,6 @@ class ActivityFenceTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.runtime.lifecycle.acquire_shared(self.key[0])
         self.assertEqual(self.rust_pause(), "held")
-
-    def test_without_the_flag_python_ops_take_no_a(self) -> None:
-        runtime = DirectNodeRuntime(self.service, rust_execs=True)
-        with runtime.lifecycle.shared(self.key[0]):
-            self.assertEqual(self.rust_pause(), "held")
-
 
 class MarkerFlockTests(unittest.TestCase):
     setUp = PauseWardenTests.setUp
@@ -250,7 +236,7 @@ class PauseEndpointTests(unittest.TestCase):
         server = fixtures.build_direct_node_agent_server(
             "127.0.0.1", 0, service=self.service, image_file=self.root / "images.json", job_id="job",
             node_id="node", node_epoch="epoch", node_control_bearer_token=TOKEN,
-            unix_socket=Path(self.socket), rust_execs=True, rust_pause_tier=True)
+            unix_socket=Path(self.socket))
         self.manager = server.RequestHandlerClass.manager
         thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
@@ -303,7 +289,6 @@ class PauseEndpointTests(unittest.TestCase):
     def test_the_configuration_and_the_demand_file(self) -> None:
         status, effective = self.call("GET", "/internal/v1/creates/config")
         pause = effective["pause"]
-        self.assertTrue(pause["rust_pause_enabled"] and pause["pause_tier"])
         noded_dir = self.root / "noded"
         self.assertEqual((pause["status_path"], pause["agent_demand_path"], pause["warden_paused_dir"]),
                          (str(noded_dir / "status.json"), str(noded_dir / "agent-demand.json"),
@@ -313,12 +298,6 @@ class PauseEndpointTests(unittest.TestCase):
         demand = json.loads((noded_dir / "agent-demand.json").read_text())
         self.assertEqual(set(demand), {"seq", "admission_open", "physical_bytes", "ram_backing_bytes"})
         self.assertEqual(noded_dir.stat().st_mode & 0o777, 0o700)
-
-    def test_without_the_flag_the_routes_do_not_exist(self) -> None:
-        self.manager.rust_pause_tier = False
-        self.addCleanup(setattr, self.manager, "rust_pause_tier", True)
-        self.assertEqual(self.escalate()[0], 404)
-
 
 class DemandAndStatusTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -392,92 +371,13 @@ class DemandAndStatusTests(unittest.TestCase):
         self.assertEqual((restarted["pauses"], restarted["thaw_ms_max"]), (6, 90))
 
 
-class LoopTests(unittest.TestCase):
-    def relay_network(self, service) -> None:
-        relay = SimpleNamespace(host="10.0.0.5", port=8092)
-        service.provisioner.network_manager = SimpleNamespace(
-            relays={"relay": relay}, relay_addresses=lambda name: (), leases=lambda: {})
-
-    def test_the_agent_starts_none_of_the_pause_tiers_loops(self) -> None:
-        _, service, runtime, key = runtime_fixture(self, local_model_waits=True)
-        self.relay_network(service)
-        service._idle_park_seconds = 0.01
-        with patch.object(local_wait, "LocalWaitScheduler") as scheduler, \
-                patch.object(local_wait, "remove_rules") as remove_rules, \
-                patch.object(runtime, "_reclaim_paused_tick") as tick:
-            runtime.start()
-            time.sleep(0.6)  # two relay-loop ticks
-            self.assertIsNone(runtime._local_waits)
-            self.assertIsNone(runtime._idle_parking_thread)
-            runtime.stop()
-        scheduler.assert_not_called()
-        tick.assert_not_called()
-        remove_rules.assert_not_called()  # noded owns the nft table
-        self.assertEqual(runtime.service.provisioner.registry.get(key[0]).sandbox_generation, key[1])
-
-    def test_without_the_flag_the_agent_runs_them(self) -> None:
-        _, service, runtime, _ = runtime_fixture(self, rust_pause_tier=False, local_model_waits=True)
-        self.relay_network(service)
-        service._idle_park_seconds = 0.01
-        with patch.object(local_wait, "LocalWaitScheduler") as scheduler:
-            runtime.start()
-            self.assertIsNotNone(runtime._idle_parking_thread)
-            runtime.stop()
-        scheduler.assert_called_once()
-
-    def test_paused_sandboxes_are_sampled_by_noded_and_relay_pauses_are_adopted(self) -> None:
-        for flag in (True, False):
-            with self.subTest(rust_pause_tier=flag):
-                _, service, runtime, key = runtime_fixture(self, rust_pause_tier=flag)
-                service.park(key[0], operation_id="idle-park:1", pause=True)
-                with patch.object(service, "_sample_resident") as sample:
-                    service.refresh_resident_memory()
-                self.assertEqual(sample.call_count, 0 if flag else 1)
-                runtime.park_with_activity_revision(key[0], operation_id="relay-park:1", generation=key[1],
-                                                    relay_request_id="relay-1")
-                self.assertEqual(key in runtime._paused, not flag)
-
-
-class RustPauseFlagTests(unittest.TestCase):
-    def test_the_flag_requires_the_pause_tier_and_rust_execs_and_renders_both_sides(self) -> None:
-        raw = DeploymentConfig.default(scope_id="project-1").to_dict()
-        self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_node_rust_pause)
-        execs = {**raw["sandbox"], "direct_node_front_door": True, "direct_node_rust_create": True,
-                 "direct_node_rust_exec": True}
-        for sandbox in ({**raw["sandbox"], "direct_node_rust_pause": True},
-                        {**execs, "direct_node_rust_pause": True}):
-            with self.assertRaisesRegex(ValueError, "direct_node_rust_pause requires"):
-                DeploymentConfig.from_dict({**raw, "sandbox": sandbox})
-        enabled = {**execs, "direct_pause_tier": True, "swap_gb": 8, "direct_node_rust_pause": True}
-        self.assertTrue(DeploymentConfig.from_dict({**raw, "sandbox": enabled}).sandbox.direct_node_rust_pause)
-        options = vm_init_fixtures.VmInitTests._options(
-            direct_node_front_door=True, direct_node_rust_create=True, direct_node_rust_exec=True,
-            direct_pause_tier=True, swap_gb=8,
-            direct_node_rust_pause=True)
-        self.assertTrue(vm_init_options_to_dict(options)["directNodeRustPause"])
-        script = render_vm_init_script(options)
-        self.assertIn("--rust-execs --rust-pause-tier", script)
-        self.assertIn(f"--rust-exec --rust-pause --node-control-token-file "
-                      f"{options.node_control_bearer_token_file}\n", script)
-        self.assertNotIn("--rust-pause", render_vm_init_script(replace(options, direct_node_rust_pause=False)))
-        with self.assertRaisesRegex(ValueError, "pause tier requires the pause tier and Rust node execs"):
-            render_vm_init_script(replace(options, direct_node_rust_exec=False))
-        required = ["--deployment-id", "d", "--state-root", "/s", "--image-file", "/i", "--volume-mount-root", "/v",
-                    "--storage-native-socket", "/n", "--runsc", "/r", "--runsc-commit", "c",
-                    "--node-control-bearer-token-file", "/t"]
-        parser = build_parser()
-        self.assertTrue(parser.parse_args(["serve-direct-node-agent", *required, "--rust-pause-tier"]).rust_pause_tier)
-        self.assertFalse(parser.parse_args(["serve-direct-node-agent", *required]).rust_pause_tier)
-
-    def test_the_agent_refuses_the_flag_without_rust_execs_or_the_pause_tier(self) -> None:
-        service = SimpleNamespace(warden=SimpleNamespace(config=SimpleNamespace(pause_tier=False)))
-        with self.assertRaisesRegex(ValueError, "needs Rust execs and the pause tier"):
-            DirectNodeRuntime(service, rust_execs=True, rust_pause_tier=True)
-        service.warden.config.pause_tier = True
-        with self.assertRaisesRegex(ValueError, "needs Rust execs and the pause tier"):
-            fixtures.build_direct_node_agent_server(
-                "127.0.0.1", 0, service=service, image_file=Path("/nonexistent"), job_id="job", node_id="node",
-                unix_socket=Path("/nonexistent.sock"), rust_pause_tier=True)
+class SamplingTests(unittest.TestCase):
+    def test_paused_sandboxes_are_sampled_by_noded_not_the_agent(self) -> None:
+        _, service, _runtime, key = runtime_fixture(self)
+        service.park(key[0], operation_id="idle-park:1", pause=True)
+        with patch.object(service, "_sample_resident") as sample:
+            service.refresh_resident_memory()
+        self.assertEqual(sample.call_count, 0)
 
 
 if __name__ == "__main__":

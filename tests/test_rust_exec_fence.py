@@ -21,14 +21,10 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_direct_provisioner as fixtures
-from tests import test_vm_init as vm_init_fixtures
 from sandboxes import exec_fence
-from sandboxes.cli import build_parser, vm_init_options_to_dict
-from sandboxes.config import DeploymentConfig
 from sandboxes.direct_service import DirectSandboxService
 from sandboxes.node_runtime import DirectNodeRuntime
 from sandboxes.sandbox import SandboxBusyError
-from sandboxes.vm_init import render_vm_init_script
 
 TEST_TIER = "contract"
 TOKEN = "node-secret"
@@ -72,7 +68,7 @@ class ExecFenceRuntimeTests(unittest.TestCase):
         warden.config.runtime_root = root / "runsc"
         (root / "runsc" / "warden-locks").mkdir(parents=True)
         self.service = DirectSandboxService(provisioner)
-        self.runtime = DirectNodeRuntime(self.service, rust_execs=True)
+        self.runtime = DirectNodeRuntime(self.service)
         self.fence = self.runtime.exec_fence
         self.spec = self.fixture.spec()
         self.record = self.fixture.create(self.service, self.spec)
@@ -99,7 +95,8 @@ class ExecFenceRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(SandboxBusyError, "cannot survive park: sandbox"):
             self.park()
         with self.assertRaisesRegex(SandboxBusyError, r"^sandbox has active exec/file activity: sandbox$"):
-            self.runtime.pause_model_wait((self.spec.id, self.record.generation))
+            with self.runtime.lifecycle.exclusive(self.spec.id):  # As every pause through the agent.
+                self.service.park(self.spec.id, operation_id="pause:1", pause=True)
         self.assertFalse(self.runtime.lifecycle.is_idle(self.spec.id))
         # A refusal leaves neither the in-process fence nor T behind.
         self.assertTrue(self.runtime.lifecycle._coordinator.is_idle(self.spec.id))
@@ -184,22 +181,6 @@ class ExecFenceRuntimeTests(unittest.TestCase):
         # The agent's own marks advance the same clock.
         self.service.mark_activity(*key)
         self.assertLess(time.time() - self.activity.stat().st_mtime, 5)
-        # Reclaim's currency check sees a touch by noded.
-        mark = self.service._activity_mark(key)
-        stamp = self.activity.stat().st_mtime_ns + 1_000_000
-        os.utime(self.activity, ns=(stamp, stamp))
-        self.assertNotEqual(self.service._activity_mark(key), mark)
-
-    def test_without_the_flag_nothing_changes(self) -> None:
-        runtime = DirectNodeRuntime(self.service)
-        self.assertIsNone(runtime.exec_fence)
-        self.service.exec_fence = None
-        self.transition.unlink(missing_ok=True)
-        self.activity.unlink(missing_ok=True)  # the create's activity mark made it
-        with runtime.lifecycle.exclusive(self.spec.id):
-            pass
-        self.service.mark_activity(self.spec.id, self.record.generation)
-        self.assertFalse(self.transition.exists() or self.activity.exists())
 
 
 class _UnixConnection(HTTPConnection):
@@ -245,7 +226,7 @@ class ExecConfigTests(unittest.TestCase):
             connection.close()
 
     def test_the_configuration_carries_the_exec_settings_under_its_digest(self) -> None:
-        root, effective = self.serve(rust_execs=True, total_resources=fixtures.ResourceQuantity(vcpu=4, memory_mb=8192))
+        root, effective = self.serve(total_resources=fixtures.ResourceQuantity(vcpu=4, memory_mb=8192))
         self.assertEqual(effective["exec"], {
             "runsc": "/opt/runsc", "runtime_root": str(root / "runsc"),
             "warden_locks_dir": str(root / "runsc" / "warden-locks"),
@@ -254,55 +235,14 @@ class ExecConfigTests(unittest.TestCase):
             "sessions": {"max_sessions": 1024, "max_events_per_session": 512,
                          "completed_retention_seconds": 30.0, "delivered_grace_seconds": 2.0,
                          "output_idle_timeout_seconds": 300.0},
-            "admission_wait_seconds": 30.0, "rust_execs_enabled": True,
+            "admission_wait_seconds": 30.0,
         })
-        self.assertFalse(effective["rust_creates_enabled"])
         digest = effective.pop("config_sha256")
         self.assertEqual(digest, hashlib.sha256(
             json.dumps(effective, sort_keys=True, separators=(",", ":")).encode()).hexdigest())
         _, plain = self.serve()
-        self.assertEqual((plain["exec"]["rust_execs_enabled"], plain["exec"]["active_capacity_configured"]),
-                         (False, False))
+        self.assertFalse(plain["exec"]["active_capacity_configured"])
         self.assertNotEqual(plain["config_sha256"], digest)
-
-    def test_rust_execs_need_the_socket(self) -> None:
-        with self.assertRaisesRegex(ValueError, "Rust execs need the agent on its Unix socket"):
-            fixtures.build_direct_node_agent_server(
-                "127.0.0.1", 0, service=object(), image_file=Path("/nonexistent"), job_id="job",
-                node_id="node", rust_execs=True)
-
-
-class RustExecFlagTests(unittest.TestCase):
-    def test_the_flag_requires_the_front_door_and_renders_both_sides(self) -> None:
-        raw = DeploymentConfig.default(scope_id="project-1").to_dict()
-        self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_node_rust_exec)
-        with self.assertRaisesRegex(ValueError, "direct_node_rust_exec requires"):
-            DeploymentConfig.from_dict({**raw, "sandbox": {**raw["sandbox"], "direct_node_rust_exec": True}})
-        exec_only = {**raw["sandbox"], "direct_node_front_door": True, "direct_node_rust_exec": True}
-        with self.assertRaisesRegex(ValueError, "direct_node_rust_exec requires"):
-            DeploymentConfig.from_dict({**raw, "sandbox": exec_only})
-        enabled = {**exec_only, "direct_node_rust_create": True}
-        self.assertTrue(DeploymentConfig.from_dict({**raw, "sandbox": enabled}).sandbox.direct_node_rust_exec)
-        options = vm_init_fixtures.VmInitTests._options(
-            direct_node_front_door=True, direct_node_rust_create=True, direct_node_rust_exec=True)
-        self.assertTrue(vm_init_options_to_dict(options)["directNodeRustExec"])
-        token = options.node_control_bearer_token_file
-        with self.assertRaisesRegex(ValueError, "require the node front door and Rust node creates"):
-            render_vm_init_script(vm_init_fixtures.VmInitTests._options(
-                direct_node_front_door=True, direct_node_rust_exec=True))
-        both = render_vm_init_script(options)
-        self.assertIn("--registry-foreign --rust-creates --rust-execs", both)
-        self.assertIn(f"--rust-create --rust-exec --node-control-token-file {token}\n", both)
-        front_door_only = render_vm_init_script(vm_init_fixtures.VmInitTests._options(direct_node_front_door=True))
-        self.assertNotIn("--rust-exec", front_door_only)
-        with self.assertRaisesRegex(ValueError, "execs require the node front door"):
-            render_vm_init_script(vm_init_fixtures.VmInitTests._options(direct_node_rust_exec=True))
-        required = ["--deployment-id", "d", "--state-root", "/s", "--image-file", "/i", "--volume-mount-root", "/v",
-                    "--storage-native-socket", "/n", "--runsc", "/r", "--runsc-commit", "c",
-                    "--node-control-bearer-token-file", "/t"]
-        parser = build_parser()
-        self.assertTrue(parser.parse_args(["serve-direct-node-agent", *required, "--rust-execs"]).rust_execs)
-        self.assertFalse(parser.parse_args(["serve-direct-node-agent", *required]).rust_execs)
 
 
 if __name__ == "__main__":

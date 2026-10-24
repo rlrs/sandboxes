@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import json
 import os
 from pathlib import Path
@@ -5,7 +6,7 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from sandboxes.config import DeploymentConfig
+from sandboxes.config import DeploymentConfig, SnapshotStoreConfig
 
 
 class ConfigTests(unittest.TestCase):
@@ -72,33 +73,35 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "delete the key"):
                 DeploymentConfig.from_dict(enabled)
 
-    def test_pause_tier_is_additive_off_by_default_and_requires_swap(self):
+    def test_the_pause_tier_requires_swap_and_zswap_is_optional(self):
         raw = self._raw()
-        self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_pause_tier)
-        raw["sandbox"].update(direct_pause_tier=True, swap_gb=0)
+        raw["sandbox"]["swap_gb"] = 0
         with self.assertRaisesRegex(ValueError, "requires sandbox.swap_gb"):
             DeploymentConfig.from_dict(raw)
         raw["sandbox"]["swap_gb"] = 16
-        self.assertTrue(DeploymentConfig.from_dict(raw).sandbox.direct_pause_tier)
-        # zswap is optional, off by default, and only ahead of the pause tier.
+        # zswap is optional and off by default.
         self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_pause_tier_zswap)
         raw["sandbox"]["direct_pause_tier_zswap"] = True
         self.assertTrue(DeploymentConfig.from_dict(raw).sandbox.direct_pause_tier_zswap)
-        for invalid in ({"direct_pause_tier_zswap": 1},
-                        {"direct_pause_tier_zswap": True, "direct_pause_tier": False}):
-            with self.subTest(invalid=invalid), self.assertRaisesRegex(
-                    ValueError, "direct_pause_tier_zswap"):
-                DeploymentConfig.from_dict({**raw, "sandbox": {**raw["sandbox"], **invalid}})
-        # Node-local model waits: off by default, only with the pause tier.
-        self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_local_model_waits)
-        local = {**raw, "sandbox": {**raw["sandbox"], "direct_local_model_waits": True}}
-        self.assertTrue(DeploymentConfig.from_dict(local).sandbox.direct_local_model_waits)
-        with self.assertRaisesRegex(ValueError, "direct_local_model_waits requires the pause tier"):
-            DeploymentConfig.from_dict({**local, "sandbox": {**local["sandbox"], "direct_pause_tier": False,
-                                                            "direct_pause_tier_zswap": False}})
-        raw["sandbox"]["direct_pause_tier"] = "yes"
-        with self.assertRaises(ValueError):
+        raw["sandbox"]["direct_pause_tier_zswap"] = 1
+        with self.assertRaisesRegex(ValueError, "direct_pause_tier_zswap"):
             DeploymentConfig.from_dict(raw)
+
+    def test_retired_noded_flags_load_only_as_true_and_are_written_true(self):
+        raw = self._raw()
+        written = DeploymentConfig.from_dict(raw).to_dict()["sandbox"]
+        flags = ("direct_node_front_door", "direct_node_rust_create", "direct_node_rust_exec",
+                 "direct_node_rust_pause", "direct_pause_tier", "direct_local_model_waits",
+                 "direct_split_memory_backing")
+        # 0.10.0 reads a missing flag as false: a rollback must find them true.
+        self.assertEqual({name: written[name] for name in flags}, dict.fromkeys(flags, True))
+        for name in flags:
+            absent = {**raw, "sandbox": {key: value for key, value in raw["sandbox"].items() if key != name}}
+            self.assertEqual(DeploymentConfig.from_dict(absent), DeploymentConfig.from_dict(raw))
+            for value in (False, "true", 1):
+                with self.subTest(name=name, value=value), self.assertRaisesRegex(
+                        ValueError, f"sandbox.{name} is retired and must be true or absent"):
+                    DeploymentConfig.from_dict({**raw, "sandbox": {**raw["sandbox"], name: value}})
 
     def test_exact_config_round_trip_and_derived_authority(self) -> None:
         raw = self._raw()
@@ -354,20 +357,15 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no local registry data directory"):
             config.registry_data_dir()
 
-    def test_split_checkpoint_requires_registry_before_worker_launch(self):
+    def test_split_checkpoints_require_registry_before_worker_launch(self):
         raw = self._raw()
-        raw["sandbox"]["direct_split_memory_backing"] = True
-        self.assertTrue(DeploymentConfig.from_dict(raw).sandbox.direct_split_memory_backing)
         raw["snapshot_store"].update(kind="s3", endpoint="https://store.example",
                                      bucket="snapshots", region="eu")
         with self.assertRaisesRegex(ValueError, "requires registry checkpoint"):
             DeploymentConfig.from_dict(raw)
-        raw["sandbox"]["direct_split_memory_backing"] = False
-        self.assertEqual(DeploymentConfig.from_dict(raw).snapshot_store.kind, "s3")
 
     def test_s3_snapshot_store_keeps_only_environment_names_in_state(self) -> None:
-        raw = self._raw()
-        raw["snapshot_store"] = {
+        raw = {
             "kind": "s3",
             "endpoint": "https://fsn1.your-objectstorage.com",
             "bucket": "sandbox-snapshots",
@@ -380,11 +378,11 @@ class ConfigTests(unittest.TestCase):
 
         secret = "secret-access-key-value"
         with patch.dict(os.environ, {"SNAPSHOT_SECRET_KEY": secret}):
-            config = DeploymentConfig.from_dict(raw)
+            config = SnapshotStoreConfig.from_dict(raw)
 
-        self.assertEqual(config.snapshot_store.kind, "s3")
-        self.assertEqual(config.snapshot_store.prefix, "production")
-        encoded = json.dumps(config.to_dict())
+        self.assertEqual(config.kind, "s3")
+        self.assertEqual(config.prefix, "production")
+        encoded = json.dumps(asdict(config))
         self.assertIn("SNAPSHOT_SECRET_KEY", encoded)
         self.assertNotIn(secret, encoded)
 
@@ -398,8 +396,7 @@ class ConfigTests(unittest.TestCase):
             DeploymentConfig.from_dict(raw)
 
     def test_s3_snapshot_store_accepts_hetzner_bucket_url_as_endpoint(self) -> None:
-        raw = self._raw()
-        raw["snapshot_store"] = {
+        raw = {
             "kind": "s3",
             "endpoint": "https://sandboxes.hel1.your-objectstorage.com/",
             "bucket": "sandboxes",
@@ -410,17 +407,15 @@ class ConfigTests(unittest.TestCase):
             "security_token_env": "SNAPSHOT_SECURITY_TOKEN",
         }
 
-        config = DeploymentConfig.from_dict(raw)
+        config = SnapshotStoreConfig.from_dict(raw)
 
         self.assertEqual(
-            config.snapshot_store.endpoint,
+            config.endpoint,
             "https://hel1.your-objectstorage.com",
         )
 
     def test_s3_snapshot_store_rejects_non_origin_endpoint(self) -> None:
-        raw = self._raw()
-        snapshot_store = raw["snapshot_store"]
-        assert isinstance(snapshot_store, dict)
+        snapshot_store = asdict(SnapshotStoreConfig())
         snapshot_store.update(
             {
                 "kind": "s3",
@@ -431,7 +426,7 @@ class ConfigTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "origin"):
-            DeploymentConfig.from_dict(raw)
+            SnapshotStoreConfig.from_dict(snapshot_store)
 
 
 if __name__ == "__main__":

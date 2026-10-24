@@ -1,5 +1,8 @@
 """Pause tier (C1.1): stop idle sandboxes in place, reclaim them under pressure.
 
+runtime/noded runs the policy (pause_handoff.pause_config sends it the
+constants below); the Warden pauses, thaws and prefetches with what is here.
+
 A pause changes no ownership: the Warden journal stays RUNNING/LIVE, the route
 stays running, and the Warden thaws before any runsc exec. Nothing here grants
 lifecycle authority. Its state is disposable; Warden pause markers are truth.
@@ -12,13 +15,11 @@ path and crash window would have to undo first.
 """
 
 from contextlib import contextmanager
-from dataclasses import dataclass
 import errno
 import fcntl
 import os
 from pathlib import Path
 import threading
-import time
 
 # Gray's five-minute rule for DRAM against NVMe: keeping a byte resident for
 # about five minutes costs as much as writing it out and reading it back.
@@ -102,101 +103,6 @@ def advised_wait_seconds(phase, wall_now):
                - max(0.0, wall_now - phase["evaluated_at"]))
 
 
-@dataclass
-class PausedWait:
-    paused_at: float
-    expected_until: float | None = None
-    resident_bytes: int | None = None
-    swapped_bytes: int = 0
-    reclaiming: int = 0  # The target of its in-flight reclaim, in bytes.
-    escalating: bool = False
-    # Reclaims in a row that made no progress, and when the next may start.
-    stalls: int = 0
-    retry_at: float = 0.0
-    # A node-local model wait's growth-forecast identity (observe_managed_wait).
-    local_request_id: str = ""
-
-
-def swap_room_bytes(pressure):
-    """Swap that reclaim may still fill above the kernel's reserve.
-
-    Unknown swap is unbounded: reclaim tries, and a stalled one escalates.
-    """
-    total, free = pressure.swap_total_bytes, pressure.swap_free_bytes
-    if total is None or free is None:
-        return float("inf")
-    return max(0, free - int(total * SWAP_RESERVE_FRACTION))
-
-
-def relief_plan(decision, paused, *, now, swap_room):
-    """(reclaims, escalations) of paused waits that cover a deficit (pure).
-
-    Only measured pressure (`decide_resident_wait`: headroom or PSI) acts.
-    Evict the waits that will stay idle longest: hinted waits by expected
-    remaining idle x resident bytes, then the rest by resident bytes, most
-    recently paused first. Without a hint, a long-paused wait is the likeliest
-    to wake next, and evicting it buys a thaw instead of relief.
-
-    A wait swaps out while swap has room above the kernel's reserve; one in
-    its stall backoff waits. One that stalled MAX_STALLS times in a row, or
-    that no longer fits in swap, escalates to a durable hibernate if it holds
-    at least STALL_BYTES resident and more resident than swapped: a capture
-    faults swapped pages back in before it frees anything. In-flight work
-    counts against the deficit (a reclaim its target, a hibernate all it
-    holds) and an in-flight reclaim's target against the room; unmeasured
-    waits carry no credit.
-    """
-    if not decision.reclaim:
-        return (), ()
-    reclaiming = sum(wait.reclaiming for wait in paused.values())
-    room = swap_room - reclaiming
-    deficit = decision.target_bytes - reclaiming - sum(
-        wait.resident_bytes or 0 for wait in paused.values() if wait.escalating)
-
-    def score(item):
-        wait, resident = item[1], item[1].resident_bytes or 0
-        if wait.expected_until is not None:
-            return (1, max(0.0, wait.expected_until - now) * resident)
-        return (0, resident / (1.0 + max(0.0, now - wait.paused_at)))
-
-    reclaims, escalations = [], []
-    for key, wait in sorted(paused.items(), key=score, reverse=True):
-        if deficit <= 0:
-            break
-        if wait.reclaiming or wait.escalating or not wait.resident_bytes:
-            continue
-        stalled = wait.stalls >= MAX_STALLS
-        if not stalled and room >= STALL_BYTES:
-            if now < wait.retry_at:
-                continue  # Backing off after a stall; others may relieve meanwhile.
-            freed = min(wait.resident_bytes, deficit, room)
-            reclaims.append((key, freed))
-            room -= freed
-        elif wait.resident_bytes >= max(STALL_BYTES, wait.swapped_bytes):
-            freed = wait.resident_bytes
-            escalations.append(key)
-        else:
-            continue
-        deficit -= freed
-    return tuple(reclaims), tuple(escalations)
-
-
-def reclaim_stalled(result, target_bytes):
-    """A reclaim that raised, or freed less than STALL_BYTES (or its whole
-    smaller target) without being superseded, made no progress."""
-    return result is None or (result.reason != "superseded" and result.reclaimed_bytes
-                              < min(target_bytes, STALL_BYTES))
-
-
-def note_reclaim(wait, stalled, *, now):
-    """Count a stall into its doubling backoff; progress clears both."""
-    if stalled:
-        wait.stalls += 1
-        wait.retry_at = now + STALL_BACKOFF_SECONDS * 2 ** (wait.stalls - 1)
-    else:
-        wait.stalls, wait.retry_at = 0, 0.0
-
-
 def cap_zswap(pid, *, proc_root=Path("/proc"), cgroup_root=Path("/sys/fs/cgroup"),
               zswap_enabled=Path("/sys/module/zswap/parameters/enabled")):
     """Bound a process's cgroup's zswap to ZSWAP_SHARE_OF_BOUND of its memory
@@ -217,69 +123,6 @@ def cap_zswap(pid, *, proc_root=Path("/proc"), cgroup_root=Path("/sys/fs/cgroup"
         return cap
     except (OSError, ValueError):
         return None  # Optional: without the cap a reclaim only frees less.
-
-
-def _may_raise_priority():
-    """Whether this process may lower a thread's nice value again (CAP_SYS_NICE)."""
-    nice = os.getpriority(os.PRIO_PROCESS, 0)
-    try:
-        os.setpriority(os.PRIO_PROCESS, 0, nice - 1)
-    except OSError:
-        return False
-    os.setpriority(os.PRIO_PROCESS, 0, nice)
-    return True
-
-
-class ReclaimBudget:
-    """The node's one budget for paused reclaim: slots, a shared rate, priority.
-
-    The scheduler keeps at most `concurrency` reclaims in flight. Each window
-    reserves its bytes where the previous reservation ends (virtual
-    scheduling), so concurrent reclaims split one rate instead of each
-    getting it. A cancelled wait forfeits its reservation: at most one window.
-    """
-
-    def __init__(self, *, concurrency=RECLAIM_CONCURRENCY,
-                 bytes_per_second=RECLAIM_BYTES_PER_SECOND, clock=time.monotonic, sleep=time.sleep):
-        if concurrency < 1 or bytes_per_second <= 0:
-            raise ValueError("reclaim budget must be positive")
-        self.concurrency, self.bytes_per_second = concurrency, bytes_per_second
-        self._clock, self._sleep = clock, sleep
-        self._lock = threading.Lock()
-        self._next = 0.0
-        self._restorable = _may_raise_priority()
-
-    def admit(self, amount, is_current):
-        """Wait for this window's share of the rate; False once superseded."""
-        with self._lock:
-            start = max(self._clock(), self._next)
-            self._next = start + amount / self.bytes_per_second
-        while (remaining := start - self._clock()) > 0:
-            if not is_current():
-                return False
-            self._sleep(min(remaining, 0.05))
-        return True
-
-    @contextmanager
-    def background(self):
-        """Run one kernel write at the lowest CPU weight (nice 19).
-
-        memory.reclaim, and zswap compression, run in the writer's context.
-        Only the write runs low: it releases the GIL, while a Python thread
-        left at nice 19 holding the GIL would stall every node-agent thread.
-        Not SCHED_IDLE: a starved writer can sit on kernel reclaim locks.
-        Without CAP_SYS_NICE the priority could not be restored, so the write
-        keeps it.
-        """
-        if not self._restorable:
-            yield
-            return
-        before = os.getpriority(os.PRIO_PROCESS, 0)
-        os.setpriority(os.PRIO_PROCESS, 0, 19)
-        try:
-            yield
-        finally:
-            os.setpriority(os.PRIO_PROCESS, 0, before)
 
 
 def cgroup_swap_bytes(pid, *, proc_root=Path("/proc"), cgroup_root=Path("/sys/fs/cgroup")):
@@ -391,11 +234,6 @@ class PauseStats:
                 previous = self._values[name]
                 self._values[name] = (max(previous, amount) if name.endswith("_max")
                                       else previous + amount)
-
-    def stopped(self, reason):
-        """Count why a pause reclaim ended (a thaw's is a cancellation)."""
-        if reason != "superseded":
-            self.add(**{STOP_COUNTERS.get(reason, "pause_reclaim_errors"): 1})
 
     def snapshot(self):
         with self._lock:

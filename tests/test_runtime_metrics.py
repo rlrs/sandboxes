@@ -325,16 +325,16 @@ if __name__ == "__main__":
 class ResidentWaitMetricsTests(unittest.TestCase):
     def test_worker_snapshot_roundtrips_and_absent_demand_is_unknown(self):
         from types import SimpleNamespace
-        from sandboxes.background_io import Pressure
         from sandboxes.models import ResidentWaitMetrics
         from sandboxes.node_agent import NodeAgentHandler
-        from sandboxes.warm_park import WarmParkPolicy
+        from sandboxes.node_runtime import NO_WARM_PARKS
+        from sandboxes.pause_tier import PauseStats
 
-        policy = WarmParkPolicy(lambda: Pressure(.20, 0))
         handler = SimpleNamespace(
             runtime_metrics_provider=lambda: NodeRuntimeMetrics(collected_at=utc_now()),
             image_manager=SimpleNamespace(pull_operation_snapshot=lambda: {}),
-            manager=SimpleNamespace(resident_wait_snapshot=policy.snapshot),
+            manager=SimpleNamespace(resident_wait_snapshot=lambda: {
+                **NO_WARM_PARKS, **PauseStats().snapshot(), "paused_sandboxes": 0}),
             rootfs_metrics_provider=None,
         )
         metrics = NodeAgentHandler._runtime_metrics_snapshot(handler)

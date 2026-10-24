@@ -90,8 +90,8 @@ pub enum ControlFailure {
 pub trait JobNode: Send + Sync + 'static {
     /// Blocking (registry, journal, /proc): called off the reactor.
     fn lookup(&self, sandbox_id: &str) -> Lookup;
-    /// Whether starts and signals can run here: the exec fence is shared
-    /// with the agent (`--rust-execs`).
+    /// Whether starts and signals can run here: the node is loaded, and the
+    /// exec fence is shared with the agent.
     fn controls(&self) -> bool;
     /// One `ctl` exchange with `request` on stdin, under the exec fences,
     /// thawing a paused sandbox (with prefetch) and leaving it running.
@@ -814,7 +814,7 @@ impl JobNode for NodeJobs {
     }
 
     fn controls(&self) -> bool {
-        self.node.get().is_some_and(|node| node.config().exec.rust_execs_enabled)
+        self.node.get().is_some()
     }
 
     fn control(&self, incarnation: &Incarnation, request: Vec<u8>, guest_timeout_ms: u64, timeout: Duration)
@@ -823,9 +823,6 @@ impl JobNode for NodeJobs {
         Box::pin(async move {
             let node = cell.get().cloned().ok_or(ControlFailure::Forward("node not configured"))?;
             let config = node.config().exec.clone();
-            if !config.rust_execs_enabled {
-                return Err(ControlFailure::Forward("no exec fence"));
-            }
             // The exec start's fences: A held for the exchange keeps pauses
             // and parks out; the warden flock spans it, as in Python.
             let fence = ExecFence::new(&config.warden_locks_dir);
@@ -843,14 +840,9 @@ impl JobNode for NodeJobs {
             .flatten()
             .ok_or(ControlFailure::Forward("not running"))?;
             let marker = config.warden_paused_dir.join(format!("{}.sandbox-{}", sandbox.sandbox_id, sandbox.generation));
-            let tier = node.pause_tier().cloned();
-            if marker.exists() && tier.is_none() {
-                return Err(ControlFailure::Forward("paused"));
-            }
             let lock = node.warden().lock(&sandbox).await.map_err(|_| ControlFailure::Forward("warden lock"))?;
             if marker.exists() {
-                let Some(tier) = tier else { return Err(ControlFailure::Forward("paused")) };
-                tier.thaw_locked(&sandbox, &lock, true).await.map_err(|_| ControlFailure::Forward("thaw failed"))?;
+                node.pause_tier().thaw_locked(&sandbox, &lock, true).await.map_err(|_| ControlFailure::Forward("thaw failed"))?;
             }
             let argv = [
                 config.runsc.to_string_lossy().into_owned(),

@@ -1,4 +1,4 @@
-"""Rollout configuration and node accounting for opt-in split memory backing."""
+"""Configuration and node accounting for split memory backing and its RAM and reflink options."""
 from contextlib import redirect_stdout
 from dataclasses import replace
 from io import StringIO
@@ -27,8 +27,7 @@ class SplitMemoryWiringTests(unittest.TestCase):
         from tests.test_policy import node
         base = DeploymentConfig.default(scope_id="test")
         base = replace(base, sandbox=replace(
-            base.sandbox, direct_split_memory_backing=True,
-            direct_ram_memory_backing=True, direct_reflink_memory_restore=True,
+            base.sandbox, direct_ram_memory_backing=True, direct_reflink_memory_restore=True,
         ))
         for provider in ("ucloud", "hetzner"):
             config = replace(base, provider=replace(base.provider, kind=provider))
@@ -45,20 +44,16 @@ class SplitMemoryWiringTests(unittest.TestCase):
                     script = render_vm_init_script(options)
                     self.assertEqual(" --reflink-memory-restore" in script, role == "sandbox")
 
-    def test_reflink_restore_is_explicit_and_requires_split(self):
+    def test_reflink_restore_is_explicit(self):
         raw = DeploymentConfig.default(scope_id="test").to_dict()
         raw["sandbox"].pop("direct_reflink_memory_restore")
         self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_reflink_memory_restore)
         raw["sandbox"]["direct_reflink_memory_restore"] = True
-        with self.assertRaisesRegex(ValueError, "requires split"):
-            DeploymentConfig.from_dict(raw)
-        raw["sandbox"]["direct_split_memory_backing"] = True
         for ram in (False, True):
             raw["sandbox"]["direct_ram_memory_backing"] = ram
             self.assertTrue(DeploymentConfig.from_dict(raw).sandbox.direct_reflink_memory_restore)
             script = render_vm_init_script(vm_fixtures.VmInitTests._options(
-                direct_split_memory_backing=True, direct_ram_memory_backing=ram,
-                direct_reflink_memory_restore=True,
+                direct_ram_memory_backing=ram, direct_reflink_memory_restore=True,
             ))
             self.assertIn(" --reflink-memory-restore", script)
             self.assertIn("UCLOUD_DIRECT_REFLINK_MEMORY_RESTORE=1", script)
@@ -69,64 +64,39 @@ class SplitMemoryWiringTests(unittest.TestCase):
             raw["sandbox"]["direct_reflink_memory_restore"] = value
             with self.subTest(value=value), self.assertRaises(ValueError):
                 DeploymentConfig.from_dict(raw)
-        with self.assertRaisesRegex(ValueError, "requires split"):
-            render_vm_init_script(vm_fixtures.VmInitTests._options(direct_reflink_memory_restore=True))
-        legacy = render_vm_init_script(vm_fixtures.VmInitTests._options())
-        self.assertNotIn(" --reflink-memory-restore", legacy)
+        default = render_vm_init_script(vm_fixtures.VmInitTests._options())
+        self.assertNotIn(" --reflink-memory-restore", default)
 
-    def test_ram_backing_requires_split_and_survives_bootstrap_restart(self):
+    def test_ram_backing_survives_bootstrap_restart(self):
         raw = DeploymentConfig.default(scope_id="test").to_dict()
         raw["sandbox"].pop("direct_ram_memory_backing")
         self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_ram_memory_backing)
         raw["sandbox"]["direct_ram_memory_backing"] = True
-        with self.assertRaises(ValueError):
-            DeploymentConfig.from_dict(raw)
-        raw["sandbox"]["direct_split_memory_backing"] = True
         self.assertTrue(DeploymentConfig.from_dict(raw).sandbox.direct_ram_memory_backing)
-        script = render_vm_init_script(vm_fixtures.VmInitTests._options(
-            direct_split_memory_backing=True, direct_ram_memory_backing=True,
-        ))
+        script = render_vm_init_script(vm_fixtures.VmInitTests._options(direct_ram_memory_backing=True))
         self.assertIn(" --application-memory-root ${UCLOUD_APPLICATION_MEMORY_ROOT}", script)
         self.assertIn("--ram-capacity-bytes", script)
         self.assertIn("UCLOUD_DIRECT_RAM_MEMORY_BACKING=1", script)
         syntax = subprocess.run(["bash", "-n"], input=script, text=True, capture_output=True)
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
-        with self.assertRaises(ValueError):
-            render_vm_init_script(vm_fixtures.VmInitTests._options(direct_ram_memory_backing=True))
 
-    def test_old_configuration_stays_disabled_and_opt_in_is_boolean(self):
-        raw = DeploymentConfig.default(scope_id="test").to_dict()
-        raw["sandbox"].pop("direct_split_memory_backing")
-        self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_split_memory_backing)
-        raw["sandbox"]["direct_split_memory_backing"] = True
-        self.assertTrue(DeploymentConfig.from_dict(raw).sandbox.direct_split_memory_backing)
-        for value in ("false", 1, None):
-            raw["sandbox"]["direct_split_memory_backing"] = value
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                DeploymentConfig.from_dict(raw)
-
-    def test_bootstrap_opt_in_uses_shared_budget_registry_and_prepared_filesystem(self):
+    def test_bootstrap_uses_shared_budget_registry_and_prepared_filesystem(self):
         options = vm_fixtures.VmInitTests._options
-        legacy = render_vm_init_script(options())
-        self.assertIn("UCLOUD_DIRECT_SPLIT_MEMORY_BACKING=0", legacy)
-        self.assertNotIn(" --split-memory-backing", legacy)
-        split = render_vm_init_script(options(direct_split_memory_backing=True))
-        self.assertIn("UCLOUD_DIRECT_SPLIT_MEMORY_BACKING=1", split)
+        split = render_vm_init_script(options())
+        builder = render_vm_init_script(options(role="builder"))
         self.assertIn(" --memory-backing-hard-capacity-bytes ${UCLOUD_STORAGE_NATIVE_HARD_CAPACITY_BYTES}", split)
         self.assertIn(" --checkpoint-registry-url ${UCLOUD_STORAGE_NATIVE_REGISTRY_URL}", split)
         self.assertIn("${UCLOUD_STORAGE_NATIVE_REPOSITORY}", split)
         self.assertIn("-m sandboxes.memory_filesystem", split)
         self.assertIn("ExecStartPre=/usr/bin/env PYTHONPATH=", split)
-        self.assertNotIn("ExecStartPre=/usr/bin/env PYTHONPATH=", legacy)
         self.assertIn("--runtime-root ${UCLOUD_STORAGE_NATIVE_MOUNT_ROOT}/.runtime", split)
-        self.assertIn("--runtime-root ${UCLOUD_STORAGE_NATIVE_ROOT}/runtime", legacy)
         # Formatting is restricted to a newly-created owned image by the
         # dedicated provisioner, never inline shell device commands.
-        self.assertEqual(split.count("mkfs"), legacy.count("mkfs"))
+        self.assertEqual(split.count("mkfs"), builder.count("mkfs"))
         syntax = subprocess.run(["bash", "-n"], input=split, text=True, capture_output=True)
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
         with self.assertRaises(ValueError):
-            render_vm_init_script(options(role="builder", direct_split_memory_backing=True))
+            render_vm_init_script(options(role="builder", direct_ram_memory_backing=True))
 
     def test_cli_forwards_only_explicit_split_settings(self):
         args = cli.build_parser().parse_args([
@@ -134,7 +104,7 @@ class SplitMemoryWiringTests(unittest.TestCase):
             "--image-file", "/tmp/images", "--volume-mount-root", "/tmp/mounts",
             "--storage-native-socket", "/tmp/native.sock", "--runsc", "/tmp/runsc",
             "--runsc-commit", "a" * 40, "--node-control-bearer-token-file", "/tmp/token",
-            "--split-memory-backing", "--memory-backing-hard-capacity-bytes", "123456",
+            "--memory-backing-hard-capacity-bytes", "123456",
             "--application-memory-root", "/run/test-memory",
             "--reflink-memory-restore",
             "--checkpoint-registry-url", "http://registry:5000",
@@ -148,7 +118,6 @@ class SplitMemoryWiringTests(unittest.TestCase):
              patch.object(cli, "telemetry_from_args", return_value=Mock()), \
              redirect_stdout(StringIO()):
             self.assertEqual(cli.cmd_serve_direct_node_agent(args), 0)
-        self.assertTrue(build.call_args.kwargs["split_memory_backing"])
         self.assertTrue(build.call_args.kwargs["reflink_memory_restore"])
         self.assertEqual(build.call_args.kwargs["application_memory_root"], Path("/run/test-memory"))
         self.assertEqual(build.call_args.kwargs["memory_backing_hard_capacity_bytes"], 123456)

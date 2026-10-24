@@ -232,21 +232,19 @@ pub fn session_nonce() -> Result<String, String> {
     Ok(nonce.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-/// The fronts for `--rust-create` and `--rust-exec`: the agent client under a
-/// fresh session, and the node (registry owner, pipeline) once the agent
-/// reports its configuration. Execs need the node, so `--rust-exec` needs
-/// `--rust-create` in this build. `admission` (`--rust-admission`) adds the
+/// The daemon's fronts: the agent client under a fresh session, and the node
+/// (registry owner, create pipeline, execs, pause tier) once the agent
+/// reports its configuration. `admission` (`--rust-admission`) adds the
 /// agent's routes for the internal socket, under the same session.
-pub fn start_fronts(upstream: &std::path::Path, token: &str, exec: bool, pause: bool, admission: bool) -> Result<Fronts, String> {
+pub fn start_fronts(upstream: &std::path::Path, token: &str, admission: bool) -> Result<Fronts, String> {
     let session = session_nonce()?;
     let agent = Arc::new(agent_rpc::AgentClient::new(upstream.to_path_buf(), token, &session).map_err(|e| e.to_string())?);
     let pipeline = pipeline::LazyPipeline::new();
     let node = Arc::new(std::sync::OnceLock::new());
     let (pipeline_agent, cell) = (agent.clone(), node.clone());
     tokio::spawn(pipeline.clone().load(agent.clone(), move |config| {
-        // The pause tier is the daemon's only with --rust-pause and the agent's say-so.
+        // Node admission is the daemon's only with --rust-admission and the agent's say-so.
         let mut config = config;
-        config.pause.rust_pause_enabled &= pause;
         config.admission.rust_admission_enabled &= admission;
         let opened = Arc::new(node_pipeline::NodePipeline::open(config, pipeline_agent.clone())?);
         let _ = cell.set(opened.clone());
@@ -264,7 +262,7 @@ pub fn start_fronts(upstream: &std::path::Path, token: &str, exec: bool, pause: 
     };
     Ok(Fronts {
         create: Some(Arc::new(create::CreateFront::new(agent, pipeline, token))),
-        exec: exec.then(|| exec_front::ExecFront::new(node.clone(), token)),
+        exec: Some(exec_front::ExecFront::new(node.clone(), token)),
         jobs: Some(jobs),
         node: Some(node),
         internal,

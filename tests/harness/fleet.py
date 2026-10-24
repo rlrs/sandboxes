@@ -21,9 +21,13 @@ these boundaries:
 - Host metrics are a sample the test sets (``FleetNode.sample_metrics``),
   and heartbeats are relayed on demand by ``LocalFleet.heartbeat()``, as the
   production heartbeat timer would.
+- The agent runs as it does behind noded, on TCP without noded in front: a
+  foreign registry writer, the exec fence, the create handoff and the pause
+  tier (relay parks may pause in place), with its internal routes off. Nothing
+  runs idle pauses, local waits or paused reclaim, which are noded's.
 - With ``rust_admission=True`` each node's admission runs in a real
-  ``ucloud-noded --admission-only`` (tests/noded_admission.py) that owns the
-  node's registry and outlives agent restarts, as noded does on a worker.
+  ``ucloud-noded --admission-only`` (tests/noded_admission.py) that outlives
+  agent restarts, as noded does on a worker.
 
 The gateway uses distinct real tokens and PostgreSQL routing through the
 production descriptor, on its own schema (``UCLOUD_TEST_POSTGRES_DSN``; a
@@ -557,7 +561,7 @@ class FleetNode:
         self._connections.clear()
         server.server_close()
         self._stopped_servers.append(server)
-        # Process exit would release registry ownership for the next agent.
+        # Process exit would close its registry connections.
         self.service.provisioner.registry.close()
         self.service = None
 

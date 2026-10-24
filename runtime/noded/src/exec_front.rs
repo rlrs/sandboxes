@@ -119,15 +119,15 @@ impl ExecFront {
         supplied.is_some_and(|supplied| !supplied.is_empty() && constant_time_eq(supplied, &self.token))
     }
 
-    /// The node, when it serves execs: the agent enabled them and the session
-    /// limits are the ones this build implements.
+    /// The node, when it serves execs: the session limits are the ones this
+    /// build implements.
     fn node(&self) -> Option<&Arc<NodePipeline>> {
         let node = self.node.get()?;
         let exec = &node.config().exec;
         let limits = ExecLimits::default();
         let same = exec.sessions.max_sessions == limits.max_sessions
             && exec.sessions.max_events_per_session == limits.max_events_per_session;
-        (exec.rust_execs_enabled && same).then_some(node)
+        same.then_some(node)
     }
 
     pub fn intercepts<B>(&self, request: &Request<B>) -> bool {
@@ -262,11 +262,6 @@ impl ExecFront {
             spec_sha256: registration.spec_sha256(),
         };
         let marker = config.warden_paused_dir.join(format!("{}.sandbox-{}", sandbox.sandbox_id, sandbox.generation));
-        // A paused sandbox is the agent's unless the daemon owns the pause tier.
-        let tier = node.pause_tier().cloned();
-        if marker.exists() && tier.is_none() {
-            return Err(Decline::Forward("paused"));
-        }
         if !running(node, &sandbox) {
             return Err(Decline::Forward("not running"));
         }
@@ -281,8 +276,7 @@ impl ExecFront {
             // Thaw-on-exec (Python's exec_lease: `_thaw_locked(prefetch=True)`
             // under the warden flock). The exec's A lock already keeps a new
             // pause out until the session ends.
-            let Some(tier) = tier else { return Err(Decline::Forward("paused")) };
-            match tier.thaw_locked(&sandbox, &lock, true).await {
+            match node.pause_tier().thaw_locked(&sandbox, &lock, true).await {
                 Ok(thawed) => {
                     let ms = thawed.map_or(0.0, |elapsed| elapsed.as_secs_f64() * 1000.0);
                     timings.manager.insert("thaw".into(), serde_json::json!(ms));

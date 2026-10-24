@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+- **Workers always run behind ucloud-noded, with the pause tier, node-local
+  model waits and split memory backing.** `sandbox.direct_node_front_door`,
+  `direct_node_rust_create`, `direct_node_rust_exec`, `direct_node_rust_pause`,
+  `direct_pause_tier`, `direct_local_model_waits` and
+  `direct_split_memory_backing` are retired: a deployment file may still name
+  them, but only as `true` (any other value is refused at load), and the
+  gateway writes them `true` when it writes the file. Production already runs
+  all seven, so behaviour does not change. `sandbox.swap_gb` must be at least 1
+  and `snapshot_store.kind` must be `registry`. `direct_node_rust_admission`
+  stays a flag, off by default.
+  - The agent drops `--registry-foreign`, `--rust-creates`, `--rust-execs`,
+    `--rust-pause-tier`, `--pause-tier`, `--local-model-waits` and
+    `--split-memory-backing`; it always serves its Unix socket behind noded
+    and needs `--memory-backing-hard-capacity-bytes`. noded drops
+    `--rust-create`, `--rust-exec` and `--rust-pause` and always needs
+    `--node-control-token-file`. Units come from vm_init at worker init, so
+    only freshly initialized workers see this; a sandbox bundle must carry
+    `ucloud-noded` and gVisor build provenance (production bundles do).
+  - Gone from the agent, because noded already ran them: the Python idle
+    parker, paused reclaim and escalation decisions, node-local model waits
+    (`local_wait.py` keeps the constants and `relay_endpoints` it sends noded),
+    warm parking (`WarmParkPolicy`, resident cache reclaim), the network pair
+    pool, and the registry's owner mode (the agent is always a foreign writer).
+    Heartbeats still send warm parking's `resident_wait` fields, as zeros.
+    `/internal/` routes answer only on the agent's Unix socket.
+  - Rollback to 0.10.0: keep the seven keys `true` in deployment.json (0.10.0
+    reads a missing key as false and would run the old Python paths). Workers
+    initialized by this release keep running; roll them back by
+    re-initializing them with the 0.10.0 bundle.
+
 - **Parked-wake consolidation is gone.** A parked sandbox wakes on its owner
   when it fits there, and moves only when it does not; drain-on-park packs the
   fleet instead. Production runs with `policy.parked_wake_consolidation_enabled`

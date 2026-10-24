@@ -36,6 +36,7 @@ from sandboxes.node_agent import (
     build_direct_node_agent_server as _build_direct_node_agent_server,
 )
 from sandboxes.node_runtime import DirectNodeRuntime
+from sandboxes.pause_tier import PauseStats
 from sandboxes.sandbox import (
     SandboxAdmissionClosedError,
     SandboxCapacityUnavailableError,
@@ -333,9 +334,11 @@ class FakeWarden:
         self.config = SimpleNamespace(
             bundle_root=bundles,
             memory_root=quota,
+            runtime_root=root / "runsc",
             network="none",
             runtime_fingerprint=fingerprint,
         )
+        self.pause_stats = PauseStats()
         self.artifacts = HibernationArtifactStore(quota)
         self.records = {}
         self.storage = storage
@@ -378,6 +381,10 @@ class FakeWarden:
 
     def is_paused(self, _sandbox_id, _generation):
         return False
+
+    @staticmethod
+    def paused_keys():
+        return []
 
     @staticmethod
     def workspace_record(_sandbox):

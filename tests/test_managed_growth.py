@@ -77,16 +77,16 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
 
     def test_local_wait_suspends_growth_and_its_resume_forecasts_a_continuation(self):
         self.service.start_managed_process('one', self.spec)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         self.service.observe_managed_wait('one', 7, 'local-wait-a')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 0)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 0)
         self.service.resume_managed_continuation('one', 7, 'local-wait-a')
         intent = self.intents(self.service)[('one', 7)]
         self.assertEqual((intent.phase, intent.request_id), ('active', 'local-wait-a'))
 
     def test_managed_create_is_not_charged_the_bound_its_launch_carries(self):
         self.service.start_managed_process('one', self.spec)  # Its launch forecasts all 4 GiB of headroom.
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         self.fixture.create(self.service, replace(self.fixture.spec(), id='three', memory_mb=4096,
                                                  parkable=True, managed_process=True))
         self.assertEqual(self.registry.get('three').phase, 'owned')
@@ -106,7 +106,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
         self.assertEqual(phases, {'one': ('active', 'a'), 'two': ('safe', 'b')})
         self.assertEqual({(item.sandbox_id, item.phase) for item in self.registry.growth_intents()},
                          {('one', 'active'), ('two', 'safe')})
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_memory_blocked_continuation_does_not_occupy_restore_slot(self):
         self.service.start_managed_process('one', self.spec)
@@ -136,7 +136,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
                                  'one', 7, 'request-one') for _ in range(8)]
             for wake in wakes:
                 wake.result(2)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         self.assertFalse(self.foreground_waiting(self.service))
         self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-one'))
 
@@ -154,7 +154,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.assertEqual(self.intents(self.service)[('one', 7)].phase, 'active')
             self.assertFalse(self.service._capacity_guard.locked())
             self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-one'))
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+            self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
             return
         observed = []
         original = self.registry.growth_intent
@@ -171,7 +171,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
         self.assertEqual([action for action, _ in observed], ['launch', 'activate', 'wait', 'activate'])
         self.assertEqual([held for _, held in observed], [False] * 4)
         self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-one'))
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_admitted_growth_stays_charged_while_its_commit_is_in_flight(self):
         self.service.start_managed_process('one', self.spec)
@@ -197,7 +197,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             # The guard is free during the commit, yet the headroom is spent:
             # only one 4 GiB continuation fits in 6 GiB available.
             self.assertFalse(self.service._capacity_guard.locked())
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+            self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
             second = pool.submit(self.service.admit_managed_continuation, 'two', 7, 'request-two')
             self.wait_for_demand()
             self.assertFalse(second.done())
@@ -220,10 +220,10 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
                 # Admitted and charged while its commit waits: only one 4 GiB
                 # continuation fits in 6 GiB available.
                 deadline = time.monotonic() + 2
-                while (self.service.warm_park_demand().physical_bytes != 4 << 30
+                while (self.service.reclaim_demand()[1].physical_bytes != 4 << 30
                        and time.monotonic() < deadline):
                     time.sleep(.005)
-                self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+                self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
                 self.assertFalse(first.done())
                 self.assertFalse(self.registry.relay_wake_fence('one', 7, 'request-one'))
                 second = pool.submit(self.service.admit_managed_continuation, 'two', 7, 'request-two')
@@ -236,7 +236,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.assertFalse(second.done())
             self.service.observe_managed_wait('one', 7, 'request-one-next')
             second.result(2)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_wait_winning_before_covered_check_requires_growth_admission(self):
         self.service.start_managed_process('one', self.spec)
@@ -246,7 +246,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.service.observe_managed_wait('one', 7, 'request-race')
             self.service.admit_managed_continuation('one', 7, 'request-race')
             self.assertEqual(self.intents(self.service)[('one', 7)].phase, 'active')
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+            self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
             self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-race'))
             return
         original = self.service._growth_turn
@@ -267,7 +267,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.service.admit_managed_continuation('one', 7, 'request-race')
         self.assertTrue(intercepted)
         self.assertEqual(self.intents(self.service)[('one', 7)].phase, 'active')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-race'))
 
     def test_existing_wake_fence_does_not_take_registry_writer(self):
@@ -291,7 +291,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
 
     def test_managed_burst_waits_after_runtime_create_until_first_safe_wait(self):
         self.service.start_managed_process('one', self.spec)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         with ThreadPoolExecutor(max_workers=1) as pool:
             second = pool.submit(self.service.start_managed_process, 'two', self.spec)
             self.wait_for_demand()
@@ -299,41 +299,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.assertEqual(self.control.call_count, 1)
             self.service.observe_managed_wait('one', 7, 'request-one')
             self.assertEqual(second.result(2).job_id, 'primary')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
-
-    def test_response_growth_burst_settles_without_parking_or_overadmission(self):
-        from sandboxes.background_io import Pressure
-        from sandboxes.warm_park import WarmParkDeferred, WarmParkPolicy
-
-        self.service.start_managed_process('one', self.spec)
-        self.service.observe_managed_wait('one', 7, 'request-one')
-        self.service.start_managed_process('two', self.spec)
-        runtime = DirectNodeRuntime(self.service)
-        runtime._warm_parks = WarmParkPolicy(
-            lambda: Pressure(.75, 0, 0, 6 << 30),
-            demand=self.service.warm_park_demand,
-        )
-        with self.assertRaises(WarmParkDeferred):
-            runtime.park_with_activity_revision('one', generation=7,
-                operation_id='park:one', relay_request_id='request-one')
-        with patch.object(self.service, 'park', wraps=self.service.park) as park, \
-                ThreadPoolExecutor(max_workers=1) as pool:
-            wake = pool.submit(runtime.wake_with_activity_revision, 'one', generation=7,
-                               operation_id='wake:one', relay_request_id='request-one')
-            self.wait_for_demand()
-            self.assertFalse(wake.done())
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 8 << 30)
-            with self.assertRaises(WarmParkDeferred):
-                runtime.park_with_activity_revision('one', generation=7,
-                    operation_id='park:one', relay_request_id='request-one')
-            # The active agent reaches its next safe wait. Admission transfers
-            # its growth headroom to the queued response without checkpoint I/O.
-            self.service.observe_managed_wait('two', 7, 'request-two')
-            record, _ = wake.result(2)
-            self.assertEqual(record.state, 'running')
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
-            park.assert_not_called()
-            self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-one'))
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_ambiguous_launch_rehydrates_and_changed_job_never_replaces_it(self):
         self.control.side_effect = TimeoutError('ambiguous control RPC')
@@ -341,7 +307,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.service.start_managed_process('one', self.spec)
         restarted = self.admitted(DirectSandboxService(self.provisioner))
         self.configure(restarted)
-        self.assertEqual(restarted.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(restarted.reclaim_demand()[1].physical_bytes, 4 << 30)
         with self.assertRaises(DirectRegistryConflictError):
             restarted.start_managed_process('one', replace(self.spec, job_id='different'))
         self.assertEqual(self.registry.growth_intents()[0].phase, 'active')
@@ -369,7 +335,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
         self.assertEqual(self.registry.growth_intents()[0].phase, 'active')
         with self.assertRaisesRegex(DirectRegistryConflictError, 'superseded'):
             self.service.observe_managed_wait('one', 7, 'request-one')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_residual_forecast_credits_only_fresh_incarnation_footprint(self):
         self.service.start_managed_process('one', self.spec)
@@ -378,11 +344,11 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             cgroup_device=1, cgroup_inode=2, sentry_pid=10, sentry_start_time_ticks=20,
             sampled_at=time.monotonic(), shared_memory_bytes=2 << 30)
         self.observe(('one', 7), sample)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 2 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 2 << 30)
         self.observe(('one', 7), replace(sample, sampled_at=0))
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         self.observe(('one', 8), sample)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def observe(self, key, sample):
         """What a sampler pass publishes: the sample, then refreshed forecasts."""
@@ -403,14 +369,14 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             # A 3.5 GiB peak, 3 GiB of it reclaimed to swap by a pause.
             self.observe(('one', 7), self.sample(
                 current=1 << 29, peak=7 << 29, swap=3 << 30))
-            demand = self.service.warm_park_demand()
+            demand = self.service.reclaim_demand()[1]
             # The thaw's bounded prefetch now; faults bring the rest back.
             self.assertEqual(demand.physical_bytes, pause_tier.PREFETCH_MAX_BYTES)
             # Swapped tmpfs blocks stay allocated: no RAM-backing debt.
             self.assertEqual(demand.ram_backing_bytes, 0)
             # Without swap the same runtime owes its way back to the peak.
             self.observe(('one', 7), self.sample(current=1 << 29, peak=7 << 29))
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 3 << 30)
+            self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 3 << 30)
 
     def test_continuation_forecasts_physical_growth_to_its_demonstrated_peak(self):
         self.available = 8192  # room for the second launch's whole bound
@@ -420,7 +386,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.service.admit_managed_continuation('one', 7, 'wait-1')
             self.observe(('one', 7), self.sample(
                 current=1 << 30, peak=3 << 29))
-            demand = self.service.warm_park_demand()
+            demand = self.service.reclaim_demand()[1]
             # Both projections expect a return to the 1.5 GiB peak, not the
             # whole 4 GiB bound.
             self.assertEqual(demand.physical_bytes, 1 << 29)
@@ -429,30 +395,30 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.service.start_managed_process('two', self.spec)
             self.observe(('two', 7), self.sample(
                 current=1 << 30, peak=3 << 29))
-            demand = self.service.warm_park_demand()
+            demand = self.service.reclaim_demand()[1]
             self.assertEqual(demand.physical_bytes, (1 << 29) + (3 << 30))
             self.assertEqual(demand.ram_backing_bytes, (1 << 29) + (3 << 30))
 
     def test_growth_credit_survives_a_slow_refresh_pass(self):
         self.service.start_managed_process('one', self.spec)
         self.observe(('one', 7), self.sample(current=3 << 30, age=10))
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 1 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 1 << 30)
         self.observe(('one', 7), self.sample(current=3 << 30, age=40))
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         # Cached forecasts drop a credited sample as it ages out, pass or not.
         self.observe(('one', 7), self.sample(current=3 << 30, age=29.9))
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 1 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 1 << 30)
         time.sleep(0.2)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_terminal_and_delete_release_only_matching_primary_generation(self):
         record = self.service.start_managed_process('one', self.spec)
         self.service._observe_managed_terminal(replace(record, state='exited', job_id='old-job'))
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         with self.assertRaises(DirectRegistryConflictError):
             self.service._observe_managed_terminal(replace(record, state='exited', sandbox_generation=6))
         self.service._observe_managed_terminal(replace(record, state='exited'))
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 0)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 0)
         with self.assertRaises(DirectRegistryConflictError):
             self.service.start_managed_process('one', replace(self.spec, argv=('different',)))
         self.service.delete('one', generation=7)
@@ -469,7 +435,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
                     dirty_bytes=0, writeback_bytes=0, refault_file_pages=0,
                     cgroup_path='/owned', cgroup_device=1, cgroup_inode=2,
                     sentry_pid=10, sentry_start_time_ticks=20, sampled_at=time.monotonic()))
-                demand = self.service.warm_park_demand()
+                demand = self.service.reclaim_demand()[1]
                 self.assertEqual((demand.physical_bytes, demand.ram_backing_bytes), (0, 0))
                 self.assertEqual(self.service.resident_demand_snapshot()['unknown_transition_memory_costs'], 1)
             # This describes reclaimable growth, not a zero-cost native restore.
@@ -508,9 +474,9 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
     def test_forced_capture_releases_growth_and_restore_reestablishes_it(self):
         self.service.start_managed_process('one', self.spec)
         self.service.park('one', operation_id='forced:one')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 0)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 0)
         self.service.wake('one', generation=7, operation_id='wake:one')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_parked_queued_launch_wakes_without_phantom_growth(self):
         self.service.start_managed_process('one', self.spec)
@@ -523,12 +489,12 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
         self.service.wake('two', generation=7, operation_id='wake:queued')
         # Nothing was dispatched, so the restore adds no primary growth.
         self.assertEqual(self.registry.growth_intents()[1].phase, 'queued')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 0)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 0)
         self.assertEqual(self.control.call_count, 1)
         self.service.admission_wait_seconds = 3
         self.service.start_managed_process('two', self.spec)
         self.assertEqual(self.registry.growth_intents()[1].phase, 'active')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_granted_continuation_atomically_revokes_late_safe_wait(self):
         self.service.start_managed_process('one', self.spec)
@@ -537,7 +503,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
         self.assertTrue(self.registry.relay_wake_fence('one', 7, 'request-one'))
         with self.assertRaises(DirectRegistryConflictError):
             self.service.observe_managed_wait('one', 7, 'request-one')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_delete_cancels_pending_launch_before_dispatch(self):
         self.service.start_managed_process('one', self.spec)
@@ -554,13 +520,13 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
     def test_imported_unknown_primary_terminal_releases_forecast(self):
         self.service.admit_managed_continuation('one', 7, 'imported-request')
         self.assertEqual(self.registry.growth_intents()[0].job_id, '')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
         self.control.side_effect = lambda registration, payload, **kwargs: {
             **self.response(registration, payload),
             'job': {**self.response(registration, payload)['job'], 'state': 'exited'},
         }
         self.assertTrue(self.service.managed_process_status('one', 'primary').terminal)
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 0)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 0)
         self.assertEqual(self.registry.growth_intents()[0].phase, 'terminal')
         # Only a successful supervisor replay binds the host launch identity.
         self.assertTrue(self.service.start_managed_process('one', self.spec).terminal)
@@ -635,7 +601,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
                 self.assertFalse(wake.done())
                 resume.assert_not_called()
             self.assertEqual(wake.result(2)[0].state, 'running')
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 4 << 30)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 4 << 30)
 
     def test_continuation_timeout_is_retryable_without_revoking_live_wait(self):
         self.service.start_managed_process('one', self.spec)
@@ -643,11 +609,9 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
         self.service.start_managed_process('two', self.spec)
         self.service.admission_wait_seconds = .25
         runtime = DirectNodeRuntime(self.service)
-        with patch.object(runtime._warm_parks, 'wake', wraps=runtime._warm_parks.wake) as cancel_wait:
-            with self.assertRaises(SandboxStartupBusyError):
-                runtime.wake_with_activity_revision('one', generation=7,
-                    operation_id='wake:wait', relay_request_id='request-one')
-            cancel_wait.assert_not_called()
+        with self.assertRaises(SandboxStartupBusyError):
+            runtime.wake_with_activity_revision('one', generation=7,
+                operation_id='wake:wait', relay_request_id='request-one')
         self.assertFalse(self.registry.relay_wake_fence('one', 7, 'request-one'))
         self.assertEqual(self.service.get('one').state, 'running')
         self.service.observe_managed_wait('two', 7, 'request-two')
@@ -682,7 +646,7 @@ class ManagedGrowthTests(AdmissionBackendCase, unittest.TestCase):
             self.assertEqual(next(item.state for item in records if item.spec.id == 'one'), 'moving_out')
             self.assertEqual(self.registry.get('one'), moving)
             self.assertEqual(self.registry.growth_intents()[0].phase, 'parked')
-            self.assertEqual(restarted.warm_park_demand().physical_bytes, 0)
+            self.assertEqual(restarted.reclaim_demand()[1].physical_bytes, 0)
         finally:
             restarted.stop()
 

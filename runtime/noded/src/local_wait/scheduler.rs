@@ -1,4 +1,4 @@
-//! The flow table and the 10 ms policy (`local_wait.py`
+//! The flow table and the 10 ms policy (ported from the agent's former
 //! `LocalWaitScheduler.observe`, `answered`, `_submit`, `_run`, `tick`).
 //!
 //! Pauses and thaws never run on the packet or policy thread: `submit` hands

@@ -36,7 +36,6 @@ pub struct EnvironmentConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateConfig {
-    pub rust_creates_enabled: bool,
     pub state_root: PathBuf,
     pub image_cache_root: PathBuf,
     pub volume_mount_root: PathBuf,
@@ -67,7 +66,8 @@ pub struct CreateConfig {
     pub runtime_compatibility_sha256: String,
     pub node_epoch: String,
     pub exec: ExecConfig,
-    pub pause: PauseBlock,
+    /// The agent's pause-tier settings (phase 3a); the policy reads them.
+    pub pause: Map<String, Value>,
     pub admission: AdmissionConfig,
     /// The agent's digest of this configuration (`config_sha256`).
     pub config_sha256: String,
@@ -108,15 +108,6 @@ pub struct ActiveCapacity {
     pub memory_mb: u64,
 }
 
-/// The agent's pause-tier configuration (phase 3a). Only the switch is read
-/// here; the policy reads the rest.
-#[derive(Debug, Clone, Deserialize)]
-pub struct PauseBlock {
-    pub rust_pause_enabled: bool,
-    #[serde(flatten)]
-    pub settings: Map<String, Value>,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecSessionLimits {
     pub max_sessions: usize,
@@ -128,7 +119,6 @@ pub struct ExecSessionLimits {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExecConfig {
-    pub rust_execs_enabled: bool,
     pub runsc: PathBuf,
     pub runtime_root: PathBuf,
     pub warden_locks_dir: PathBuf,
@@ -141,9 +131,7 @@ pub struct ExecConfig {
 impl CreateConfig {
     /// Node-wide reasons the daemon cannot create at all.
     pub fn refusal(&self) -> Option<&'static str> {
-        if !self.rust_creates_enabled {
-            Some("the agent does not run with --rust-creates")
-        } else if self.dns_named_egress {
+        if self.dns_named_egress {
             Some("DNS-named egress endpoints stay with the agent")
         } else if self.environment.is_none() {
             Some("the legacy image store stays with the agent")

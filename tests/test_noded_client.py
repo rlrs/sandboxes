@@ -280,8 +280,8 @@ class AdmissionConfigTests(unittest.TestCase):
             block = admission_config(service, rust_admission_enabled=True)
             self.assertEqual((block["active_capacity"], block["admission_wait_seconds"], block["rust_admission_enabled"]),
                              ({"vcpu": 6, "memory_mb": 24576}, 12.5, True))
-            off = create_config(service, node_epoch="e", rust_creates_enabled=True)
-            on = create_config(service, node_epoch="e", rust_creates_enabled=True, rust_admission_enabled=True)
+            off = create_config(service, node_epoch="e")
+            on = create_config(service, node_epoch="e", rust_admission_enabled=True)
             self.assertEqual((off["admission"], on["admission"]), (dict(block, rust_admission_enabled=False), block))
 
             def digest(config):
@@ -302,7 +302,7 @@ class RustAdmissionAgentTests(unittest.TestCase):
         provisioner = self.service.provisioner
         (self.root / "runsc" / "warden-locks").mkdir(parents=True)
         # noded owns the registry; the agent is a foreign process.
-        self.owner = DirectSandboxRegistry(provisioner.registry.path, owner=True)
+        self.owner = DirectSandboxRegistry(provisioner.registry.path)
         self.addCleanup(self.owner.close)
         provisioner.registry = DirectSandboxRegistry(provisioner.registry.path, cached_reads=True)
         self.socket = str(self.root / "agent.sock")
@@ -313,16 +313,16 @@ class RustAdmissionAgentTests(unittest.TestCase):
             node_id="node", node_epoch="epoch", node_control_bearer_token=TOKEN,
             unix_socket=Path(self.socket), **flags)
 
-    def test_the_flag_needs_the_other_rust_fronts(self) -> None:
-        for flags in ({}, {"rust_creates": True, "rust_execs": True},
-                      {"rust_execs": True, "rust_pause_tier": True}):
-            with self.subTest(flags=flags), self.assertRaisesRegex(ValueError, "Rust admission needs"):
-                self.build(rust_admission=True, **flags)
+    def test_the_flag_needs_the_socket(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Rust admission needs the agent on its Unix socket"):
+            fixtures.build_direct_node_agent_server(
+                "127.0.0.1", 0, service=self.service, image_file=self.root / "images.json", job_id="job",
+                node_id="node", node_control_bearer_token=TOKEN, rust_admission=True)
 
     def test_the_agent_says_hello_and_reports_the_flag_in_its_configuration(self) -> None:
         noded = FakeNoded(self.root / "noded" / "noded.sock")
         self.addCleanup(noded.close)
-        server = self.build(rust_creates=True, rust_execs=True, rust_pause_tier=True, rust_admission=True)
+        server = self.build(rust_admission=True)
         thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
         self.addCleanup(thread.join, 2)
@@ -360,7 +360,7 @@ class RustAdmissionAgentTests(unittest.TestCase):
         self.assertFalse(link._thread.is_alive())
 
     def test_without_the_flag_nothing_says_hello(self) -> None:
-        server = self.build(rust_creates=True, rust_execs=True, rust_pause_tier=True)
+        server = self.build()
         self.addCleanup(server.server_close)
         self.assertIsNone(server.RequestHandlerClass.noded_link)
         self.assertIsInstance(self.service.admission, LocalAdmission)
@@ -370,39 +370,28 @@ class RustAdmissionAgentTests(unittest.TestCase):
 
 
 class RustAdmissionFlagTests(unittest.TestCase):
-    def test_the_flag_requires_every_rust_front_and_renders_both_sides(self) -> None:
+    def test_the_flag_is_a_boolean_and_renders_both_sides(self) -> None:
         raw = DeploymentConfig.default(scope_id="project-1").to_dict()
         self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_node_rust_admission)
-        pause = {**raw["sandbox"], "direct_node_front_door": True, "direct_node_rust_create": True,
-                 "direct_node_rust_exec": True, "direct_pause_tier": True, "swap_gb": 8,
-                 "direct_node_rust_pause": True}
-        for sandbox in ({**raw["sandbox"], "direct_node_rust_admission": True},
-                        {**pause, "direct_node_rust_pause": False, "direct_node_rust_admission": True}):
-            with self.assertRaisesRegex(ValueError, "direct_node_rust_admission requires"):
-                DeploymentConfig.from_dict({**raw, "sandbox": sandbox})
         with self.assertRaisesRegex(ValueError, "must be a boolean"):
-            DeploymentConfig.from_dict({**raw, "sandbox": {**pause, "direct_node_rust_admission": 1}})
-        enabled = {**pause, "direct_node_rust_admission": True}
+            DeploymentConfig.from_dict({**raw, "sandbox": {**raw["sandbox"], "direct_node_rust_admission": 1}})
+        enabled = {**raw["sandbox"], "direct_node_rust_admission": True}
         self.assertTrue(DeploymentConfig.from_dict({**raw, "sandbox": enabled}).sandbox.direct_node_rust_admission)
 
-        options = vm_init_fixtures.VmInitTests._options(
-            direct_node_front_door=True, direct_node_rust_create=True, direct_node_rust_exec=True,
-            direct_pause_tier=True, swap_gb=8, direct_node_rust_pause=True, direct_node_rust_admission=True)
+        options = vm_init_fixtures.VmInitTests._options(direct_node_rust_admission=True)
         self.assertTrue(vm_init_options_to_dict(options)["directNodeRustAdmission"])
         script = render_vm_init_script(options)
-        self.assertIn("--rust-execs --rust-pause-tier --rust-admission", script)
+        self.assertIn("--unix-socket /run/ucloud-sandboxes/node-agent/agent.sock --rust-admission", script)
         state = re.search(r"^UCLOUD_STATE_DIR=(\S+)$", script, re.MULTILINE).group(1)  # The agent's --state-root parent.
         self.assertIn("--state-root ${UCLOUD_STATE_DIR}/direct-runtime", script)
-        self.assertIn(f"--rust-pause --node-control-token-file {options.node_control_bearer_token_file}"
+        self.assertIn(f"--node-control-token-file {options.node_control_bearer_token_file}"
                       f" --rust-admission --internal-unix {state}/direct-runtime/noded/noded.sock\n", script)
         off = render_vm_init_script(replace(options, direct_node_rust_admission=False))
         self.assertNotIn("--rust-admission", off)
         self.assertNotIn("--internal-unix", off)
-        with self.assertRaisesRegex(ValueError, "Rust node admission requires"):
-            render_vm_init_script(replace(options, direct_node_rust_pause=False))
         required = ["--deployment-id", "d", "--state-root", "/s", "--image-file", "/i", "--volume-mount-root", "/v",
                     "--storage-native-socket", "/n", "--runsc", "/r", "--runsc-commit", "c",
-                    "--node-control-bearer-token-file", "/t"]
+                    "--node-control-bearer-token-file", "/t", "--memory-backing-hard-capacity-bytes", "1"]
         parser = build_parser()
         self.assertTrue(parser.parse_args(["serve-direct-node-agent", *required, "--rust-admission"]).rust_admission)
         self.assertFalse(parser.parse_args(["serve-direct-node-agent", *required]).rust_admission)

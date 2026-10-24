@@ -79,7 +79,7 @@ class HybridMemoryAdmissionTests(AdmissionBackendCase, unittest.TestCase):
         service.admit_managed_continuation(*key, "model-request")
         self.assertEqual(f.warden.application_memory_mode(*key), "file")
         self.assertTrue(self.registry.relay_wake_fence(*key, "model-request"))
-        self.assertEqual(service.warm_park_demand().ram_backing_bytes, 0)
+        self.assertEqual(service.reclaim_demand()[1].ram_backing_bytes, 0)
         self.assertEqual(service._restore_cost(*key, ResourceQuantity(memory_mb=4096)).memory_bytes,
                          4 << 30)
 

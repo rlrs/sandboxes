@@ -20,14 +20,10 @@ import unittest
 from unittest.mock import DEFAULT, patch
 
 from tests import test_direct_provisioner as fixtures
-from tests import test_vm_init as vm_init_fixtures
 from tests.admission_backends import AdmissionBackendCase
-from sandboxes.cli import vm_init_options_to_dict
-from sandboxes.config import DeploymentConfig
 from sandboxes.direct_registry import DirectSandboxRegistry
 from sandboxes.direct_service import DirectSandboxService
 from sandboxes.sandbox import sandbox_spec_fingerprint
-from sandboxes.vm_init import render_vm_init_script
 
 TEST_TIER = "contract"
 REPO = Path(__file__).resolve().parents[1]
@@ -65,11 +61,10 @@ class ForeignRegistryIndexTests(unittest.TestCase):
                              operation_id=f"create:{name}", runtime_compatibility_sha256="b" * 64)
 
     def test_reads_are_cached_and_revalidated_after_another_owner_writes(self) -> None:
-        owner = DirectSandboxRegistry(self.path, owner=True)  # noded's role
+        owner = DirectSandboxRegistry(self.path)  # noded's role
         self.addCleanup(owner.close)
         foreign = DirectSandboxRegistry(self.path, cached_reads=True)
         self.addCleanup(foreign.close)
-        self.assertFalse(foreign.is_owner)
         one = self.plan(owner, "one")
         first = foreign.get("one")
         self.assertEqual(first, one)
@@ -93,9 +88,6 @@ class ForeignRegistryIndexTests(unittest.TestCase):
         deleting = foreign.begin_delete("one", expected_revision=first.revision)
         self.assertEqual(foreign.get("one"), deleting)
         self.assertEqual(foreign.activity_revision(), DirectSandboxRegistry(self.path).activity_revision())
-        # Ownership is untouched: the owner lock stays noded's.
-        owner.close()
-        DirectSandboxRegistry(self.path, owner=True).close()
 
     def test_another_process_commit_reaches_a_fresh_cached_read(self) -> None:
         foreign = DirectSandboxRegistry(self.path, cached_reads=True)
@@ -107,7 +99,7 @@ class ForeignRegistryIndexTests(unittest.TestCase):
             "from pathlib import Path\n"
             "from sandboxes.direct_registry import DirectSandboxRegistry\n"
             "from tests.test_direct_provisioner import DirectProvisionerTests\n"
-            "owner = DirectSandboxRegistry(Path(sys.argv[1]), owner=True)\n"
+            "owner = DirectSandboxRegistry(Path(sys.argv[1]))\n"
             "owner.plan(spec=replace(DirectProvisionerTests.spec(), id='child'), sandbox_generation=1,\n"
             "           operation_id='create:child', runtime_compatibility_sha256='b' * 64)\n"
         ), str(self.path)], cwd=REPO, check=True)
@@ -136,16 +128,15 @@ class CreateHandoffTests(AdmissionBackendCase, unittest.TestCase):
         self.service = self.admitted(DirectSandboxService(provisioner, max_concurrent_startups=2))
         self.adopted = []
         self.warden.adopt_created = self.adopted.append
-        # noded: the registry owner, creating through the same fakes. With
-        # noded's admission the admission service's process owns the file.
+        # noded, creating through the same fakes.
         self.daemon = copy.copy(provisioner)
-        self.daemon.registry = DirectSandboxRegistry(path, owner=not self.noded)
+        self.daemon.registry = DirectSandboxRegistry(path)
         self.addCleanup(self.daemon.registry.close)
         self.socket = str(self.root / "agent.sock")
         self.server = fixtures.build_direct_node_agent_server(
             "127.0.0.1", 0, service=self.service, image_file=self.root / "images.json", job_id="job",
             node_id="node", node_epoch="epoch", node_control_bearer_token=TOKEN,
-            unix_socket=Path(self.socket), rust_creates=True)
+            unix_socket=Path(self.socket))
         self.handoff = self.server.RequestHandlerClass.create_handoff
         thread = Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
         thread.start()
@@ -320,41 +311,35 @@ class CreateHandoffTests(AdmissionBackendCase, unittest.TestCase):
             "application_memory_root": None,
             "workspace_initial_grant_mb": 0, "demonstrated_memory": False, "environment": None,
             "runtime_compatibility_sha256": self.provisioner.runtime_compatibility_sha256,
-            "node_epoch": "epoch", "rust_creates_enabled": True,
+            "node_epoch": "epoch",
         }.items(), effective.items())
 
-    def test_rust_creates_need_the_socket_and_a_foreign_registry(self) -> None:
-        with self.assertRaisesRegex(ValueError, "Unix socket and a foreign registry"):
-            fixtures.build_direct_node_agent_server(
-                "127.0.0.1", 0, service=self.service, image_file=self.root / "images.json", job_id="job",
-                node_id="node", rust_creates=True)
+    def test_without_the_socket_the_internal_routes_are_off(self) -> None:
+        server = fixtures.build_direct_node_agent_server(
+            "127.0.0.1", 0, service=self.service, image_file=self.root / "images.json", job_id="job",
+            node_id="node", node_control_bearer_token=TOKEN)
+        self.addCleanup(server.server_close)
+        thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.shutdown)
+        headers = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+        for method, path in (("GET", "/internal/v1/creates/config"), ("POST", "/internal/v1/creates/admit"),
+                             ("POST", "/internal/v1/pauses/escalate")):
+            connection = HTTPConnection("127.0.0.1", server.server_address[1])
+            try:
+                connection.request(method, path, body=b"{}" if method == "POST" else None, headers=headers)
+                response = connection.getresponse()
+                response.read()
+            finally:
+                connection.close()
+            self.assertEqual(response.status, 404, path)
 
 
 class NodedCreateHandoffTests(CreateHandoffTests):
     """The same handoff with runtime/noded's admission service (NodedAdmission)."""
 
     noded = True
-
-
-class RustCreateFlagTests(unittest.TestCase):
-    def test_the_flag_requires_the_front_door_and_renders_both_sides(self) -> None:
-        raw = DeploymentConfig.default(scope_id="project-1").to_dict()
-        self.assertFalse(DeploymentConfig.from_dict(raw).sandbox.direct_node_rust_create)
-        with self.assertRaisesRegex(ValueError, "direct_node_rust_create requires"):
-            DeploymentConfig.from_dict({**raw, "sandbox": {**raw["sandbox"], "direct_node_rust_create": True}})
-        enabled = {**raw["sandbox"], "direct_node_front_door": True, "direct_node_rust_create": True}
-        self.assertTrue(DeploymentConfig.from_dict({**raw, "sandbox": enabled}).sandbox.direct_node_rust_create)
-        options = vm_init_fixtures.VmInitTests._options(direct_node_front_door=True, direct_node_rust_create=True)
-        self.assertTrue(vm_init_options_to_dict(options)["directNodeRustCreate"])
-        script = render_vm_init_script(options)
-        self.assertIn("--unix-socket /run/ucloud-sandboxes/node-agent/agent.sock --registry-foreign --rust-creates",
-                      script)
-        self.assertIn("--upstream-unix /run/ucloud-sandboxes/node-agent/agent.sock --rust-create"
-                      f" --node-control-token-file {options.node_control_bearer_token_file}\n", script)
-        front_door_only = render_vm_init_script(vm_init_fixtures.VmInitTests._options(direct_node_front_door=True))
-        self.assertNotIn("--rust-create", front_door_only)
-        with self.assertRaisesRegex(ValueError, "require the node front door"):
-            render_vm_init_script(vm_init_fixtures.VmInitTests._options(direct_node_rust_create=True))
 
 
 if __name__ == "__main__":

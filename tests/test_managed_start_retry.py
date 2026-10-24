@@ -110,7 +110,7 @@ class ManagedStartRetryTests(AdmissionBackendCase, TestCase):
             self.assertEqual(caught.exception.job_id, "fresh")
             self.assertEqual(self.dispatched(), [])
             self.assertEqual(registry.growth_intents()[0].phase, "queued")
-            self.assertEqual(self.service.warm_park_demand().physical_bytes, 0)
+            self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 0)
             return
         original = registry.growth_intent
         replaced = False
@@ -132,7 +132,7 @@ class ManagedStartRetryTests(AdmissionBackendCase, TestCase):
         self.assertEqual(self.dispatched(), [])
         # The late activation did not charge the replacement's growth.
         self.assertEqual(registry.growth_intents()[0].phase, "queued")
-        self.assertEqual(self.service.warm_park_demand().physical_bytes, 0)
+        self.assertEqual(self.service.reclaim_demand()[1].physical_bytes, 0)
 
     def test_replacement_dispatched_first_fences_the_old_dispatch(self):
         fresh = replace(self.fixture.spec, job_id="fresh")

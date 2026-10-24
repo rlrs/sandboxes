@@ -222,32 +222,14 @@ class DeployTests(unittest.TestCase):
                 self.assertIn("os.replace(marker_temporary, marker)", script)
 
     def test_gateway_service_convergence_is_shared_with_hetzner(self) -> None:
-        s3_snapshot_store = {
-            "kind": "s3",
-            "endpoint": "https://hel1.your-objectstorage.com",
-            "bucket": "sandbox-snapshots",
-            "region": "hel1",
-            "prefix": "production",
-            "access_key_id_env": "SNAPSHOT_ACCESS_KEY",
-            "secret_access_key_env": "SNAPSHOT_SECRET_KEY",
-            "security_token_env": "SNAPSHOT_SECURITY_TOKEN",
-        }
         with TemporaryDirectory() as raw_dir:
-            root = Path(raw_dir)
-            registry_script = render_remote_deploy_script(self._plan(root))
-            s3_script = render_remote_deploy_script(
-                self._plan(
-                    root / "s3",
-                    config=self._config(snapshot_store=s3_snapshot_store),
-                )
-            )
+            script = render_remote_deploy_script(self._plan(Path(raw_dir)))
 
-        for script in (registry_script, s3_script):
-            self.assertIn(
-                "sandboxes.systemd gateway-reconcile",
-                script,
-            )
-            self.assertNotIn("SNAPSHOT_STORE_KIND=", script)
+        self.assertIn(
+            "sandboxes.systemd gateway-reconcile",
+            script,
+        )
+        self.assertNotIn("SNAPSHOT_STORE_KIND=", script)
 
         hetzner_installer = (
             Path(__file__).parents[1] / "scripts" / "ops" / "install_hetzner_gateway.sh"

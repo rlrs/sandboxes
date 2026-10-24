@@ -132,6 +132,14 @@ class SandboxBusyError(SandboxConflictError):
     """The sandbox has activity that cannot cross a lifecycle transition."""
 
 
+class WarmParkDeferred(RuntimeError):
+    """A park found no capture space; the sandbox stays as it was (park_deferred)."""
+
+    def __init__(self, seconds):
+        super().__init__("relay park deferred for warm retention")
+        self.seconds = seconds
+
+
 @dataclass(frozen=True)
 class SandboxOperation:
     operation_id: str

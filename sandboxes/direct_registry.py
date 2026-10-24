@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-import fcntl
 from functools import cached_property, lru_cache
 import json
 import os
@@ -12,7 +11,7 @@ import sqlite3
 import stat
 import itertools
 import time
-from threading import Event, Lock
+from threading import Lock
 import weakref
 from types import MappingProxyType
 from typing import Any, Iterator, Mapping
@@ -51,11 +50,8 @@ _DIRECT_REGISTRY_IDENTITY = (
 )
 # The directory walk and create probe repeat at most this often. Every
 # connection use still compares the file's own identity, owner and mode.
-# Owner reads, which use no connection, revalidate at most this often.
+# Cached reads, which use no connection, revalidate at most this often.
 _FILE_RECHECK_SECONDS = 1.0
-# Writers one owner transaction (group commit) serves at most; bounds how
-# long its first writer waits for the shared COMMIT.
-_GROUP_COMMIT_MAX = 64
 # Schema stamp, metadata row and this connection's data version in one
 # statement, so one SQLite snapshot answers all of them. A connection's data
 # version moves on every other connection's commit (and WAL truncation), never its own.
@@ -65,11 +61,8 @@ _STAMPED_METADATA = (
     "FROM pragma_schema_version, pragma_application_id, pragma_user_version, "
     "pragma_journal_mode, pragma_data_version JOIN registry_metadata AS m ON m.singleton = 1"
 )
-# The owner instance holds an exclusive flock on this sidecar for its life;
-# the kernel drops it with the process.
-_OWNER_SUFFIX = ".owner"
 # Idle handles kept for reuse. Request threads borrow concurrently for reads
-# the owner's index does not serve; a smaller pool reopens them under load.
+# the cached index does not serve; a smaller pool reopens them under load.
 _IDLE_CONNECTIONS = 64
 
 
@@ -264,7 +257,7 @@ class DirectSandboxRegistration:
         return self.spec.id
 
     # The derived values below are memoized outside the fields: records are
-    # immutable and the owner's index keeps them across heartbeats, each of
+    # immutable and the cached index keeps them across heartbeats, each of
     # which derives both several times per record.
     @property
     def spec_sha256(self) -> str:
@@ -397,12 +390,12 @@ class DirectRegistrySnapshot:
 
 @dataclass(frozen=True)
 class _RegistryIndex:
-    """The owner's registrations exactly as committed at ``revision``.
+    """The registrations exactly as committed at ``revision``.
 
     ``rows`` maps a sandbox ID to its stored image ID, stored encoding and
     validated record, and is never mutated once published. ``data_version``
-    is the owner connection's; equal values prove no other connection has
-    committed since this state was read or written through.
+    is the reader connection's; equal values prove no other connection has
+    committed since this state was read.
     """
 
     revision: int
@@ -421,20 +414,6 @@ class _RegistryIndex:
             activity_revision=self.revision,
         )
 
-    def applied(self, staged: Mapping[str, Any], revision: int) -> _RegistryIndex:
-        """``staged`` maps each written ID to its new row, or None if deleted."""
-        rows = {**self.rows, **staged}
-        return _RegistryIndex(revision, self.data_version,
-                              {key: row for key, row in rows.items() if row is not None})
-
-
-class _GroupCommit:
-    """One open owner transaction that queued writers share, and its outcome."""
-
-    def __init__(self, connection: sqlite3.Connection, revision: int) -> None:
-        self.connection, self.revision, self.members = connection, revision, 0
-        self.done, self.error = Event(), None
-
 
 @dataclass
 class _RegistryConnection:
@@ -449,22 +428,12 @@ def _close_idle_registry_connections(idle, guard):
         entry.connection.close()
 
 
-def _release_owner_lock(held: list[int]) -> None:
-    while held:
-        os.close(held.pop())
-
-
 class DirectSandboxRegistry:
     """SQLite-backed ownership bridge from admission through Warden create.
 
-    ``owner=True`` is the node agent's instance. It holds the file's exclusive
-    owner lock, so a second live owner in any process is refused, and serves
-    registration reads from an in-memory index with SQLite as the journal.
-    Other instances, such as readers in other processes, read SQLite.
-
-    ``cached_reads=True`` is a foreign instance (the node agent while
-    runtime/noded owns the file): it writes through SQLite's cross-process
-    locking and serves reads from an index revalidated like the owner's, by
+    runtime/noded owns the file (its owner lock and index). The agent's
+    instance is foreign: ``cached_reads=True`` writes through SQLite's
+    cross-process locking and serves reads from an index revalidated by
     activity revision and its own reader connection's data version, at most
     once a second, and before the next read after each of its own writes.
     """
@@ -544,8 +513,7 @@ class DirectSandboxRegistry:
         );
     """
 
-    def __init__(self, path: Path, *, hard_disk_capacity_mb: int = 0, owner: bool = False,
-                 cached_reads: bool = False) -> None:
+    def __init__(self, path: Path, *, hard_disk_capacity_mb: int = 0, cached_reads: bool = False) -> None:
         if not path.is_absolute():
             raise ValueError("direct registry path must be absolute")
         self.path = path
@@ -557,7 +525,6 @@ class DirectSandboxRegistry:
         self._validated_stamp: tuple[Any, ...] | None = None
         # In-process writers queue here rather than in SQLite's busy handler,
         # which polls with sleeps of up to 100 ms and admits in no order.
-        # In owner mode it also guards the owner connection and the index.
         self._writer_turn = Lock()
         self._file_identity: tuple[int, int] | None = None
         self._file_checked_at = float("-inf")
@@ -568,72 +535,22 @@ class DirectSandboxRegistry:
             self._connections,
             self._connections_guard,
         )
-        self._owner_lock: list[int] = []
-        self._owner_entry: _RegistryConnection | None = None
-        self._index: _RegistryIndex | None = None
-        self._index_checked_at = float("-inf")
         self._claims: tuple[_RegistryIndex, dict[tuple[str, int], int]] | None = None
-        # The open owner transaction's changes, applied after its COMMIT.
-        self._staged: dict[str, Any] | None = None
-        self._bumps = 0
-        # The open group commit, and writers queued for the turn to join it.
-        self._group: _GroupCommit | None = None
-        self._turn_waiters = 0
-        self._turn_waiters_guard = Lock()
         # Foreign index (cached_reads): its own reader connection, whose data
         # version is comparable between refreshes, and refreshes in sequence
         # order. An index read at sequence n covers every commit before n; an
         # own write commits before taking _stale_seq, so later reads refresh.
-        self._cached_reads = bool(cached_reads) and not owner
+        self._cached_reads = bool(cached_reads)
         self._reader_entry: _RegistryConnection | None = None
         self._reader_guard = Lock()
         self._sequence = itertools.count(1)
         self._stale_seq = 0
         # (index, sequence its read began at, monotonic check time), replaced whole.
         self._foreign: tuple[_RegistryIndex, int, float] | None = None
-        if owner:
-            self._own()
-
-    @property
-    def is_owner(self) -> bool:
-        return bool(self._owner_lock)
-
-    def _own(self) -> None:
-        """Take the exclusive owner lock, then build the index from SQLite."""
-        self._prepare_file()
-        descriptor = os.open(
-            self.path.with_name(self.path.name + _OWNER_SUFFIX),
-            os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW,
-            0o600,
-        )
-        self._owner_lock.append(descriptor)
-        weakref.finalize(self, _release_owner_lock, self._owner_lock)
-        try:
-            info = os.fstat(descriptor)
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
-                    or info.st_mode & 0o077):
-                raise DirectRegistryError("direct registry owner lock must be private and owned")
-            try:
-                # Per open file description: a second instance in this process
-                # conflicts too. Fork children never use it (see _owned_index).
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise DirectRegistryError("direct registry has another live owner") from None
-            self._owned_index()
-        except BaseException:
-            self.close()
-            raise
 
     def close(self) -> None:
-        """Release ownership and idle connections; stragglers then use SQLite."""
-        with self._writer_turn:
-            if self._group is not None:
-                self._abandon_group(DirectRegistryError("direct registry was closed"))
-            entry, self._owner_entry = self._owner_entry, None
-            self._index = self._claims = None
-            _release_owner_lock(self._owner_lock)
-        if entry is not None:
-            entry.connection.close()
+        """Release idle connections; stragglers then reopen them."""
+        self._claims = None
         with self._reader_guard:
             reader, self._reader_entry, self._foreign = self._reader_entry, None, None
         if reader is not None:
@@ -788,7 +705,7 @@ class DirectSandboxRegistry:
         """Every registration's current charge, as heartbeat accounting uses it.
 
         Every write that changes a charge bumps the activity revision, so the
-        owner keeps the charges read at its index's revision until it moves.
+        cached index keeps the charges read at its revision until it moves.
         """
         index = self._cached_index()
         if index is not None and self._claims is not None and self._claims[0] is index:
@@ -1711,8 +1628,7 @@ class DirectSandboxRegistry:
         Identical text decodes to an identical frozen record, so the stored
         encoding is the whole cache key.
         """
-        cache = previous if previous is not None else self._index
-        previous = cache.rows if cache is not None else {}
+        previous = previous.rows if previous is not None else {}
         rows = {}
         for row in connection.execute(
             "SELECT sandbox_id, image_id, record_json FROM registrations"
@@ -1724,22 +1640,11 @@ class DirectSandboxRegistry:
         index.snapshot  # Validates the clock against every record.
         return index
 
-    def _in_owner_transaction(self, connection: sqlite3.Connection) -> bool:
-        # Only the turn holder sets _staged, and only on the owner connection.
-        entry = self._owner_entry
-        return self._staged is not None and entry is not None and connection is entry.connection
-
     def _get(
         self,
         connection: sqlite3.Connection,
         sandbox_id: str,
     ) -> DirectSandboxRegistration | None:
-        if self._in_owner_transaction(connection):
-            # The opening statement proved the index equals this snapshot.
-            assert self._index is not None and self._staged is not None
-            entry = (self._staged[sandbox_id] if sandbox_id in self._staged
-                     else self._index.rows.get(sandbox_id))
-            return None if entry is None else entry[2]
         row = connection.execute(
             """
             SELECT sandbox_id, image_id, record_json FROM registrations
@@ -1784,8 +1689,6 @@ class DirectSandboxRegistry:
         ):
             raise DirectRegistryError("direct registration disappeared")
         self._write_disk_claim(connection, record)
-        if self._in_owner_transaction(connection):
-            self._staged[record.sandbox_id] = (record.image_id, encoded, record)
 
     def _delete(self, connection: sqlite3.Connection, sandbox_id: str) -> None:
         connection.execute("DELETE FROM registration_disk WHERE sandbox_id = ?", (sandbox_id,))
@@ -1793,8 +1696,6 @@ class DirectSandboxRegistry:
             "DELETE FROM registrations WHERE sandbox_id = ?", (sandbox_id,)
         ).rowcount != 1:
             raise DirectRegistryError("direct registration disappeared")
-        if self._in_owner_transaction(connection):
-            self._staged[sandbox_id] = None
 
     @staticmethod
     def _write_disk_claim(
@@ -1877,8 +1778,6 @@ class DirectSandboxRegistry:
             != 1
         ):
             raise DirectRegistryError("direct registry metadata is invalid")
-        if self._in_owner_transaction(connection):
-            self._bumps += 1
 
     def _check_file(self) -> None:
         """Validate the registry file before lending a connection.
@@ -1990,60 +1889,11 @@ class DirectSandboxRegistry:
         """One validated transaction; ``durable=False`` commits without fsync.
 
         synchronous=NORMAL in WAL mode keeps the commit atomic and loses it only
-        to an OS crash, never to process death. Only commit_owned uses it, and
-        the owner's writes are always durable: writers queued behind one share
-        its COMMIT (group commit). In a 1,024-rollout burst 25-42 writers queued
-        for the turn while each held it for its own fsync, about 1.2 s a create.
-        Each writer runs under a SAVEPOINT of the shared transaction, so a failure
-        undoes only its own changes; it returns once the COMMIT holding them does.
+        to an OS crash, never to process death. Only commit_owned uses it.
         """
         if not write:
             with self._borrow() as entry, self._validated(entry, write=False):
                 yield entry.connection
-        elif self._owner_lock:
-            with self._readable():
-                self._check_file()  # Its syscalls release the GIL: not under the turn.
-            with phase_timings.phase("registry_turn"):
-                with self._turn_waiters_guard:
-                    self._turn_waiters += 1
-                try:
-                    self._writer_turn.acquire()
-                finally:
-                    with self._turn_waiters_guard:
-                        self._turn_waiters -= 1
-            group = failure = None
-            try:
-                group = self._group or self._begin_group()
-                with self._readable():
-                    group.connection.execute("SAVEPOINT member")
-                staged, bumps = dict(self._staged), self._bumps
-                try:
-                    yield group.connection
-                except BaseException as exc:
-                    failure = exc
-                    with self._readable():
-                        group.connection.execute("ROLLBACK TO member")
-                        group.connection.execute("RELEASE member")
-                    self._staged, self._bumps = staged, bumps
-                else:
-                    with self._readable():
-                        group.connection.execute("RELEASE member")
-                    group.members += 1
-                if not self._turn_waiters or group.members >= _GROUP_COMMIT_MAX:
-                    with phase_timings.phase("registry_sync"):
-                        self._commit_group()
-            except BaseException as exc:
-                if group is not None and self._group is group:
-                    self._abandon_group(exc)
-                failure = failure or exc
-            finally:
-                self._writer_turn.release()
-            if failure is not None:
-                raise failure
-            with phase_timings.phase("registry_sync"):
-                group.done.wait()
-            if group.error is not None:
-                raise DirectRegistryError("direct registry commit failed") from group.error
         else:
             try:
                 with self._borrow() as entry, self._writer_turn:
@@ -2076,64 +1926,7 @@ class DirectSandboxRegistry:
                 # A failure here discards the connection, never pools it.
                 connection.execute("PRAGMA synchronous = FULL")
 
-    def _begin_group(self) -> _GroupCommit:
-        """BEGIN the owner's shared write transaction; the caller holds the turn.
-
-        The opening statement proves that no other connection committed since
-        the index was read, or the index is rebuilt from this snapshot first.
-        """
-        with self._readable():
-            if not self._owner_lock:
-                raise DirectRegistryError("direct registry ownership was released")
-            if self._owner_entry is None:
-                self._owner_entry = self._connect()
-            entry = self._owner_entry
-            connection = entry.connection
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                revision, data_version = self._checked_stamp(entry)
-                index = self._index
-                if index is None or (index.revision, index.data_version) != (revision, data_version):
-                    self._index = self._read_index(connection, revision, data_version)
-            except BaseException:
-                self._drop_owner_connection()
-                raise
-        self._index_checked_at = time.monotonic()
-        self._staged, self._bumps = {}, 0
-        self._group = _GroupCommit(connection, revision)
-        return self._group
-
-    def _commit_group(self) -> None:
-        """COMMIT the open group; its changes reach the index after COMMIT returns."""
-        group, self._group = self._group, None
-        staged, bumps, self._staged = self._staged, self._bumps, None
-        try:
-            with self._readable():
-                group.connection.commit()
-        except BaseException as exc:
-            # An uncertain COMMIT drops index and connection.
-            group.error = exc
-            self._drop_owner_connection()
-            group.done.set()
-            raise
-        if staged or bumps:
-            self._index = self._index.applied(staged, group.revision + bumps)
-        group.done.set()
-
-    def _abandon_group(self, error: BaseException) -> None:
-        group, self._group, self._staged = self._group, None, None
-        group.error = error
-        self._drop_owner_connection()
-        group.done.set()
-
-    def _drop_owner_connection(self) -> None:
-        entry, self._owner_entry, self._index = self._owner_entry, None, None
-        if entry is not None:
-            entry.connection.close()  # Closing rolls back any open transaction.
-
     def _cached_index(self, *, fresh: bool = False) -> _RegistryIndex | None:
-        if self._owner_lock:
-            return self._owned_index(fresh=fresh)
         return self._foreign_index(fresh=fresh) if self._cached_reads else None
 
     def _foreign_index(self, *, fresh: bool = False) -> _RegistryIndex:
@@ -2180,56 +1973,6 @@ class DirectSandboxRegistry:
                 raise
         self._foreign = (index, started, time.monotonic())
         return index
-
-    def _owned_index(self, *, fresh: bool = False) -> _RegistryIndex | None:
-        """The owner's index, revalidated at most once a second; else None.
-
-        A writer holding the turn validates at its BEGIN: reads then serve the
-        current index rather than wait. ``fresh`` waits for the turn instead.
-        """
-        if not self._owner_lock:
-            return None
-        if os.getpid() != self._connection_pid:
-            raise DirectRegistryError("reopen direct registry after fork")
-        index = self._index
-        if not fresh and index is not None and time.monotonic() - self._index_checked_at < _FILE_RECHECK_SECONDS:
-            return index
-        with self._readable():
-            self._check_file()
-        if not self._writer_turn.acquire(blocking=fresh or index is None):
-            return index
-        try:
-            if not self._owner_lock:
-                return None
-            if self._group is not None:
-                return self._index  # Validated at the group's BEGIN.
-            self._refresh_owned_index()
-            return self._index
-        finally:
-            self._writer_turn.release()
-
-    def _refresh_owned_index(self) -> None:
-        """Prove the index against the file; the caller holds the turn, no group is open.
-
-        The opening statement proves that no other connection committed since
-        the index was read, or the index is rebuilt from this snapshot first.
-        """
-        with self._readable():
-            if not self._owner_lock:
-                raise DirectRegistryError("direct registry ownership was released")
-            if self._owner_entry is None:
-                self._owner_entry = self._connect()
-            entry = self._owner_entry
-            try:
-                with self._validated(entry, write=False) as (revision, data_version):
-                    index = self._index
-                    if index is None or (index.revision, index.data_version) != (revision, data_version):
-                        self._index = self._read_index(entry.connection, revision, data_version)
-                    self._index_checked_at = time.monotonic()
-            except BaseException:
-                if entry.connection.in_transaction:  # A ROLLBACK that failed open.
-                    self._drop_owner_connection()
-                raise
 
     @staticmethod
     def _schema_stamp(connection: sqlite3.Connection) -> tuple[Any, ...]:

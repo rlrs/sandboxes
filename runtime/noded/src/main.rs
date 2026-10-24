@@ -1,6 +1,5 @@
-//! ucloud-noded --listen ADDR --upstream-unix PATH [--max-connections N]
-//!               [--rust-create] [--rust-exec] [--rust-pause] [--node-control-token-file PATH]
-//!               [--rust-admission --internal-unix PATH]
+//! ucloud-noded --listen ADDR --upstream-unix PATH --node-control-token-file PATH
+//!               [--max-connections N] [--rust-admission --internal-unix PATH]
 //! ucloud-noded --admission-only --internal-unix PATH --registry PATH --node-control-token-file PATH
 //!               [--admission-config PATH] [--metrics-file PATH] [--observations-file PATH]
 
@@ -13,9 +12,8 @@ use tokio::signal::unix::{SignalKind, signal};
 fn usage(message: &str) -> ExitCode {
     eprintln!("ucloud-noded: {message}");
     eprintln!(
-        "usage: ucloud-noded --listen ADDR --upstream-unix PATH [--max-connections N] \
-         [--rust-create] [--rust-exec] [--rust-pause] [--node-control-token-file PATH] \
-         [--rust-admission --internal-unix PATH]\n       \
+        "usage: ucloud-noded --listen ADDR --upstream-unix PATH --node-control-token-file PATH \
+         [--max-connections N] [--rust-admission --internal-unix PATH]\n       \
          ucloud-noded --admission-only --internal-unix PATH --registry PATH --node-control-token-file PATH \
          [--admission-config PATH] [--metrics-file PATH] [--observations-file PATH]"
     );
@@ -67,9 +65,6 @@ fn main() -> ExitCode {
     let mut listen: Option<SocketAddr> = None;
     let mut upstream: Option<PathBuf> = None;
     let mut max_connections: Option<usize> = None;
-    let mut rust_create = false;
-    let mut rust_exec = false;
-    let mut rust_pause = false;
     let mut rust_admission = false;
     let mut admission_only = false;
     let mut internal_unix: Option<PathBuf> = None;
@@ -81,14 +76,11 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         match flag.as_str() {
-            "--rust-create" => rust_create = true,
-            "--rust-exec" => rust_exec = true,
-            "--rust-pause" => rust_pause = true,
             "--rust-admission" => rust_admission = true,
             "--admission-only" => admission_only = true,
             _ => {}
         }
-        if matches!(flag.as_str(), "--rust-create" | "--rust-exec" | "--rust-pause" | "--rust-admission" | "--admission-only") {
+        if matches!(flag.as_str(), "--rust-admission" | "--admission-only") {
             continue;
         }
         let Some(value) = args.next() else { return usage(&format!("{flag} needs a value")) };
@@ -120,7 +112,7 @@ fn main() -> ExitCode {
         }
     };
     if admission_only {
-        if listen.is_some() || upstream.is_some() || rust_create || rust_exec || rust_pause || rust_admission {
+        if listen.is_some() || upstream.is_some() || rust_admission {
             return usage("--admission-only serves the internal socket alone");
         }
         let (Some(socket), Some(registry)) = (internal_unix, registry) else {
@@ -145,21 +137,12 @@ fn main() -> ExitCode {
     let (Some(listen), Some(upstream)) = (listen, upstream) else {
         return usage("--listen and --upstream-unix are required");
     };
-    // The agent's internal socket serves admission, which needs the node the
-    // create, exec and pause fronts own (docs/architecture.md).
-    if rust_admission && !(rust_create && rust_exec && rust_pause) {
-        return usage("--rust-admission needs --rust-create, --rust-exec and --rust-pause");
-    }
     if rust_admission != internal_unix.is_some() {
         return usage("--rust-admission and --internal-unix go together");
     }
-    let token = match (rust_create || rust_exec || rust_pause, token_file) {
-        (false, _) => None,
-        (true, None) => return usage("--rust-create and --rust-exec need --node-control-token-file"),
-        (true, path) => match read_token(path) {
-            Ok(token) => Some(token),
-            Err(error) => return usage(&error),
-        },
+    let token = match read_token(token_file) {
+        Ok(token) => token,
+        Err(error) => return usage(&error),
     };
     let mut config = ucloud_noded::Config::new(upstream);
     if let Some(count) = max_connections {
@@ -187,18 +170,12 @@ fn main() -> ExitCode {
                 _ = interrupt.recv() => {}
             }
         };
-        if (rust_exec || rust_pause) && !rust_create {
-            eprintln!("ucloud-noded: --rust-exec and --rust-pause need --rust-create; execs and the pause tier stay with the agent");
-        }
-        let fronts = match token.filter(|_| rust_create) {
-            Some(token) => match ucloud_noded::start_fronts(&config.upstream, &token, rust_exec, rust_pause, rust_admission) {
-                Ok(fronts) => fronts,
-                Err(error) => {
-                    eprintln!("ucloud-noded: {error}");
-                    return ExitCode::FAILURE;
-                }
-            },
-            None => ucloud_noded::Fronts::default(),
+        let fronts = match ucloud_noded::start_fronts(&config.upstream, &token, rust_admission) {
+            Ok(fronts) => fronts,
+            Err(error) => {
+                eprintln!("ucloud-noded: {error}");
+                return ExitCode::FAILURE;
+            }
         };
         // The agent's internal socket, served beside the port until it closes.
         let (stop_internal, internal_stopped) = tokio::sync::watch::channel(());

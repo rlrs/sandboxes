@@ -1,7 +1,8 @@
-//! Local waits: Python goldens for the ruleset, the NFLOG requests and the
-//! parsers (testdata/goldens.py); the scheduler ported from
-//! tests/test_local_wait.py `SchedulerTests` with fake actions; the pause tier
-//! actions against a fake runsc; and, as root only, the kernel pieces.
+//! Local waits: goldens for the ruleset, the NFLOG requests and the parsers,
+//! recorded from the Python implementation this module replaced
+//! (testdata/python_goldens.json, frozen); the scheduler ported from Python's
+//! `SchedulerTests` with fake actions; the pause tier actions against a fake
+//! runsc; and, as root only, the kernel pieces.
 
 use std::collections::HashSet;
 use std::net::Ipv4Addr;
@@ -670,7 +671,7 @@ impl TierFake {
             command_timeout: Duration::from_secs(10),
             stop_timeout: Duration::from_secs(1),
         };
-        let mut config = PauseConfig::new(warden, true);
+        let mut config = PauseConfig::new(warden);
         config.cgroup_root = root.join("cgroup");
         config.zswap_enabled = root.join("zswap_enabled");
         // Exec the fresh script once (ETXTBSY while a forked sibling holds it).
@@ -883,7 +884,7 @@ fn leases_and_cgroups_come_from_the_node_files() {
 // ---------------------------------------------------------------------------
 // start: refusals, and the kernel pieces as root only
 
-fn tier_config(enabled: bool) -> PauseConfig {
+fn tier_config() -> PauseConfig {
     let warden = WardenConfig {
         runsc: "/nonexistent/runsc".into(),
         runtime_root: "/nonexistent/runtime".into(),
@@ -897,25 +898,24 @@ fn tier_config(enabled: bool) -> PauseConfig {
         command_timeout: Duration::from_secs(1),
         stop_timeout: Duration::from_secs(1),
     };
-    PauseConfig::new(warden, enabled)
+    PauseConfig::new(warden)
 }
 
-fn start(enabled: bool, relays: &[&str]) -> Result<LocalWaits, StartError> {
+fn start(relays: &[&str]) -> Result<LocalWaits, StartError> {
     let candidates = Arc::new(Fixed { candidates: Mutex::new(vec![]), current: AtomicBool::new(true) });
     let relays = relays.iter().map(|relay| (relay.to_string(), 8092)).collect();
     LocalWaits::start(
         LocalWaitConfig::new(relays, candidates),
-        PauseTier::new(tier_config(enabled), None),
+        PauseTier::new(tier_config(), None),
         WaitFence::new("/nonexistent/warden-locks"),
         Arc::new(Recorder::default()),
     )
 }
 
 #[test]
-fn start_refuses_without_the_pause_tier_a_private_relay_or_a_runtime() {
-    assert!(matches!(start(false, &["10.42.0.2"]), Err(StartError::PauseTierDisabled)));
-    assert!(matches!(start(true, &["relay.example.org", "8.8.4.4"]), Err(StartError::NoEndpoints)));
-    assert!(matches!(start(true, &["10.42.0.2"]), Err(StartError::NoRuntime)));
+fn start_refuses_without_a_private_relay_or_a_runtime() {
+    assert!(matches!(start(&["relay.example.org", "8.8.4.4"]), Err(StartError::NoEndpoints)));
+    assert!(matches!(start(&["10.42.0.2"]), Err(StartError::NoRuntime)));
 }
 
 fn root() -> bool {
@@ -931,7 +931,7 @@ async fn without_root_start_fails_closed_and_leaves_no_table() {
     if crate::fsutil::euid() == 0 {
         return; // Covered by the root tests.
     }
-    assert!(matches!(start(true, &["10.42.0.2"]), Err(StartError::Nflog(_))));
+    assert!(matches!(start(&["10.42.0.2"]), Err(StartError::Nflog(_))));
 }
 
 #[test]
@@ -989,11 +989,11 @@ async fn as_root_start_binds_installs_and_stop_removes() {
     if listed() {
         return eprintln!("skipped: {TABLE} exists on this host");
     }
-    let waits = start(true, &["10.42.0.2", "relay.example.org"]).unwrap();
+    let waits = start(&["10.42.0.2", "relay.example.org"]).unwrap();
     assert_eq!(waits.endpoints(), [(RELAY, 8092)]);
     assert!(listed());
     // A second binder fails closed and leaves the first one's table alone.
-    let second = start(true, &["10.42.0.2"]);
+    let second = start(&["10.42.0.2"]);
     assert!(matches!(&second, Err(StartError::Nflog(error)) if error.raw_os_error() == Some(libc::EPERM)), "{second:?}", second = second.as_ref().err());
     assert!(listed());
     tokio::task::spawn_blocking(move || waits.stop()).await.unwrap();

@@ -1,5 +1,6 @@
 //! Node-local model waits (pause-reclaim item 6; docs/architecture.md;
-//! phase-3 spec §1.5, §3): a port of `sandboxes/local_wait.py`.
+//! phase-3 spec §1.5, §3), ported from the agent's `sandboxes/local_wait.py`,
+//! which keeps only the constants and `relay_endpoints` it sends here.
 //!
 //! The node sees a sandbox's plaintext HTTP/1.1 calls to a private relay
 //! endpoint (IPv4 literals) at the TCP level. A call is outstanding when the
@@ -84,8 +85,6 @@ impl LocalWaitConfig {
 
 #[derive(Debug)]
 pub enum StartError {
-    /// `sandbox.direct_pause_tier` is off: local waits pause through it.
-    PauseTierDisabled,
     /// No relay is a private IPv4 literal: nothing to watch.
     NoEndpoints,
     /// Not inside a tokio runtime (pauses and thaws run on it).
@@ -99,7 +98,6 @@ pub enum StartError {
 impl std::fmt::Display for StartError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StartError::PauseTierDisabled => write!(f, "local model waits need the pause tier"),
             StartError::NoEndpoints => write!(f, "no relay is a private IPv4 literal"),
             StartError::NoRuntime => write!(f, "local model waits need a tokio runtime"),
             StartError::Nflog(error) => write!(f, "cannot bind NFLOG group {NFLOG_GROUP}: {error}"),
@@ -174,9 +172,6 @@ impl LocalWaits {
         fence: WaitFence,
         events: Arc<dyn LocalWaitEvents>,
     ) -> Result<LocalWaits, StartError> {
-        if !pause_tier.config().enabled {
-            return Err(StartError::PauseTierDisabled);
-        }
         let endpoints = relay_endpoints(config.relays.iter().map(|(host, port)| (host.as_str(), *port)));
         if endpoints.is_empty() {
             return Err(StartError::NoEndpoints);

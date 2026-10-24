@@ -126,8 +126,8 @@
   "test_import": 2
  },
  "test_create_pipeline.py": {
-  "private": 14,
-  "test_import": 2
+  "private": 8,
+  "test_import": 1
  },
  "test_create_placement.py": {
   "clock": 6,
@@ -142,12 +142,6 @@
  "test_direct_network.py": {
   "private": 23,
   "private_patch": 29
- },
- "test_direct_network_pool.py": {
-  "clock": 2,
-  "private": 56,
-  "private_patch": 3,
-  "sleep": 2
  },
  "test_direct_provisioner.py": {
   "clock": 4,
@@ -291,9 +285,6 @@
   "new": 2,
   "private": 7
  },
- "test_gvisor_distribution.py": {
-  "private_patch": 1
- },
  "test_heartbeat_sender.py": {
   "clock": 10,
   "private": 6,
@@ -385,9 +376,6 @@
   "clock": 2,
   "sleep": 1
  },
- "test_local_wait.py": {
-  "private": 17
- },
  "test_managed_control_admission.py": {
   "clock": 4,
   "private": 17,
@@ -396,7 +384,7 @@
  },
  "test_managed_growth.py": {
   "clock": 7,
-  "private": 16,
+  "private": 13,
   "private_patch": 4,
   "sleep": 3,
   "test_import": 1
@@ -420,7 +408,7 @@
   "test_import": 2
  },
  "test_memory_backing_mode.py": {
-  "private": 10,
+  "private": 7,
   "private_patch": 1,
   "test_import": 1
  },
@@ -481,8 +469,7 @@
   "private_patch": 2
  },
  "test_node_runtime.py": {
-  "clock": 1,
-  "private": 65
+  "private": 20
  },
  "test_noded_admission_backend.py": {
   "clock": 2,
@@ -502,9 +489,9 @@
   "test_import": 1
  },
  "test_overload_maintenance.py": {
-  "clock": 13,
-  "private": 23,
-  "sleep": 5
+  "clock": 4,
+  "private": 10,
+  "sleep": 2
  },
  "test_package_cache.py": {
   "clock": 2,
@@ -512,11 +499,10 @@
   "sleep": 2
  },
  "test_pause_tier.py": {
-  "clock": 10,
-  "private": 34,
-  "private_patch": 1,
-  "sleep": 5,
-  "test_import": 3
+  "clock": 6,
+  "private": 6,
+  "sleep": 3,
+  "test_import": 2
  },
  "test_placement_completion_reads.py": {
   "private": 5,
@@ -577,14 +563,12 @@
   "test_import": 1
  },
  "test_registry_hot_paths.py": {
-  "private": 11,
-  "private_patch": 2,
+  "private": 7,
   "test_import": 1
  },
  "test_registry_index.py": {
-  "clock": 2,
-  "private": 21,
-  "sleep": 2,
+  "private": 2,
+  "sleep": 1,
   "test_import": 1
  },
  "test_registry_sweep.py": {
@@ -612,28 +596,10 @@
   "private": 3,
   "test_import": 1
  },
- "test_resident_cache_policy.py": {
-  "clock": 2,
-  "private": 5,
-  "test_import": 1
- },
- "test_resident_memory.py": {
-  "clock": 1,
-  "private": 3,
-  "test_import": 1
- },
- "test_resident_reclaim_fence.py": {
-  "private": 7,
-  "test_import": 1
- },
- "test_resident_wait_ranking.py": {
-  "private": 17,
-  "test_import": 1
- },
  "test_resource_phase_forwarding.py": {
   "new": 2,
   "private": 11,
-  "test_import": 2
+  "test_import": 1
  },
  "test_retired_memory_maintenance.py": {
   "private": 1,
@@ -666,27 +632,27 @@
  },
  "test_rust_create_handoff.py": {
   "clock": 2,
-  "private": 4,
+  "private": 1,
   "private_patch": 1,
   "sleep": 1,
-  "test_import": 2
+  "test_import": 1
  },
  "test_rust_exec_fence.py": {
   "clock": 6,
-  "private": 9,
-  "test_import": 2
+  "private": 3,
+  "test_import": 1
  },
  "test_rust_pause_tier.py": {
   "clock": 5,
-  "private": 12,
-  "private_patch": 3,
-  "sleep": 3,
-  "test_import": 4
+  "private": 5,
+  "private_patch": 2,
+  "sleep": 2,
+  "test_import": 3
  },
  "test_rust_resident_sampling.py": {
   "clock": 1,
   "private": 11,
-  "private_patch": 4,
+  "private_patch": 3,
   "sleep": 1,
   "test_import": 2
  },
@@ -709,7 +675,7 @@
   "test_import": 2
  },
  "test_split_memory_wiring.py": {
-  "private": 6,
+  "private": 4,
   "test_import": 4
  },
  "test_split_snapshot_routing.py": {

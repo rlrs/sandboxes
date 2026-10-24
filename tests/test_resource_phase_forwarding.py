@@ -4,10 +4,16 @@ from unittest import TestCase
 from unittest.mock import Mock
 
 from tests import test_control_plane as fixtures
-from tests import test_resident_wait_ranking as ranking_fixtures
 from sandboxes.control_plane import ControlPlaneHandler, lifecycle_node_payload
 from sandboxes.node_agent import NodeAgentHandler
-from sandboxes.warm_park import WarmParkDeferred
+from sandboxes.sandbox import WarmParkDeferred
+
+
+def hint():
+    """A relay's model-wait advice (resource phase)."""
+    return dict(sequence=1, phase="model_wait", ttl_seconds=10, expected_remaining_wait_seconds=100,
+                observed_at=1000.0, evaluated_at=1000.0, expires_at=1010.0,
+                registration_incarnation="a" * 64)
 
 
 class ResourcePhaseForwardingTests(TestCase):
@@ -16,7 +22,7 @@ class ResourcePhaseForwardingTests(TestCase):
             operation_id="park:r",
             durable_lifecycle=True,
             request_id="r",
-            resource_phase=ranking_fixtures.ResidentWaitRankingTests.hint(),
+            resource_phase=hint(),
         )
         result = lifecycle_node_payload(3, "park", payload)
         self.assertEqual(result, {"operation_id": "park:r", "relay_request_id": "r", "generation": 3,
@@ -37,7 +43,7 @@ class ResourcePhaseForwardingTests(TestCase):
             operation_id="park:r",
             relay_request_id="r",
             generation=1,
-            resource_phase=ranking_fixtures.ResidentWaitRankingTests.hint(),
+            resource_phase=hint(),
         )
         handler._read_json_body = lambda: payload
         handler._park_sandbox("/v1/sandboxes/agent/park")
@@ -51,7 +57,7 @@ class ResourcePhaseForwardingTests(TestCase):
             {"relay_request_id": None},
             {
                 "resource_phase": {
-                    **ranking_fixtures.ResidentWaitRankingTests.hint(),
+                    **hint(),
                     "extra": 1,
                 }
             },
@@ -79,7 +85,7 @@ class ResourcePhaseForwardingTests(TestCase):
         ]:
             payload = dict(
                 operation_id="op:r",
-                resource_phase=ranking_fixtures.ResidentWaitRankingTests.hint(),
+                resource_phase=hint(),
                 **extra,
             )
             self.assertIsNone(
