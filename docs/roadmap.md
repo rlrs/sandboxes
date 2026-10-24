@@ -71,6 +71,8 @@ under [Open decisions](#open-decisions).
 ## Relay
 
 - **Packet-watcher cost at 500 sandboxes/node** is unmeasured (one NFLOG message per packet).
+- **Resource-phase hints, client half:** the SDK still ships `update_resource_phase` and
+  verifiers-ucloud `resource_phase_hints`; drop them in their next releases.
 
 ## Open decisions
 

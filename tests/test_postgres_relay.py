@@ -1918,120 +1918,15 @@ class PostgresRelayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 200, await response.text())
             self.assertTrue(registration["registration_token"])
 
-    async def test_resource_phase_sequence_expiry_and_registration_fences(self):
-        update = {"sequence": 2, "phase": "model_wait", "ttl_seconds": 30,
-                  "expected_remaining_wait_seconds": 20}
-        first = await self.state.update_resource_phase(
-            "agent", registration_token=self.token, update=update)
-        repeated = await self.state.update_resource_phase(
-            "agent", registration_token=self.token, update=update)
-        self.assertEqual(first["current"]["expires_at"], repeated["current"]["expires_at"])
-        older = await self.state.update_resource_phase(
-            "agent", registration_token=self.token, update={**update, "sequence": 1})
-        self.assertFalse(older["accepted"])
-        with self.assertRaises(web.HTTPConflict):
-            await self.state.update_resource_phase(
-                "agent", registration_token=self.token, update={**update, "ttl_seconds": 31})
-        async with self.state.store.transaction("test_expire_phase") as conn:
-            await conn.execute(
-                "UPDATE relay_rollouts SET metadata=jsonb_set(metadata, '{_ucloud_resource_phase,expires_at}', '0') WHERE deployment_id=%s AND rollout_id='agent'",
-                (self.state.deployment,),
-            )
-        expired = await self.state.update_resource_phase(
-            "agent", registration_token=self.token, update=update)
-        self.assertIsNone(expired["current"])
-        await self.state.register_rollout("agent")
-        with self.assertRaises(web.HTTPConflict):
-            await self.state.update_resource_phase(
-                "agent", registration_token=self.token, update={**update, "sequence": 3})
-
-    async def test_resource_phase_http_auth_validation_and_revocation(self):
+    async def test_retired_resource_phase_route_answers_not_found(self):
+        # SDK update_resource_phase (0.4.26+) gets a 404; verifiers-ucloud logs it.
         client, state = await self.completion_client(None)
-        registration = await state.register_rollout("phase-http")
-        token = registration["registration_token"]
-        endpoint = "/v1/relay/rollouts/phase-http/resource-phase"
-        payload = {"registration_token": token,
-                   "update": {"sequence": 1, "phase": "rollout_complete"}}
-        response = await client.post(endpoint, json=payload)
-        self.assertEqual(response.status, 401)
-        response = await client.post(endpoint, json=payload,
-                                     headers={"Authorization": "Bearer worker"})
-        self.assertEqual(response.status, 200, await response.text())
-        # A completion hint neither revokes the registration nor deletes work.
-        self.assertEqual((await state.list_rollouts())[0]["rollout_id"], "phase-http")
-        await state.unregister_rollout("phase-http", registration_token=token)
-        response = await client.post(endpoint, json=payload,
-                                     headers={"Authorization": "Bearer worker"})
+        token = (await state.register_rollout("phase-http"))["registration_token"]
+        response = await client.post(
+            "/v1/relay/rollouts/phase-http/resource-phase",
+            json={"registration_token": token, "update": {"sequence": 1, "phase": "tool"}},
+            headers={"Authorization": "Bearer worker"})
         self.assertEqual(response.status, 404)
-
-    async def test_resource_phase_cancelled_transaction_leaves_no_partial_hint(self):
-        entered, release = asyncio.Event(), asyncio.Event()
-        original = self.state._now
-        async def blocked_now(conn):
-            entered.set()
-            await release.wait()
-            return await original(conn)
-        with patch.object(self.state, "_now", side_effect=blocked_now):
-            task = asyncio.create_task(self.state.update_resource_phase(
-                "agent", registration_token=self.token,
-                update={"sequence": 1, "phase": "training_pause"}))
-            await asyncio.wait_for(entered.wait(), 3)
-            task.cancel()
-            with self.assertRaises(asyncio.CancelledError):
-                await task
-        record = (await self.state.list_rollouts())[0]
-        self.assertNotIn("_ucloud_resource_phase", record["metadata"])
-        result = await self.state.update_resource_phase(
-            "agent", registration_token=self.token,
-            update={"sequence": 1, "phase": "training_resume"})
-        self.assertTrue(result["accepted"])
-
-    async def test_resource_phase_is_advice_on_existing_park_not_new_lifecycle_work(self):
-        from sandboxes.relay_phase import transport_phase
-        arrived = asyncio.Event()
-        hints = []
-        async def park(request):
-            hints.append(transport_phase(request.resource_phase))
-            arrived.set()
-        state = await self.bound_state(accepted_notifier=park)
-        registration = (await state.list_rollouts())[0]
-        await state.update_resource_phase(
-            "agent", registration_token=registration["registration_token"],
-            update={"sequence": 1, "phase": "model_wait", "ttl_seconds": 30,
-                    "expected_remaining_wait_seconds": 20})
-        self.assertEqual((await state.stats())["lifecycle"], [])
-        request = await self.enqueue(state)
-        await asyncio.wait_for(arrived.wait(), 3)
-        self.assertEqual(hints[0]["phase"], "model_wait")
-        self.assertGreater(hints[0]["expected_remaining_wait_seconds"], 15)
-        self.assertNotIn(request.registration_token, str(hints))
-        self.assertEqual(request.state, "pending")
-
-    async def test_registration_cannot_seed_forged_resource_phase(self):
-        with self.assertRaises(web.HTTPBadRequest):
-            await self.state.register_rollout("forged", {
-                "_ucloud_resource_phase": {"sequence": 999, "phase": "model_wait"},
-            })
-
-    # AsyncRelayWorkerClient.update_resource_phase first shipped in 0.4.26.
-    @requires_sdk("0.4.26")
-    async def test_resource_phase_real_sync_and_async_sdk_round_trip(self):
-        from ucloud_sandboxes_sdk import AsyncRelayWorkerClient, RelayWorkerClient
-        http, state = await self.completion_client(None)
-        url = str(http.make_url("/")).rstrip("/")
-        async with AsyncRelayWorkerClient(url, worker_token="worker") as client:
-            await client.register_rollout("sdk-phase")
-            receipt = await client.update_resource_phase(
-                "sdk-phase", sequence=1, phase="model_wait", expected_remaining_wait_seconds=15)
-            self.assertTrue(receipt["accepted"])
-            self.assertEqual(receipt["current"]["phase"], "model_wait")
-            sync = RelayWorkerClient(url, worker_token="worker")
-            registration = (await state.list_rollouts())[0]
-            receipt = await asyncio.to_thread(sync.update_resource_phase,
-                "sdk-phase", sequence=2, phase="tool",
-                registration_token=registration["registration_token"])
-            self.assertTrue(receipt["accepted"])
-            self.assertEqual(receipt["current"]["phase"], "tool")
 
     async def completion_request(self, state):
         reg = await state.register_rollout(

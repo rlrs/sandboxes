@@ -42,6 +42,18 @@
   `migrate` and gateway must upgrade to 0.10.0 first. **Rollback** to 0.10.0
   needs nothing: its migrations add only what is missing, and a schema created
   by this release has all of it.
+- **Resource-phase hints are gone.** The relay no longer serves
+  `POST /v1/relay/rollouts/{id}/resource-phase`; it answers 404, so SDK
+  `update_resource_phase` (0.4.26 and later) raises, and verifiers-ucloud's
+  `report_resource_phase` (only with `resource_phase_hints = true`, off by
+  default) logs a warning and returns false. A relay park no longer carries a
+  phase hint, a relay park always pauses in place (an explicit park still
+  hibernates), workers stop advertising `resource-phase-advice-v1`, and noded's
+  paused-wait ranking drops its hinted branch. Production had no hints: 0 of
+  105,908 relay rollouts carried `_ucloud_resource_phase`. Registration metadata
+  may now carry that key; nothing reads it. No schema or config changes, so a
+  rollback to 0.10.0 needs nothing; 0.10.0 gateways forward hints only to
+  workers that advertise the capability.
 - **Parked-wake consolidation is gone.** A parked sandbox wakes on its owner
   when it fits there, and moves only when it does not; drain-on-park packs the
   fleet instead. Production runs with `policy.parked_wake_consolidation_enabled`

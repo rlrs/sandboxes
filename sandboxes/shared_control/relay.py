@@ -26,7 +26,6 @@ from psycopg.types.json import Jsonb
 
 from .. import model_relay as api
 from ..telemetry import Telemetry
-from ..relay_phase import METADATA_KEY as PHASE_METADATA_KEY, current_phase, phase_update
 from .database import PostgresDatabase
 from .model import cancel_until_done
 
@@ -504,36 +503,6 @@ class PostgresRelayState:
             )
             await self._notify(conn, "q:" + rollout_id)
             return True
-
-    async def update_resource_phase(self, rollout_id, *, registration_token, update):
-        api.validate_rollout_id(rollout_id)
-        api.validate_registration_token(registration_token)
-        try:
-            update = phase_update(update)
-        except ValueError as exc:
-            raise web.HTTPBadRequest(text=str(exc)) from exc
-        async with self.store.transaction("relay_resource_phase") as conn:
-            # The immutable registration token also fences its sandbox binding.
-            # Re-registration/revocation serialize on this same authoritative row.
-            row = await self._registration(conn, rollout_id, registration_token, lock="UPDATE")
-            now = await self._now(conn)
-            metadata = dict(row["metadata"])
-            previous = metadata.get(PHASE_METADATA_KEY)
-            if previous is not None and previous["sequence"] >= update["sequence"]:
-                duplicate = previous["sequence"] == update["sequence"]
-                original = {key: previous[key] for key in update if key in previous}
-                original_keys = set(previous) - {"observed_at", "expires_at"}
-                if duplicate and (original != update or original_keys != set(update)):
-                    raise web.HTTPConflict(text="resource phase sequence already has another payload")
-                return {"accepted": duplicate, "current": current_phase(metadata, now=now)}
-            metadata[PHASE_METADATA_KEY] = {
-                **update, "observed_at": now, "expires_at": now + update["ttl_seconds"],
-            }
-            await conn.execute(
-                "UPDATE relay_rollouts SET metadata=%s WHERE deployment_id=%s AND rollout_id=%s",
-                (Jsonb(metadata), self.deployment, rollout_id),
-            )
-            return {"accepted": True, "current": current_phase(metadata, now=now)}
 
     async def _retire_registration(self, conn, rollout, token, now):
         rows = await (
@@ -1463,11 +1432,7 @@ class PostgresRelayState:
                 UPDATE relay_lifecycle l SET claim_token=gen_random_uuid(),claim_until=clock_timestamp()+%s*interval '1 second',attempts=l.attempts+1
                 FROM due JOIN relay_requests r ON (r.deployment_id,r.request_id)=(due.deployment_id,due.request_id)
                 WHERE (l.deployment_id,l.request_id,l.action)=(due.deployment_id,due.request_id,due.action)
-                RETURNING l.*,extract(epoch FROM clock_timestamp())::double precision AS claimed_at,to_jsonb(r) AS request_record,
-                CASE WHEN l.action='park' THEN (SELECT g.metadata->'_ucloud_resource_phase' FROM relay_rollouts g
-                 WHERE g.deployment_id=r.deployment_id AND g.rollout_id=r.rollout_id
-                 AND g.registration_token=r.registration_token AND g.enabled)
-                ELSE NULL END AS phase_observation""",
+                RETURNING l.*,extract(epoch FROM clock_timestamp())::double precision AS claimed_at,to_jsonb(r) AS request_record""",
                     (
                         self.deployment,
                         [k for k, v in self.notifiers.items() if v is not None and (action is None or k == action)],
@@ -1622,13 +1587,6 @@ class PostgresRelayState:
         request_id, action = work["request_id"], work["action"]
         # The claim hydrates only small request columns, never model bodies.
         request = self._request_value(work["request_record"])
-        if action == "park":
-            request.resource_phase = current_phase(
-                {PHASE_METADATA_KEY: work.get("phase_observation")}, now=time.time())
-            if request.resource_phase is not None:
-                request.resource_phase["registration_incarnation"] = hashlib.sha256(
-                    request.registration_token.encode()
-                ).hexdigest()
         if request.state == "completed":
             request.expires_at = (
                 None  # Accepted result delivery outlives inference timeout.

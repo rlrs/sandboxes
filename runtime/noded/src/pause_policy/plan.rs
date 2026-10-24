@@ -28,8 +28,6 @@ pub type Key = (String, u64);
 pub struct PausedWait {
     /// Monotonic seconds.
     pub paused_at: f64,
-    /// A relay's predicted end of the wait, monotonic seconds.
-    pub expected_until: Option<f64>,
     /// `None`: no live sample (unmeasured waits carry no credit).
     pub resident_bytes: Option<u64>,
     pub swapped_bytes: u64,
@@ -54,9 +52,8 @@ impl PausedWait {
 /// table's insertion order, which breaks ties as Python's stable sort does.
 /// `swap_room`: `None` is unbounded.
 ///
-/// Hinted waits go first by expected remaining idle x resident bytes, then the
-/// rest by resident bytes, most recently paused first (a long-paused wait is
-/// the likeliest to wake next). A wait swaps out while swap has room above the
+/// Waits go by resident bytes, most recently paused first (a long-paused wait
+/// is the likeliest to wake next). A wait swaps out while swap has room above the
 /// reserve; one in its stall backoff waits. One that stalled MAX_STALLS times,
 /// or that no longer fits in swap, escalates if it holds at least STALL_BYTES
 /// resident and more resident than swapped. In-flight work counts against the
@@ -71,16 +68,10 @@ pub fn relief_plan(decision: &Decision, waits: &[(&Key, &PausedWait)], now: f64,
     let mut room: Option<i128> = swap_room.map(|room| i128::from(room) - reclaiming);
     let mut deficit = i128::from(decision.target_bytes) - reclaiming - escalating;
 
-    let score = |wait: &PausedWait| -> (u8, f64) {
-        let resident = wait.resident_bytes.unwrap_or(0) as f64;
-        match wait.expected_until {
-            Some(until) => (1, (until - now).max(0.0) * resident),
-            None => (0, resident / (1.0 + (now - wait.paused_at).max(0.0))),
-        }
-    };
-    let mut ranked: Vec<(usize, (u8, f64))> = waits.iter().enumerate().map(|(index, (_, wait))| (index, score(wait))).collect();
+    let score = |wait: &PausedWait| wait.resident_bytes.unwrap_or(0) as f64 / (1.0 + (now - wait.paused_at).max(0.0));
+    let mut ranked: Vec<(usize, f64)> = waits.iter().enumerate().map(|(index, (_, wait))| (index, score(wait))).collect();
     // Descending, stable: equal scores keep the table's order.
-    ranked.sort_by(|(_, left), (_, right)| right.0.cmp(&left.0).then(right.1.partial_cmp(&left.1).unwrap_or(std::cmp::Ordering::Equal)));
+    ranked.sort_by(|(_, left), (_, right)| right.partial_cmp(left).unwrap_or(std::cmp::Ordering::Equal));
 
     let (mut reclaims, mut escalations) = (Vec::new(), Vec::new());
     for (index, _) in ranked {
@@ -145,10 +136,6 @@ mod tests {
         PausedWait { resident_bytes: resident, ..PausedWait::new(paused_at) }
     }
 
-    fn hinted(paused_at: f64, until: f64, resident: u64) -> PausedWait {
-        PausedWait { expected_until: Some(until), ..wait(paused_at, Some(resident)) }
-    }
-
     fn plan(decision: &Decision, waits: &[(Key, PausedWait)], now: f64, room: Option<u64>) -> (Vec<(Key, u64)>, Vec<Key>) {
         let view: Vec<(&Key, &PausedWait)> = waits.iter().map(|(key, wait)| (key, wait)).collect();
         relief_plan(decision, &view, now, room)
@@ -163,30 +150,30 @@ mod tests {
     }
 
     #[test]
-    fn reclaim_runs_only_under_pressure_and_evicts_the_longest_expected_idle() {
+    fn reclaim_runs_only_under_pressure_and_evicts_large_recently_paused_waits_first() {
         let relaxed = decide_resident_wait(&Pressure::new(0.9, 0.0, 0.0, 90 * GIB), MemoryDemand::default(), false, false);
         let pressed = pressed();
         let mut waits = vec![
             (key("short"), wait(90.0, Some(4 * GIB))), // idle 10 s
             (key("long"), wait(0.0, Some(GIB))),       // idle 100 s
-            (key("hinted"), hinted(99.0, 400.0, GIB)),
+            (key("recent"), wait(99.0, Some(GIB))),   // idle 1 s
             (key("unmeasured"), wait(0.0, None)),
         ];
         assert_eq!(plan(&relaxed, &waits, 100.0, None), (vec![], vec![]));
         let (reclaims, escalations) = plan(&pressed, &waits, 100.0, None);
         let order: Vec<&str> = reclaims.iter().map(|(key, _)| key.0.as_str()).collect();
-        assert_eq!(&order[..3], ["hinted", "short", "long"]);
+        assert_eq!(&order[..3], ["recent", "short", "long"]);
         assert!(!order.contains(&"unmeasured"));
         assert!(reclaims.iter().map(|(_, target)| target).sum::<u64>() <= pressed.target_bytes);
         assert!(escalations.is_empty()); // Swap has room and nothing stalled.
         // In-flight reclaim counts its target against the same deficit.
-        get(&mut waits, "hinted").reclaiming = pressed.target_bytes;
+        get(&mut waits, "recent").reclaiming = pressed.target_bytes;
         assert_eq!(plan(&pressed, &waits, 100.0, None), (vec![], vec![]));
     }
 
     fn six() -> Vec<(Key, PausedWait)> {
         vec![
-            (key("hinted"), hinted(99.0, 400.0, GIB)),
+            (key("recent"), wait(99.0, Some(GIB))),
             (key("long"), wait(0.0, Some(GIB))),
             (key("short"), wait(90.0, Some(4 * GIB))),
             (key("small"), wait(0.0, Some(STALL_BYTES - 1))),
@@ -200,24 +187,24 @@ mod tests {
         let pressed = pressed(); // A 6.5 GiB deficit.
         // 1.5 GiB of swap room: the best two swap out, the rest hibernates.
         let (reclaims, escalations) = plan(&pressed, &six(), 100.0, Some(3 * GIB / 2));
-        assert_eq!(reclaims, vec![(key("hinted"), GIB), (key("short"), GIB / 2)]);
+        assert_eq!(reclaims, vec![(key("recent"), GIB), (key("short"), GIB / 2)]);
         assert_eq!(escalations, vec![key("long")]);
         // Swap nearly full: every wait worth a hibernate escalates, best first.
-        assert_eq!(plan(&pressed, &six(), 100.0, Some(0)), (vec![], vec![key("hinted"), key("short"), key("long")]));
+        assert_eq!(plan(&pressed, &six(), 100.0, Some(0)), (vec![], vec![key("recent"), key("short"), key("long")]));
         // One stall only backs off: no reclaim and no hibernate until it ends.
         let mut backing_off = six();
-        note_reclaim(get(&mut backing_off, "hinted"), true, 100.0);
+        note_reclaim(get(&mut backing_off, "recent"), true, 100.0);
         let (reclaims, escalations) = plan(&pressed, &backing_off, 101.0, None);
-        assert!(!reclaims.iter().any(|(key, _)| key.0 == "hinted") && !escalations.contains(&key("hinted")));
+        assert!(!reclaims.iter().any(|(key, _)| key.0 == "recent") && !escalations.contains(&key("recent")));
         let (reclaims, _) = plan(&pressed, &backing_off, 100.0 + STALL_BACKOFF_SECONDS, None);
-        assert!(reclaims.iter().any(|(key, _)| key.0 == "hinted")); // Retried after the backoff.
+        assert!(reclaims.iter().any(|(key, _)| key.0 == "recent")); // Retried after the backoff.
         // MAX_STALLS in a row escalate even with room; others still swap.
         let mut stalled = six();
-        get(&mut stalled, "hinted").stalls = MAX_STALLS;
+        get(&mut stalled, "recent").stalls = MAX_STALLS;
         let (reclaims, escalations) = plan(&pressed, &stalled, 100.0, None);
         let mut swapped: Vec<&str> = reclaims.iter().map(|(key, _)| key.0.as_str()).collect();
         swapped.sort();
-        assert_eq!((swapped, escalations), (vec!["long", "short", "small", "swapped"], vec![key("hinted")]));
+        assert_eq!((swapped, escalations), (vec!["long", "short", "small", "swapped"], vec![key("recent")]));
         get(&mut stalled, "swapped").stalls = MAX_STALLS; // Already reclaimed: left alone.
         assert!(!plan(&pressed, &stalled, 100.0, Some(0)).1.contains(&key("swapped")));
         // An in-flight escalation counts against the deficit.

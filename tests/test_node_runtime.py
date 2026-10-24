@@ -57,9 +57,6 @@ class _WakeService:
     def open_admission(self) -> None:
         pass
 
-    def resident_memory_sample(self, _sandbox_id, _generation):
-        return None
-
     def get(self, sandbox_id: str) -> object:
         return SimpleNamespace(spec=SimpleNamespace(id=sandbox_id), state="running")
 

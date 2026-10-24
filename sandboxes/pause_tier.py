@@ -21,9 +21,6 @@ import os
 from pathlib import Path
 import threading
 
-# Gray's five-minute rule for DRAM against NVMe: keeping a byte resident for
-# about five minutes costs as much as writing it out and reading it back.
-TRANSFER_BREAK_EVEN_SECONDS = 300.0
 # One node-wide reclaim budget (qualification: one reclaim moves 225-380 MiB/s
 # with zswap off; eight at once share about 0.85 GiB/s, and with zswap they are
 # CPU-bound at 21 MiB/s each). Two in flight at one shared rate keep a single
@@ -64,43 +61,6 @@ PREFETCH_SECONDS = 2.0
 # Less swap than this is about the Sentry's and gofer's own heaps (15 MiB,
 # which no memory-file read restores): nothing worth a prefetch moved out.
 PREFETCH_MIN_SWAP_BYTES = 32 * 1024**2
-
-
-def hibernate_beats_pause(expected_wait_seconds, resident_bytes, footprint_bytes):
-    """Aries rule: idle seconds x resident bytes > capture + restore cost.
-
-    The left side is the RAM a pause holds for the wait; reclaim lowers it. The
-    right side prices capturing and restoring the whole footprint, swapped
-    pages included, in the same RAM byte-seconds.
-    """
-    return (expected_wait_seconds is not None and footprint_bytes > 0
-            and expected_wait_seconds * resident_bytes
-            > TRANSFER_BREAK_EVEN_SECONDS * footprint_bytes)
-
-
-def park_tier(trigger, *, expected_wait_seconds=None, resident_bytes=0, footprint_bytes=0):
-    """'pause' or 'hibernate' for one park on a pause-tier node (pure).
-
-    Explicit API parks (durable park, drain and offload moves) hibernate. The
-    idle timer pauses; a model wait pauses unless the Aries rule prefers a
-    hibernate for its predicted remaining wait.
-    """
-    if trigger not in {"idle", "relay", "explicit"}:
-        raise ValueError("park trigger is invalid")
-    if trigger == "explicit" or (trigger == "relay" and hibernate_beats_pause(
-            expected_wait_seconds, resident_bytes, footprint_bytes)):
-        return "hibernate"
-    return "pause"
-
-
-def advised_wait_seconds(phase, wall_now):
-    """Remaining model wait that a fresh relay phase hint predicts, else None."""
-    if (phase is None or phase.get("phase") != "model_wait"
-            or phase.get("expected_remaining_wait_seconds") is None
-            or wall_now >= phase["expires_at"]):
-        return None
-    return max(0.0, phase["expected_remaining_wait_seconds"]
-               - max(0.0, wall_now - phase["evaluated_at"]))
 
 
 def cap_zswap(pid, *, proc_root=Path("/proc"), cgroup_root=Path("/sys/fs/cgroup"),

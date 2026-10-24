@@ -161,9 +161,6 @@ class RelayRequest:
     # waits (sandbox.direct_local_model_waits): no park; wake only if unacknowledged.
     local_wait: bool = False
     durable_lifecycle: bool = True
-    # Refreshed from the current registration when dispatching a park; never
-    # persisted in a request or interpreted as execution authority.
-    resource_phase: JsonObject | None = field(default=None, repr=False, compare=False)
 
     def envelope(self) -> JsonObject:
         if self.body is None:
@@ -283,9 +280,6 @@ def create_model_relay_app(
     app.router.add_get("/v1/relay/stats", relay_stats)
     app.router.add_get("/v1/relay/rollouts", list_rollouts)
     app.router.add_post("/v1/relay/rollouts", register_rollout)
-    app.router.add_post(
-        "/v1/relay/rollouts/{rollout_id}/resource-phase", update_resource_phase
-    )
     app.router.add_delete(
         "/v1/relay/rollouts/{rollout_id}",
         unregister_rollout,
@@ -457,23 +451,6 @@ async def unregister_rollout(request: web.Request) -> web.Response:
             "existed": existed,
         }
     )
-
-
-async def update_resource_phase(request: web.Request) -> web.Response:
-    _require_worker_token(request)
-    payload = await _json_object(request)
-    token = _registration_token_from_payload(payload)
-    if set(payload) != {"registration_token", "update"}:
-        raise web.HTTPBadRequest(
-            text="resource phase requires registration_token and update"
-        )
-    state = _state(request)
-    result = await state.update_resource_phase(
-        str(request.match_info["rollout_id"]),
-        registration_token=token,
-        update=payload["update"],
-    )
-    return web.json_response({"ok": True, **result})
 
 
 async def worker_poll(request: web.Request) -> web.Response:
@@ -1201,12 +1178,6 @@ def _registration_sandbox_id(record: JsonObject) -> str | None:
 def _validate_registration_metadata(metadata: JsonObject | None) -> None:
     if metadata is None:
         return
-    from .relay_phase import METADATA_KEY as phase_metadata_key
-
-    if phase_metadata_key in metadata:
-        raise web.HTTPBadRequest(
-            text="resource phase metadata is reserved; use its update API"
-        )
     if "sandboxId" in metadata or "sandboxGeneration" in metadata:
         raise web.HTTPBadRequest(text="registration metadata must use snake_case")
     record: JsonObject = {"metadata": metadata}

@@ -3954,11 +3954,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             rollout_id = str(payload.get("rollout_id") or "").strip()
             if "durable_lifecycle" in payload and (payload["durable_lifecycle"] is not True or not request_id):
                 raise ValueError("durable lifecycle requires a request binding")
-            if payload.get("resource_phase") is not None:
-                if action != "park" or not payload.get("durable_lifecycle"):
-                    raise ValueError("resource phase requires a durable relay park")
-                from .relay_phase import transport_phase
-                payload["resource_phase"] = transport_phase(payload["resource_phase"])
             if bool(request_id) != bool(rollout_id):
                 raise ValueError(
                     "program lifecycle requires both request_id and rollout_id"
@@ -6020,8 +6015,6 @@ def lifecycle_node_payload(generation: int, action: str, payload: dict[str, Any]
     if payload.get("durable_lifecycle"):
         node_payload["relay_request_id"] = payload["request_id"]
         node_payload["generation"] = generation
-        if action == "park" and payload.get("resource_phase") is not None:
-            node_payload["resource_phase"] = payload["resource_phase"]
     if action == "wake":
         node_payload["generation"] = generation
     elif "background" in payload:

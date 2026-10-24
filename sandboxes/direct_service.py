@@ -2207,9 +2207,6 @@ class DirectSandboxService:
                 raise SandboxStartupBusyError("managed process control admission deadline exceeded")
             time.sleep(min(0.02, remaining))
 
-    def resident_memory_sample(self, sandbox_id: str, generation: int):
-        return self._resident_memory.get((sandbox_id, generation))
-
     def cached_resident_memory_sample(self, sandbox_id: str, generation: int):
         """Historical calibration evidence; not an active admission measurement."""
         return self._resident_memory.historical((sandbox_id, generation))

@@ -75,7 +75,7 @@ impl LocalWaitEvents for AgentEvents {
 
     fn paused(&self, sandbox_id: &str, generation: u64, request_id: &str) {
         if let Some(policy) = self.policy.get().and_then(Weak::upgrade) {
-            policy.record_pause(sandbox_id, generation, None, request_id);
+            policy.record_pause(sandbox_id, generation, request_id);
         }
     }
 }

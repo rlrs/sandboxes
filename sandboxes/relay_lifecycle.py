@@ -157,9 +157,6 @@ async def _post_lifecycle_attempt(
         "request_created_at": relay_request.created_at,
         "durable_lifecycle": True,
     }
-    phase = getattr(relay_request, "resource_phase", None)
-    if action == "park" and phase is not None:
-        payload["resource_phase"] = phase
     url = f"{base}/v1/sandboxes/{quote(relay_request.sandbox_id, safe='')}/{action}"
     async with session.post(
         url,

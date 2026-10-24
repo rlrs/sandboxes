@@ -33,7 +33,6 @@ from .capabilities import (
     DISK_QUOTA_CAPABILITY,
     HIBERNATE_LOCAL_CAPABILITY,
     RELAY_WAKE_FENCE_CAPABILITY,
-    RESOURCE_PHASE_CAPABILITY,
     MANAGED_PRIMARY_CAPABILITY,
     STORAGE_NATIVE_CAPABILITY,
     SPLIT_CHECKPOINT_CAPABILITY,
@@ -1018,14 +1017,9 @@ class NodeAgentHandler(BuildContextHttpHandler):
             if not isinstance(raw, dict):
                 raise ValueError("park payload must be a JSON object")
             relay_fields = {"relay_request_id", "generation"} if "relay_request_id" in raw else set()
-            if relay_fields and "resource_phase" in raw:
-                relay_fields.add("resource_phase")
             if set(raw) - relay_fields not in ({"operation_id"}, {"background", "operation_id"}):
                 raise ValueError("park payload has an invalid schema")
             relay_args = _relay_lifecycle_args(raw)
-            if "resource_phase" in raw:
-                from .relay_phase import transport_phase
-                relay_args["resource_phase"] = transport_phase(raw["resource_phase"])
             operation_id = raw.get("operation_id")
             if not isinstance(operation_id, str) or not operation_id.strip():
                 raise ValueError("operation_id must be a nonempty string")
@@ -2307,7 +2301,6 @@ def build_direct_node_agent_server(
         DISK_QUOTA_CAPABILITY,
         HIBERNATE_LOCAL_CAPABILITY,
         RELAY_WAKE_FENCE_CAPABILITY,
-        RESOURCE_PHASE_CAPABILITY,
         ARCHIVE_UPLOAD_CAPABILITY,
         "direct-runsc-v1",
     ]

@@ -412,7 +412,7 @@ fn reclaim_runs_only_under_pressure_and_records_metrics() {
     // A marker that survived a restart is adopted: managed (relay) waits
     // never reach the idle loop.
     fixture.tier.mark(key("agent"));
-    fixture.engine.record_pause(key("gone"), None, ""); // Thawed elsewhere.
+    fixture.engine.record_pause(key("gone"), ""); // Thawed elsewhere.
     assert_eq!(fixture.tick(&fixture.engine), (0, 0));
     assert!(fixture.reclaims.lock().unwrap().is_empty());
     let keys: Vec<Key> = fixture.engine.paused_waits().into_iter().map(|(key, _)| key).collect();
@@ -508,7 +508,7 @@ fn stalled_or_failed_reclaims_back_off_then_escalate_after_max_stalls() {
 fn escalation_loses_to_activity_and_a_refused_capture_stays_paused() {
     let fixture = Fixture::new();
     let sandbox = candidate("agent", false).sandbox;
-    fixture.engine.record_pause(key("agent"), None, "");
+    fixture.engine.record_pause(key("agent"), "");
     fixture.engine.with_wait(&key("agent"), |wait| wait.escalating = true);
     let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
     runtime.block_on(fixture.engine.run_escalation(key("agent"), sandbox.clone())); // Thawed after the plan: no marker.

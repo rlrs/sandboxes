@@ -488,7 +488,7 @@
   "sleep": 2
  },
  "test_pause_tier.py": {
-  "clock": 6,
+  "clock": 5,
   "private": 6,
   "sleep": 3,
   "test_import": 2
@@ -508,8 +508,8 @@
  },
  "test_postgres_relay.py": {
   "clock": 4,
-  "private": 76,
-  "private_patch": 11,
+  "private": 75,
+  "private_patch": 10,
   "sleep": 19
  },
  "test_postgres_routing_snapshot.py": {
@@ -583,11 +583,6 @@
  },
  "test_repack_node_bundle.py": {
   "private": 3,
-  "test_import": 1
- },
- "test_resource_phase_forwarding.py": {
-  "new": 2,
-  "private": 11,
   "test_import": 1
  },
  "test_retired_memory_maintenance.py": {
