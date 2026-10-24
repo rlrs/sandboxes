@@ -19,8 +19,11 @@ Node agents run in the test process by default. `LocalFleet(node_processes=True)
 runs each in its own process, forked from a preloaded zygote
 (`node_process.py`), so `node.crash()` can SIGKILL it mid-operation. That mode
 keeps the fixed host sample and has neither `node.requests` nor
-`node.honor_exec_session_prefix`; touching one raises. Agents die with the
-zygote, which exits with the test process.
+`node.honor_exec_session_prefix`; touching one raises. The harness relays
+their heartbeats from `GET /v1/heartbeat` beside the agent's own sender, and
+relays a fresh sample until the gateway keeps one of its own (the gateway keeps
+the latest receipt, so the agent's startup send can supersede a relay). Agents
+die with the zygote, which exits with the test process.
 
 ## Fake boundaries
 
