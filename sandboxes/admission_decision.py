@@ -15,6 +15,8 @@ out a ``Wait`` on the admission condition with ``previous_error`` set to its
 reason. ``runtime/noded/src/admission/decide.rs`` is the Rust port, checked
 against goldens recorded from this module (docs/architecture.md, 3c.1).
 
+Exec does not go through the guard: ``exec_refusal`` is its whole decision.
+
 CPU is not part of node admission (decision G): existing sandboxes share CPU
 through their cgroups, and a sampled spike must not send a queued transition
 to another worker.
@@ -181,6 +183,27 @@ def decide(
         return Refuse(pressure_error)
     # Keep pending demand visible until actual headroom returns.
     return Wait(pressure_error, min(RETRY_SECONDS, request.deadline - request.now))
+
+
+def exec_refusal(
+    admission_open: bool,
+    capacity_configured: bool,
+    metrics: NodeRuntimeMetrics | None,
+) -> RuntimeError | None:
+    """An existing sandbox's exec: the drain fence, then the live memory floor.
+
+    Exec reserves nothing and never waits. Its cgroup already shares CPU, and
+    PSI is a placement signal, so neither refuses it; the live memory check
+    runs with nothing requested, which leaves the 2 GiB floor. noded's exec
+    front applies the same two checks (``runtime/noded/src/exec_front.rs``).
+    """
+
+    if not admission_open:
+        return SandboxAdmissionClosedError(CLOSED)
+    if not capacity_configured:
+        return None
+    reason = dynamic_pressure_error(metrics, ResourceQuantity(), check_cpu=False, check_memory_pressure=False)
+    return SandboxCapacityUnavailableError(reason) if reason is not None else None
 
 
 def _late(request: AdmissionRequest) -> Refuse | None:
