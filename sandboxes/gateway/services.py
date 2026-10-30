@@ -17,6 +17,7 @@ from .fleet import FleetView
 from .groups import GroupCreate
 from .heartbeats import HeartbeatIngest, RebootReaper, WorkerDelete
 from .image_resolution import ImageResolution
+from .operator import OperatorDrains
 from .placement import Placement
 from .registry_refs import RegistryReferences
 
@@ -36,6 +37,7 @@ class GatewayServices:
     creates: CreatePlacement
     groups: GroupCreate
     images: ImageResolution
+    drains: OperatorDrains
 
 
 def build_services(
@@ -81,4 +83,5 @@ def build_services(
             registry_worker_url=registry_worker_url, disk_monitor=registry_disk_monitor,
             fleet=fleet, image_roots=getattr(dependency_resolver, "image_roots", None),
         ),
+        drains=OperatorDrains(store, routing_store),
     )

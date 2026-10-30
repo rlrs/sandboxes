@@ -79,6 +79,7 @@ from .gateway.create import (
 from .gateway.fleet import _heartbeat_has_image, _node_metadata, _requested_image_cache_keys
 from .gateway.groups import GROUP_PATH, group_id_from_path, parse_group_request
 from .gateway.heartbeats import PULL_TIMEOUT_SECONDS
+from .gateway.operator import drain_job_id_from_path
 from .gateway.job_reads import (
     cache_parked_job, cached_job_logs_response, cached_job_status_response,
     job_read_timeout_seconds, job_read_wait_ms, project_job_response, record_job_response,
@@ -674,6 +675,24 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 status, payload, headers = (*self.services.groups.status(group_id), {})
             else:
                 status, payload, headers = self.services.groups.delete(self, group_id)
+            self._write_json(payload, status=status, headers=headers)
+            return True
+        drain_job_id = drain_job_id_from_path(path)
+        if drain_job_id is not None and self.command in {"POST", "DELETE"}:
+            if self.command == "DELETE":
+                status, payload, headers = (*self.services.drains.undrain(drain_job_id), {})
+            else:
+                try:
+                    raw = self._read_raw_body(max_bytes=DEFAULT_MAX_JSON_BODY_BYTES)
+                    options = json.loads(raw) if raw.strip() else {}
+                    if not isinstance(options, dict) or set(options) - {"evict"} \
+                            or not isinstance(options.get("evict", False), bool):
+                        raise ValueError('the body is {"evict": <bool>} or empty')
+                except ValueError as exc:
+                    self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return True
+                status, payload, headers = self.services.drains.drain(
+                    self, drain_job_id, evict=options.get("evict", False))
             self._write_json(payload, status=status, headers=headers)
             return True
         if path == "/v1/capacity/prepare" and self.command == "GET":

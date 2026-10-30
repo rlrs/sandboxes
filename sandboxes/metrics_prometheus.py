@@ -93,6 +93,8 @@ def _nodes(out: _Exposition, nodes: dict[str, Any]) -> None:
                 **labels)
         out.add("node_draining", "The node is draining", item.get("draining"), **labels)
         out.add("node_admission_open", "The node admits new work", item.get("admission_open"), **labels)
+        out.add("node_operator_drained", "An operator drained the node", item.get("operator_drained"), **labels)
+        out.add("node_soft_drained", "The autoscaler is emptying the node", item.get("soft_drained"), **labels)
         for field in ("active_sandboxes", "active_image_builds", "active_sandbox_creates"):
             out.add(f"node_{field}", f"The node's {field.replace('_', ' ')}", item.get(field), **labels)
         for kind in ("total", "used", "free"):
