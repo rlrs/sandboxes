@@ -14,6 +14,7 @@ import json
 import hashlib
 from pathlib import Path
 import sqlite3
+import sys
 import tarfile
 from urllib import error, request
 import unittest
@@ -33,6 +34,7 @@ from tests.gateway_support import gateway_services
 from sandboxes.control_plane import (
     build_server as _build_server,
 )
+from sandboxes.build_deadline import BUILD_CANCELLED_ERROR
 from sandboxes.deployment import package_version
 from sandboxes.images import (
     DockerImageRuntime,
@@ -2652,7 +2654,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(response.status, 403)
         self.assertEqual(stored, {})
 
-    def test_dashboard_assets_are_public_but_metrics_remain_protected(self) -> None:
+    def test_metrics_snapshot_needs_the_gateway_token(self) -> None:
         with _temporary_root() as root:
             gateway = _gateway_server(self,
                 root,
@@ -2661,61 +2663,52 @@ class ControlPlaneTests(unittest.TestCase):
                 metrics_file=root / "metrics.sqlite",
             )
             with _running_server(gateway) as base:
-                with request.urlopen(f"{base}/dashboard", timeout=5) as response:
-                    html = response.read().decode("utf-8")
-                    html_type = response.headers.get("Content-Type")
-                with request.urlopen(
-                    f"{base}/dashboard/dashboard.css",
-                    timeout=5,
-                ) as response:
-                    css = response.read().decode("utf-8")
-                    css_type = response.headers.get("Content-Type")
-                with request.urlopen(
-                    f"{base}/dashboard/dashboard.js",
-                    timeout=5,
-                ) as response:
-                    js = response.read().decode("utf-8")
-                    js_type = response.headers.get("Content-Type")
                 unauthorized_metrics = self._json_request(
                     f"{base}/v1/metrics",
                     allow_error=True,
                 )
+                unauthorized_root = self._json_request(f"{base}/", allow_error=True)
                 authorized_metrics = self._json_request(
                     f"{base}/v1/metrics",
                     headers={"Authorization": "Bearer secret-token"},
                 )
 
-        self.assertIn("text/html", html_type or "")
-        self.assertIn("UCloud Sandboxes", html)
-        self.assertIn("/dashboard/dashboard.js", html)
-        self.assertIn('data-page-target="scheduler"', html)
-        self.assertIn('data-page-target="nodes"', html)
-        self.assertIn('data-page-target="sandboxes"', html)
-        self.assertIn('data-page-target="registry"', html)
-        self.assertIn('id="sandboxStateFilter"', html)
-        self.assertNotIn('id="terminateAllSandboxesButton"', html)
-        self.assertNotIn('id="refreshSelect"', html)
-        self.assertNotIn('id="pauseButton"', html)
-        self.assertIn('id="refreshNowButton"', html)
-        self.assertNotIn("secret-token", html)
-        self.assertIn("text/css", css_type or "")
-        self.assertIn(".metric-grid", css)
-        self.assertIn(".sandbox-table", css)
-        self.assertIn(".registry-full-grid", css)
-        self.assertIn("application/javascript", js_type or "")
-        self.assertIn("/v1/metrics", js)
-        self.assertIn("/v1/sandboxes?refresh=true", js)
-        self.assertIn("terminateAllSandboxes", js)
-        self.assertIn("X-UCloud-Sandbox-Token", js)
-        self.assertIn("renderRegistryPage", js)
-        self.assertIn("const DEFAULT_REFRESH_INTERVAL_MS = 2000;", js)
-        self.assertIn("state.metricsRequest.abort()", js)
-        self.assertIn("scheduleNextRefresh", js)
-        self.assertNotIn("secret-token", js)
         self.assertEqual(unauthorized_metrics["status"], 401)
+        self.assertEqual(unauthorized_root["status"], 401)
         self.assertEqual(authorized_metrics["nodes"]["total"], 0)
         self.assertFalse(authorized_metrics["telemetry"]["enabled"])
         self.assertNotIn("traces", authorized_metrics)
+
+    def test_prometheus_metrics_need_the_gateway_token(self) -> None:
+        with _temporary_root() as root:
+            gateway = _gateway_server(self,
+                root,
+                routing_file=root / "routes.sqlite",
+                gateway_bearer_token="secret-token",
+                sandbox_api_token="sandbox-api-secret",
+                metrics_file=root / "metrics.sqlite",
+            )
+            with _running_server(gateway) as base:
+                statuses = {}
+                for name, token in (("none", None), ("sdk", "sandbox-api-secret")):
+                    try:
+                        request.urlopen(request.Request(
+                            f"{base}/v1/metrics/prometheus",
+                            headers={"Authorization": f"Bearer {token}"} if token else {},
+                        ), timeout=5)
+                    except error.HTTPError as exc:
+                        statuses[name] = exc.code
+                        exc.close()
+                with request.urlopen(request.Request(
+                    f"{base}/v1/metrics/prometheus",
+                    headers={"Authorization": "Bearer secret-token"},
+                ), timeout=5) as response:
+                    content_type = response.headers.get("Content-Type")
+                    text = response.read().decode("utf-8")
+
+        self.assertEqual(statuses, {"none": 401, "sdk": 403})
+        self.assertTrue((content_type or "").startswith("text/plain; version=0.0.4"))
+        self.assertIn('ucloud_fleet_nodes{state="total"} 0', text)
 
     def test_gateway_create_burst_returns_only_retryable_json(self) -> None:
         with _temporary_root() as raw_path:
@@ -3820,6 +3813,56 @@ class ControlPlaneTests(unittest.TestCase):
 
         self.assertEqual(response["status"], 409)
         self.assertEqual(CountingNode.creates, 0)
+
+    @requires_postgres
+    def test_operator_cancels_a_builders_build_through_the_gateway(self) -> None:
+        class SlowRuntime(DockerImageRuntime):
+            def build_command(self, spec, **kwargs):
+                return (sys.executable, "-c", "import time; time.sleep(60)")
+
+        with _temporary_root() as root:
+            builder = build_builder_node_agent_server(
+                "127.0.0.1", 0,
+                state_file=root / "builder-sandboxes.json",
+                image_file=root / "builder-images.json",
+                job_id="job-builder", node_id="builder-1",
+                image_runtime=SlowRuntime(), node_control_bearer_token="node-secret",
+            )
+            gateway = _gateway_server(self, root, routing_file=root / "routes.json",
+                                      gateway_bearer_token="gateway-secret", node_control_bearer_token="node-secret")
+            with _running_server(builder) as builder_url, _running_server(gateway) as base:
+                post_heartbeat_with_headers(
+                    f"{base}/v1/nodes/heartbeat",
+                    build_heartbeat(
+                        job_id="job-builder", node_id="builder-1",
+                        node_epoch=builder.RequestHandlerClass.node_epoch, node_url=builder_url,
+                        capabilities=("image-cache", "image-build"),
+                        total_resources=ResourceQuantity(vcpu=16, memory_mb=49152, disk_mb=200000),
+                    ),
+                    {"Authorization": "Bearer test-heartbeat-secret"},
+                )
+                context = _store_build_context(builder, _tar_gz_context({"Dockerfile": b"FROM scratch\n"}))
+                started = self._json_request(f"{builder_url}/v1/images/build", method="POST", payload={
+                    "id": "slow", "tag": "registry.example.org/slow:latest", "wait": False, **context})
+                build_id = started["build"]["build_id"]
+                admin = {"Authorization": "Bearer gateway-secret"}
+                sdk = {"Authorization": "Bearer test-sandbox-api-secret"}
+                cancel = f"{base}/v1/images/builds/{build_id}:cancel"
+
+                refused = self._json_request(cancel, method="POST", headers=sdk, allow_error=True)
+                self.assertEqual(refused["status"], 403)  # Operators only; the SDK may only read builds.
+                missing = self._json_request(f"{base}/v1/images/builds/missing:cancel", method="POST",
+                                             headers=admin, allow_error=True)
+                self.assertEqual(missing["status"], 404)
+
+                cancelled = self._json_request(cancel, method="POST", headers=admin)["build"]
+                self.assertEqual((cancelled["build_id"], cancelled["status"], cancelled["error"], cancelled["location"]),
+                                 (build_id, "failed", BUILD_CANCELLED_ERROR, "builder-1"))
+                again = self._json_request(cancel, method="POST", headers=admin, allow_error=True)
+                self.assertEqual((again["status"], again["body"]["build"]["status"], again["body"]["build"]["error"]),
+                                 (409, "failed", BUILD_CANCELLED_ERROR))
+                shown = self._json_request(f"{base}/v1/images/builds/{build_id}", headers=sdk)["build"]
+                self.assertEqual((shown["status"], shown["error"]), ("failed", BUILD_CANCELLED_ERROR))
 
     def _json_request(
         self,

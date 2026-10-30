@@ -62,7 +62,6 @@ from .build_context_store import (
     BuildContextHttpHandler,
     build_context_digest_from_path,
 )
-from .dashboard import dashboard_asset
 from .deployment import agent_version_is_schedulable, service_health
 from .storage_native_migration import (
     STORAGE_NATIVE_MIGRATION_SCHEMA,
@@ -79,6 +78,7 @@ from .gateway.create import (
 from .gateway.fleet import _heartbeat_has_image, _node_metadata, _requested_image_cache_keys
 from .gateway.groups import GROUP_PATH, group_id_from_path, parse_group_request
 from .gateway.heartbeats import PULL_TIMEOUT_SECONDS
+from .gateway.operator import CREATES_CANCEL_PATH, CREATES_PATH, drain_job_id_from_path
 from .gateway.job_reads import (
     cache_parked_job, cached_job_logs_response, cached_job_status_response,
     job_read_timeout_seconds, job_read_wait_ms, project_job_response, record_job_response,
@@ -102,6 +102,7 @@ from .gateway.registry_refs import (
 )
 from .gateway.request_parsing import (
     _builder_prepare_id_from_path, _exec_session_id_from_path, _image_build_key_from_path,
+    _image_build_cancel_key_from_path,
     _prepare_id_from_path, _prepared_resources_from_payload, _sandbox_detach_id_from_path,
     _sandbox_id_from_path, _sandbox_migration_id_from_path, _strict_positive_integer,
     _truthy_query_param, _validate_prepared_resources,
@@ -142,6 +143,7 @@ from .metrics import (
     record_sandbox_pending_deleted,
     record_sandbox_scheduled,
 )
+from .metrics_prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE, render_snapshot
 from .telemetry import Telemetry
 from .models import (
     NodeHeartbeat,
@@ -214,6 +216,9 @@ _BUILD_CONTEXT_PROBE_MIN_BYTES = 1024 * 1024
 DEFAULT_MAX_BUILD_CONTEXT_ENTRIES = 8192
 DEFAULT_MAX_BUILD_CONTEXT_AGE_SECONDS = 24 * 60 * 60
 NODE_RECONCILE_PROXY_TIMEOUT_SECONDS = 5
+# Above the builder's own wait for a cancelled build to stop
+# (images.BUILD_CANCEL_WAIT_SECONDS), which then answers 202.
+IMAGE_BUILD_CANCEL_PROXY_TIMEOUT_SECONDS = 15
 NODE_RECOVERY_PROXY_TIMEOUT_SECONDS = 5
 SANDBOX_GENERATION_HEADER = "X-UCloud-Sandbox-Generation"
 SANDBOX_OPERATION_ID_HEADER = "X-UCloud-Sandbox-Operation-Id"
@@ -469,25 +474,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             else:
                 self._write_json(health)
             return
-        asset = dashboard_asset(parsed.path)
-        if asset is not None:
-            self._write_bytes(
-                asset.body,
-                asset.content_type,
-                headers={
-                    "Cache-Control": "no-store",
-                    "Content-Security-Policy": (
-                        "default-src 'self'; "
-                        "connect-src 'self'; "
-                        "script-src 'self'; "
-                        "style-src 'self'; "
-                        "object-src 'none'; "
-                        "base-uri 'none'; "
-                        "frame-ancestors 'none'"
-                    ),
-                },
-            )
-            return
         if not self._check_authorized():
             return
         context_digest = build_context_digest_from_path(parsed.path)
@@ -518,6 +504,18 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 self._write_routing_store_unavailable(exc)
                 return
             self._write_json(demand_payload)
+            return
+        if parsed.path == "/v1/metrics/prometheus":
+            try:
+                body = self._metrics_response_bytes(full=False, refresh_registry=False)
+            except sqlite3.DatabaseError as exc:
+                self._write_routing_store_unavailable(exc)
+                return
+            self._write_bytes(
+                render_snapshot(json.loads(body)).encode("utf-8"),
+                PROMETHEUS_CONTENT_TYPE,
+                headers={"Cache-Control": "no-store"},
+            )
             return
         if parsed.path == "/v1/metrics":
             try:
@@ -663,6 +661,36 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 status, payload, headers = self.services.groups.delete(self, group_id)
             self._write_json(payload, status=status, headers=headers)
             return True
+        if path == CREATES_PATH and self.command == "GET":
+            self._write_json(self.services.queued_creates.list())
+            return True
+        if path == CREATES_CANCEL_PATH and self.command == "POST":
+            try:
+                raw = self._read_json_body()
+            except ValueError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return True
+            status, payload = self.services.queued_creates.cancel(raw)
+            self._write_json(payload, status=status)
+            return True
+        drain_job_id = drain_job_id_from_path(path)
+        if drain_job_id is not None and self.command in {"POST", "DELETE"}:
+            if self.command == "DELETE":
+                status, payload, headers = (*self.services.drains.undrain(drain_job_id), {})
+            else:
+                try:
+                    raw = self._read_raw_body(max_bytes=DEFAULT_MAX_JSON_BODY_BYTES)
+                    options = json.loads(raw) if raw.strip() else {}
+                    if not isinstance(options, dict) or set(options) - {"evict"} \
+                            or not isinstance(options.get("evict", False), bool):
+                        raise ValueError('the body is {"evict": <bool>} or empty')
+                except ValueError as exc:
+                    self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return True
+                status, payload, headers = self.services.drains.drain(
+                    self, drain_job_id, evict=options.get("evict", False))
+            self._write_json(payload, status=status, headers=headers)
+            return True
         if path == "/v1/capacity/prepare" and self.command == "GET":
             self._list_prepared_capacity()
             return True
@@ -697,6 +725,10 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             return True
         if path.startswith("/v1/image-index") and self.command == "GET":
             self._read_image_index(path)
+            return True
+        cancel_build_key = _image_build_cancel_key_from_path(path)
+        if cancel_build_key is not None and self.command == "POST":
+            self._cancel_image_build(cancel_build_key)
             return True
         build_key = _image_build_key_from_path(path)
         if build_key is not None and self.command == "GET":
@@ -1709,7 +1741,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 )
             )
             # High-rate heartbeats must not crowd the sparse provisioning
-            # and autoscaler records out of the dashboard snapshot.
+            # and autoscaler records out of the snapshot.
             supplemental = self.metrics_store.load_events(
                 max_events=2_000 if full else 500,
                 kinds=(
@@ -2119,6 +2151,13 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         self._write_json({"builds": self._image_build_records_across_nodes()})
 
     def _get_image_build(self, build_key: str) -> None:
+        if self.sandbox_builds is not None and build_key.startswith("sandbox:"):
+            build = self.sandbox_builds.record(build_key)
+            if build is None:
+                self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            else:
+                self._write_json({"build": build})
+            return
         try:
             builds = self._image_build_records_for_key(build_key)
         except ImageBuildLookupUnavailableError as exc:
@@ -2152,6 +2191,71 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             self.routing_store.clear_pending_image_build(selected_image_id)
         self._record_successful_build_image(selected)
         self._write_json({"build": selected})
+
+    def _cancel_image_build(self, build_key: str) -> None:
+        """POST /v1/images/builds/<id>:cancel (docs/api.md): a spool build
+        through the spool, a builder's build on the builder that owns it."""
+        def unavailable(error: str) -> None:
+            self._write_json(
+                {"error": error, "error_code": "image_build_cancel_unavailable", "retryable": True},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+                headers={"Retry-After": "2", "X-UCloud-Sandbox-Retryable": "true"},
+            )
+
+        statuses = {"cancelled": HTTPStatus.OK, "stopping": HTTPStatus.ACCEPTED,
+                    "finished": HTTPStatus.CONFLICT}
+        if build_key.startswith("sandbox:"):
+            outcome, build = (self.sandbox_builds.cancel(build_key) if self.sandbox_builds is not None
+                              else (None, None))
+            if outcome is None:
+                self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            payload = {"build": build}
+            if outcome == "finished":
+                payload["error"] = "image build already finished"
+            self._write_json(payload, status=statuses[outcome])
+            return
+        try:
+            builds = self._image_build_records_for_key(build_key)
+        except ImageBuildLookupUnavailableError as exc:
+            unavailable(str(exc))
+            return
+        build = next((item for item in builds if item.get("build_id") == build_key), None)
+        if build is None:
+            self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        owner = next((heartbeat for heartbeat in self.services.fleet.ready_heartbeats()
+                      if "image-build" in heartbeat.capabilities
+                      and heartbeat.node_id == build.get("location")), None)
+        if owner is None:
+            unavailable("the builder that owns this build is not ready")
+            return
+        try:
+            response = self._proxy_request(
+                owner.node_url or "",
+                "/v1/images/builds/" + quote(build_key, safe="") + ":cancel",
+                method="POST",
+                timeout_seconds=IMAGE_BUILD_CANCEL_PROXY_TIMEOUT_SECONDS,
+            )
+            payload = response.json()
+        except (OSError, ValueError) as exc:
+            unavailable(f"the builder did not answer the cancellation: {exc}")
+            return
+        record = payload.get("build") if isinstance(payload, dict) else None
+        if response.status == HTTPStatus.NOT_FOUND:
+            self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        if response.status not in statuses.values() or not isinstance(record, dict):
+            unavailable(str((payload or {}).get("error") or f"the builder answered {response.status}"))
+            return
+        record = {**record, "location": owner.node_id, "node": _node_metadata(owner)}
+        if _image_build_response_terminal({"build": record}):
+            self.routing_store.clear_pending_image_build(str(record.get("image_id") or ""))
+            self._record_successful_build_image(record)
+        answer: dict[str, Any] = {"build": record}
+        if response.status == HTTPStatus.CONFLICT:
+            answer["error"] = "image build already finished"
+        self._write_json(answer, status=response.status)
 
     def _image_build_records_for_key(self, build_key: str) -> list[dict[str, Any]]:
         """Read one build, using an incarnation-checked owner hint for exact IDs.

@@ -809,6 +809,16 @@ def is_soft_drained(heartbeat: NodeHeartbeat | None) -> bool:
     return bool(heartbeat is not None and heartbeat.labels.get(SOFT_DRAIN_LABEL))
 
 
+# Controller-owned heartbeat label: an operator drained this worker (gateway
+# POST /v1/nodes/<job>/drain). Placement stops using it at once; it retires
+# like a failing host, parks moving away, and stops once empty. ISO time.
+OPERATOR_DRAIN_LABEL = "ucloud-sandboxes/operator-drain"
+
+
+def is_operator_drained(heartbeat: NodeHeartbeat | None) -> bool:
+    return bool(heartbeat is not None and heartbeat.labels.get(OPERATOR_DRAIN_LABEL))
+
+
 # Controller-owned heartbeat label: gateway receipt times of this job's last
 # proven boot changes, comma-separated ISO, oldest first. One reboot loses
 # processes only; two within a day mark a failing host, which soft-drains and
@@ -829,8 +839,10 @@ def repeatedly_rebooted(heartbeat: NodeHeartbeat | None, now: datetime) -> bool:
 
 def retiring_reason(heartbeat: NodeHeartbeat | None, now: datetime, *, max_cpu_check_ms: int = 0) -> str | None:
     """Why a worker serves what it holds but takes no new demand, else None:
-    repeated reboots, or a boot CPU check over the policy's limit (a VM on a
-    slow host; 0 turns the check off)."""
+    an operator drain, repeated reboots, or a boot CPU check over the policy's
+    limit (a VM on a slow host; 0 turns the check off)."""
+    if is_operator_drained(heartbeat):
+        return "drained by an operator"
     if repeatedly_rebooted(heartbeat, now):
         return f"rebooted {REPEATED_REBOOTS} times within a day"
     metrics = heartbeat.runtime_metrics if heartbeat is not None else None

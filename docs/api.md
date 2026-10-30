@@ -29,7 +29,7 @@ from ucloud_sandboxes_sdk import SandboxClient
 client = SandboxClient.from_env()
 ```
 
-**Credentials.** Every route except `/healthz` and the dashboard page needs a
+**Credentials.** Every route except `/healthz` needs a
 credential. Clients get exactly one: the **sandbox API key**, sent as
 `X-UCloud-Sandbox-Token: <key>` (a UCloud public link can swallow a standard
 `Authorization` header; `Authorization: Bearer` also works). It can call every
@@ -71,6 +71,7 @@ All routes are JSON unless noted. "Op" means the gateway control token only.
 | **Images** | | |
 | `GET`, `PUT /v1/image-contexts/sha256:<hex>` | SDK | Probe or upload a `tar.gz` build context. |
 | `POST /v1/images/build`; `GET /v1/images/builds[/<id>]` | SDK | Build an image; list or poll builds. |
+| `POST /v1/images/builds/<id>:cancel` | Op | Cancel a queued or running build (builder or sandbox build): `200` with it now `failed`, `202` while it stops, `409` with its record once finished (a repeat cancel too), `404` if unknown. |
 | `GET /v1/images`; `POST /v1/images/pull` | SDK | Image inventory; pre-pull an image onto workers. |
 | `POST /v1/image-recipes` | SDK | Register image names and their recipes. |
 | `POST /v1/images/ensure` | SDK | Report each name's state and start missing builds. |
@@ -78,11 +79,13 @@ All routes are JSON unless noted. "Op" means the gateway control token only.
 | **Capacity and fleet** | | |
 | `GET`, `POST`, `DELETE /v1/capacity/prepare[/<id>]` | SDK | Announce sandbox demand ahead of a burst. |
 | `GET`, `POST`, `DELETE /v1/builders/prepare[/<id>]` | SDK | The same for image builders. |
-| `GET /v1/nodes`, `/v1/demand`, `/v1/registry`, `/v1/metrics` | Op | Heartbeats, autoscaler demand, registry status, dashboard snapshot. |
+| `GET /v1/nodes`, `/v1/demand`, `/v1/registry`, `/v1/metrics` | Op | Heartbeats, autoscaler demand, registry status, the fleet snapshot. |
+| `GET /v1/metrics/prometheus` | Op | The snapshot as `ucloud_fleet_*` gauges (Prometheus text) for VictoriaMetrics. |
+| `POST`, `DELETE /v1/nodes/<job>/drain` | Op | Drain a worker (`{"evict": true}` also deletes its sandboxes), or undo it. |
+| `GET /v1/creates`; `POST /v1/creates:cancel` | Op | Creates waiting for placement; cancel some (`sandbox_ids`) or `all`. |
 | `POST /v1/nodes/heartbeat` | heartbeat | Worker heartbeat. |
 | **Other** | | |
 | `GET /healthz` | none | Service identity and version. |
-| `GET /`, `/dashboard` | none | Operator dashboard (data from `/v1/metrics`). |
 
 The node agent on each worker serves the same per-sandbox routes plus
 internal heartbeat, drain, snapshot and migration routes, all behind the

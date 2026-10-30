@@ -26,8 +26,12 @@ from uuid import uuid4
 
 from .build_context_store import BuildContextBlobStore
 from .build_deadline import (
+    BUILD_CANCELLED_ERROR,
     DEFAULT_BUILD_EXECUTION_TIMEOUT_SECONDS,
+    BuildCancellation,
     ImageBuildTimeoutError,
+    build_cancellation,
+    build_cancellation_wakeup,
     build_execution_deadline,
     remaining_build_execution_seconds,
     without_build_execution_deadline,
@@ -50,6 +54,10 @@ COMMAND_OUTPUT_READ_CHARS = 16 * 1024
 COMMAND_OUTPUT_TRUNCATION_MARKER = "[output truncated; showing retained tail]\n"
 BUILD_PROCESS_TERMINATE_GRACE_SECONDS = 1.0
 BUILD_PROCESS_KILL_WAIT_SECONDS = 5.0
+BUILD_EXIT_WAIT_SLICE_SECONDS = 0.5
+# How long a cancel request waits for a running build to stop before it
+# answers 202 (still stopping); below the gateway's proxy timeout.
+BUILD_CANCEL_WAIT_SECONDS = 5.0
 DEFAULT_TERMINAL_BUILD_HISTORY = 256
 DEFAULT_MAX_ACTIVE_IMAGE_BUILDS = 4
 BUILD_LOG_FLUSH_CHARS = 16 * 1024
@@ -546,16 +554,25 @@ class DockerImageRuntime:
         on_output: Callable[[str, str], None],
     ) -> CommandResult:
         remaining_build_execution_seconds()
-        process = subprocess.Popen(
-            list(argv),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            # A build owns this group, including CLI/plugin descendants, never
-            # the shared BuildKit daemon. Binary nonblocking reads avoid a
-            # buffered read waiting forever for its requested character count.
-            start_new_session=(os.name == "posix"),
-            bufsize=0,
-        )
+        # A cancellation wakes the output wait; the budget check after it
+        # raises and the owned group is stopped below, as on a timeout.
+        wake_read, wake_write = os.pipe()
+        try:
+            os.set_blocking(wake_write, False)
+            process = subprocess.Popen(
+                list(argv),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                # A build owns this group, including CLI/plugin descendants, never
+                # the shared BuildKit daemon. Binary nonblocking reads avoid a
+                # buffered read waiting forever for its requested character count.
+                start_new_session=(os.name == "posix"),
+                bufsize=0,
+            )
+        except BaseException:
+            os.close(wake_read)
+            os.close(wake_write)
+            raise
         # Continue delivering every chunk to the live callback, but retain only
         # a bounded diagnostic tail in CommandResult. Docker build output can
         # otherwise consume all node memory during a long or noisy build.
@@ -575,14 +592,21 @@ class DockerImageRuntime:
             output_tail = _tail_text(output_tail + chunk, limit=COMMAND_OUTPUT_TAIL_CHARS)
             on_output("combined", chunk)
 
+        def wake() -> None:
+            try:
+                os.write(wake_write, b"x")
+            except OSError:
+                pass
+
         try:
-            with selectors.DefaultSelector() as selector:
+            with selectors.DefaultSelector() as selector, build_cancellation_wakeup(wake):
                 os.set_blocking(process.stdout.fileno(), False)
                 selector.register(process.stdout, selectors.EVENT_READ)
+                selector.register(wake_read, selectors.EVENT_READ)
                 while True:
                     ready = selector.select(remaining_build_execution_seconds())
                     remaining_build_execution_seconds()
-                    if not ready:
+                    if not any(key.fileobj is process.stdout for key, _ in ready):
                         continue
                     try:
                         chunk = os.read(process.stdout.fileno(), COMMAND_OUTPUT_READ_CHARS)
@@ -592,18 +616,24 @@ class DockerImageRuntime:
                         deliver(decoder.decode(b"", final=True))
                         break
                     deliver(decoder.decode(chunk))
-            try:
-                exit_code = process.wait(timeout=remaining_build_execution_seconds())
-            except subprocess.TimeoutExpired:
-                raise ImageBuildTimeoutError(
-                    "image build exceeded its server execution deadline"
-                ) from None
+            while True:
+                # Output ended; the exit has no descriptor to wake on, so the
+                # wait is sliced to notice a cancellation or the deadline.
+                try:
+                    exit_code = process.wait(
+                        timeout=remaining_build_execution_seconds(BUILD_EXIT_WAIT_SLICE_SECONDS)
+                    )
+                    break
+                except subprocess.TimeoutExpired:
+                    remaining_build_execution_seconds()
             remaining_build_execution_seconds()
         except BaseException:
             _stop_owned_build_process(process)
             raise
         finally:
             process.stdout.close()
+            os.close(wake_read)
+            os.close(wake_write)
         output = (
             COMMAND_OUTPUT_TRUNCATION_MARKER
             + output_tail[
@@ -1025,6 +1055,8 @@ class ImageManager:
         self._build_lock = RLock()
         self._build_conditions: dict[str, Condition] = {}
         self._active_threads: dict[str, Thread] = {}
+        # Every reserved, unfinished build of this process; see cancel_build.
+        self._build_cancellations: dict[str, BuildCancellation] = {}
         self._pending_terminal_builds: dict[str, ImageBuildRecord] = {}
         self._pending_admission_releases: set[str] = set()
         self._active_image_operations = 0
@@ -1184,6 +1216,7 @@ class ImageManager:
                     return record, False
                 self._build_conditions[record.build_id] = Condition(self._build_lock)
                 self._build_log_last_flush[record.build_id] = time.monotonic()
+                self._build_cancellations[record.build_id] = BuildCancellation()
         except Exception:
             if cleanup is not None:
                 cleanup()
@@ -1258,6 +1291,16 @@ class ImageManager:
         )
         try:
             with self._build_lock:
+                cancellation = self._build_cancellations.get(build_id)
+                if cancellation is not None and cancellation.cancelled:
+                    # Cancelled while its context was materialized.
+                    failed = self._fail_reserved_build_locked(record, message=BUILD_CANCELLED_ERROR)
+                    try:
+                        if effective_cleanup is not None:
+                            effective_cleanup()
+                    finally:
+                        self._release_build_admission_locked(build_id)
+                    return failed, True
                 if (not self.max_finishing_builds and self.queue_builds
                         and len(self._active_threads) >= self.max_active_builds):
                     self._queued_builds.append((record, thread, effective_cleanup))
@@ -1333,18 +1376,21 @@ class ImageManager:
     def _fail_reserved_build_locked(
         self,
         record: ImageBuildRecord,
-        error: Exception,
+        error: Exception | None = None,
+        *,
+        message: str | None = None,
     ) -> ImageBuildRecord:
         build_id = record.build_id
         self._active_threads.pop(build_id, None)
         self._pending_build_logs.pop(build_id, None)
         self._build_log_last_flush.pop(build_id, None)
+        self._build_cancellations.pop(build_id, None)
         condition = self._build_conditions.pop(build_id, None)
         failed_at = utc_now().isoformat()
         failed = replace(
             record,
             status="failed",
-            error=f"image build failed before worker start: {error}",
+            error=message or f"image build failed before worker start: {error}",
             updated_at=failed_at,
             finished_at=failed_at,
         )
@@ -1354,6 +1400,52 @@ class ImageManager:
         if condition is not None:
             condition.notify_all()
         return failed
+
+    def cancel_build(
+        self,
+        build_id: str,
+        *,
+        wait_seconds: float = BUILD_CANCEL_WAIT_SECONDS,
+    ) -> tuple[str, ImageBuildRecord | None]:
+        """Cancel one build of this process: (outcome, record).
+
+        ``not_found``; ``finished`` (already terminal, including an earlier
+        cancellation, or it finished before the cancellation took effect);
+        ``cancelled`` (now failed with BUILD_CANCELLED_ERROR); ``stopping``
+        (still stopping after ``wait_seconds``); ``unowned`` (running, but
+        not in this process). A queued build is dequeued and failed here; a
+        running one stops at its next budget check, which wakes its CLI's
+        output wait, and fails and releases its slot as a timeout would.
+        """
+        with self._build_lock:
+            self._retry_terminal_builds_locked()
+            record = self.build_store.get_exact(build_id)
+            if record is None:
+                return "not_found", None
+            if record.terminal:
+                return "finished", record
+            cancellation = self._build_cancellations.get(build_id)
+            if cancellation is None:
+                return "unowned", record
+            cancellation.cancel()
+            queued = next((item for item in self._queued_builds if item[0].build_id == build_id), None)
+            if queued is not None:
+                self._queued_builds.remove(queued)
+                message = BUILD_CANCELLED_ERROR
+                if queued[2] is not None:
+                    try:
+                        queued[2]()
+                    except Exception as exc:  # noqa: BLE001 - still cancelled; say what was left.
+                        message = f"{message}; build context cleanup failed: {exc}"
+                failed = self._fail_reserved_build_locked(record, message=message)
+                self._release_build_admission_locked(build_id)
+                return "cancelled", failed
+        record = self.wait_for_build(build_id, timeout_seconds=wait_seconds) or record
+        if not record.terminal:
+            return "stopping", record
+        if record.status == "failed" and record.error.startswith(BUILD_CANCELLED_ERROR):
+            return "cancelled", record
+        return "finished", record
 
     def wait_for_build(
         self,
@@ -1423,7 +1515,10 @@ class ImageManager:
             },
             parent_context=self.telemetry.extracted_context(trace_context),
         ) as span:
-            with build_execution_deadline(self.build_execution_timeout_seconds):
+            with self._build_lock:
+                cancellation = self._build_cancellations.get(build_id) or BuildCancellation()
+            with build_execution_deadline(self.build_execution_timeout_seconds), \
+                    build_cancellation(cancellation):
                 record = self._run_tracked_build_unobserved(
                     build_id,
                     spec,
@@ -1558,11 +1653,16 @@ class ImageManager:
                 timings=timings(),
             )
         except Exception as exc:
+            with self._build_lock:
+                cancellation = self._build_cancellations.get(build_id)
             final = self._update_build(
                 build_id,
                 status="failed",
                 **({"command": build_result.argv} if build_result is not None else {}),
-                error=str(exc),
+                # Whatever a cancelled build's stages failed with, it failed
+                # because it was cancelled.
+                error=(BUILD_CANCELLED_ERROR if cancellation is not None and cancellation.cancelled
+                       else str(exc)),
                 exit_code=build_result.exit_code if build_result is not None else None,
                 push_exit_code=push_result.exit_code
                 if push_result is not None
@@ -1586,6 +1686,7 @@ class ImageManager:
                         self._release_build_admission_locked(build_id)
                     finally:
                         self._active_threads.pop(build_id, None)
+                        self._build_cancellations.pop(build_id, None)
                         self._pending_build_logs.pop(build_id, None)
                         self._build_log_last_flush.pop(build_id, None)
                         condition = self._build_conditions.pop(build_id, None)

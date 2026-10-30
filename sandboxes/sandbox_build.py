@@ -37,6 +37,7 @@ import time
 from urllib import error, parse, request
 import uuid
 
+from .build_deadline import BUILD_CANCELLED_ERROR
 from .git_proxy import git_insteadof
 
 _LOG = logging.getLogger(__name__)
@@ -59,6 +60,13 @@ class Unsupported(ValueError):
 
 class BuildFailed(RuntimeError):
     """The recipe's own step failed (as it would under Docker)."""
+
+
+class BuildCancelled(BuildFailed):
+    """An operator cancelled the build (``Spool.cancel``)."""
+
+    def __init__(self):
+        super().__init__(BUILD_CANCELLED_ERROR)
 
 
 # --- Dockerfile: BuildKit's line rules and shell-word processing ---
@@ -656,13 +664,14 @@ class GatewayApi:
                 parsed = {"error": content[:300].decode(errors="replace")}
             return exc.code, parsed
 
-    def create(self, spec, *, deadline):
-        """Retries capacity and worker-boot answers (503) until ``deadline``."""
+    def create(self, spec, *, deadline, stop=None):
+        """Retries capacity and worker-boot answers (503) until ``deadline``
+        or until ``stop()`` is true."""
         while True:
             status, body = self.call("POST", "/v1/sandboxes", spec, timeout=600)
             if 200 <= status < 300:
                 return body.get("sandbox") or body
-            if status != 503 or time.monotonic() > deadline:
+            if status != 503 or time.monotonic() > deadline or (stop is not None and stop()):
                 raise GatewayError(status, body)
             time.sleep(5)
 
@@ -698,22 +707,31 @@ class BuildRunner:
         # Steps run on the workers; filtering and stacking run here, beside the gateway's API.
         self.local = threading.BoundedSemaphore(local_slots)
 
-    def run(self, job):
-        """The result for ``job``: ``succeeded`` with the root, or ``failed`` with an error."""
+    def run(self, job, cancelled=lambda: False):
+        """The result for ``job``: ``succeeded`` with the root, or ``failed`` with an error.
+        ``cancelled()`` true stops it at its next step: the steps' job is
+        killed, the sandbox deleted, and the result is failed (BuildCancelled)."""
         metrics, started = {}, time.monotonic()
         try:
-            result = self._run(job, metrics)
+            result = self._run(job, metrics, cancelled)
             return {**result, "status": "succeeded", "metrics": metrics}
         except (BuildFailed, Unsupported) as exc:
             return {"status": "failed", "error": str(exc)[:2000], "metrics": metrics}
         except Exception as exc:  # noqa: BLE001 - infrastructure: the recipe's attempt fails, ensure retries.
+            if cancelled():  # Whatever stopping it broke, it stopped because it was cancelled.
+                return {"status": "failed", "error": BUILD_CANCELLED_ERROR, "metrics": metrics}
             _LOG.exception("sandbox build %s failed", job.get("build_id"))
             return {"status": "failed", "error": f"sandbox build infrastructure: {type(exc).__name__}: {exc}"[:2000],
                     "metrics": metrics}
         finally:
             metrics["total_s"] = round(time.monotonic() - started, 3)
 
-    def _run(self, job, metrics):
+    def _run(self, job, metrics, cancelled):
+        def check():
+            if cancelled():
+                raise BuildCancelled()
+
+        check()
         from .commit_policy import CommitPolicy
         from .commit_steps import commit_build
         from .environment_prepare import FILTERED_NAME, prepare_commit_in_subprocess
@@ -733,21 +751,28 @@ class BuildRunner:
                 "security": {"user": "0:0", "cap_drop": [], "no_new_privileges": False, "pids_limit": None},
                 "labels": {"sandbox-build": job["image_id"][:63]}}
         deadline = time.monotonic() + self.resources.timeout_seconds
+        check()
         timer = time.monotonic()
-        record = self.gateway.create(spec, deadline=deadline)
+        try:
+            record = self.gateway.create(spec, deadline=deadline, stop=cancelled)
+        except GatewayError:
+            check()
+            raise
         metrics["create_s"] = round(time.monotonic() - timer, 3)
         try:
             generation = int(record.get("generation") or 1)
+            check()
             self.gateway.checked("PUT", self.gateway.sandbox_path(sandbox_id, "/archive?" + parse.urlencode(
                 {"path": BUILD_DIR})), body=payload, content_type="application/gzip", timeout=600)
             timer = time.monotonic()
-            self._script(sandbox_id, deadline)
+            self._script(sandbox_id, deadline, cancelled)
             metrics["steps_s"] = round(time.monotonic() - timer, 3)
             timer = time.monotonic()
-            export = self._export(sandbox_id, generation, job["image_id"], deadline)
+            export = self._export(sandbox_id, generation, job["image_id"], deadline, check)
             metrics["export_s"], metrics["exported_bytes"] = round(time.monotonic() - timer, 3), export.size
         finally:
             self.gateway.call("DELETE", self.gateway.sandbox_path(sandbox_id))
+        check()
         # Docker's image keeps what the steps cached (pip, uv, npm, apt archives).
         policy = CommitPolicy.of(exclude=(BUILD_DIR, BUILD_TMP), identity=export.identity, keep_build_residue=True)
         commit = commit_build(export, policy, parent_image=job["base_reference"], parent_root=job["parent_root"])
@@ -767,7 +792,7 @@ class BuildRunner:
         return {"root": stacked["root"], "config": stacked["config"], "diff_id": filtered.diff_id,
                 "manifest_digest": born_manifest_digest(stacked["config"], stacked["config_size"], stacked["root"])}
 
-    def _script(self, sandbox_id, deadline):
+    def _script(self, sandbox_id, deadline, cancelled):
         job_id = "build-" + uuid.uuid4().hex[:12]
         self.gateway.checked("POST", self.gateway.sandbox_path(sandbox_id, "/jobs"), {
             "job_id": job_id, "argv": ["/bin/sh", f"{BUILD_DIR}/build.sh"], "env": {"PATH": DEFAULT_PATH}, "cwd": "/",
@@ -777,6 +802,9 @@ class BuildRunner:
             job = self.gateway.checked("GET", path).get("job") or {}
             if job.get("state") in ("exited", "signaled", "failed"):
                 break
+            if cancelled():
+                self.gateway.call("POST", path + "/signal", {"signal": 9})
+                raise BuildCancelled()
             if time.monotonic() > deadline:
                 self.gateway.call("POST", path + "/signal", {"signal": 9})
                 raise BuildFailed("the build steps exceeded the build timeout")
@@ -793,7 +821,7 @@ class BuildRunner:
         where = f"step {step[0]} exited {step[1]}" if len(step) >= 2 else f"the build script ended {job.get('state')}"
         raise BuildFailed(f"{where}: {tail.strip()[-1500:]}")
 
-    def _export(self, sandbox_id, generation, image_id, deadline):
+    def _export(self, sandbox_id, generation, image_id, deadline, check):
         from .commit_policy import CommitExport, CommitExportRequest
         request_ = CommitExportRequest(f"sbuild-{uuid.uuid4().hex[:16]}", generation, image_id[:64], resume=False)
         path = self.gateway.sandbox_path(sandbox_id, "/commit-export")
@@ -807,6 +835,7 @@ class BuildRunner:
                     raise RuntimeError(f"the worker could not export the sandbox: {export.error_code}")
                 if export.state == "staged":
                     return export
+            check()
             if time.monotonic() > deadline:
                 raise RuntimeError("the commit export exceeded the build timeout")
             time.sleep(self.poll)
@@ -829,11 +858,12 @@ def born_manifest_digest(config_digest, config_size, root):
 class Spool:
     """``jobs/<image_id>.json`` (the gateway writes), ``results/<image_id>.json``
     (the service writes), ``running/<image_id>`` (held with flock while a
-    build runs). Writes are atomic renames; one image has one job at a time."""
+    build runs), ``cancel/<image_id>.json`` (the gateway asks a running build
+    to stop). Writes are atomic renames; one image has one job at a time."""
 
     def __init__(self, root):
         self.root = Path(root)
-        for name in ("jobs", "results", "running"):
+        for name in ("jobs", "results", "running", "cancel"):
             (self.root / name).mkdir(mode=0o700, parents=True, exist_ok=True)
 
     def _write(self, path, value):
@@ -862,6 +892,57 @@ class Spool:
         current = self._read(self.root / "jobs" / f"{job['image_id']}.json")
         if current is not None and current.get("build_id") == job["build_id"]:
             (self.root / "jobs" / f"{job['image_id']}.json").unlink(missing_ok=True)
+        self._clear_cancel(job["image_id"], job["build_id"])
+
+    def cancel_requested(self, job):
+        """Whether the gateway asked ``job``'s running build to stop."""
+        marker = self._read(self.root / "cancel" / f"{job['image_id']}.json")
+        return marker is not None and marker.get("build_id") == job["build_id"]
+
+    def cancel(self, image_id, build_id, *, wait_seconds=5.0, poll=0.1):
+        """Cancel one build: ("cancelled"|"finished", result), ("stopping", None)
+        while a running build has not stopped within ``wait_seconds``, or
+        (None, None) if unknown. A queued job (no runner holds its lock) is
+        failed here; a running one gets a cancel marker its runner checks."""
+        import fcntl
+        status, result = self.status(image_id, build_id)
+        if status is None:
+            return None, None
+        if status != "running":
+            return "finished", result
+        lock = os.open(self.root / "running" / image_id, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                running = False
+            except BlockingIOError:
+                running = True
+            if not running:
+                # serve re-reads a job after taking its lock, so it never runs this one.
+                job = self._read(self.root / "jobs" / f"{image_id}.json")
+                if job is not None and job.get("build_id") == build_id:
+                    self.finish(job, {"status": "failed", "error": BUILD_CANCELLED_ERROR})
+        finally:
+            os.close(lock)
+        if running:
+            self._write(self.root / "cancel" / f"{image_id}.json", {"schema": SCHEMA, "build_id": build_id})
+            deadline = time.monotonic() + wait_seconds
+            while self.status(image_id, build_id)[0] == "running" and time.monotonic() < deadline:
+                time.sleep(poll)
+        status, result = self.status(image_id, build_id)
+        if status is None:
+            return None, None
+        if status == "running":
+            return "stopping", None
+        self._clear_cancel(image_id, build_id)  # A runner that finished first never read it.
+        cancelled = status == "failed" and str(result.get("error") or "").startswith(BUILD_CANCELLED_ERROR)
+        return ("cancelled" if cancelled else "finished"), result
+
+    def _clear_cancel(self, image_id, build_id):
+        path = self.root / "cancel" / f"{image_id}.json"
+        marker = self._read(path)
+        if marker is not None and marker.get("build_id") == build_id:
+            path.unlink(missing_ok=True)
 
     def pending(self):
         """Job files, oldest first; one finished meanwhile is left out."""
@@ -889,7 +970,7 @@ def serve(spool, runner, *, slots=8, poll=2.0, stop=None):
 
     def work(path, job, lock):
         try:
-            spool.finish(job, runner.run(job))
+            spool.finish(job, runner.run(job, cancelled=lambda: spool.cancel_requested(job)))
         finally:
             os.close(lock)
             with guard:
@@ -908,6 +989,10 @@ def serve(spool, runner, *, slots=8, poll=2.0, stop=None):
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 os.close(lock)
+                continue
+            current = Spool._read(path)
+            if current is None or current.get("build_id") != job["build_id"]:
+                os.close(lock)  # Cancelled or replaced while unlocked: read it again next round.
                 continue
             with guard:
                 active[job["image_id"]] = threading.Thread(target=work, args=(path, job, lock), daemon=True,

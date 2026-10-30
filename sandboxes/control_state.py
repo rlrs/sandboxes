@@ -18,7 +18,7 @@ from .sqlite_pool import SqliteConnectionPool
 from .bootstrap import VmBootstrapRecord
 from .models import (
     EPOCH_RETIREMENT_HISTORY, EPOCH_RETIREMENTS_LABEL, NODE_RUNTIME_METRIC_DEFAULTS,
-    SOFT_DRAIN_LABEL, NodeHeartbeat, epoch_retirements, parse_iso_datetime,
+    OPERATOR_DRAIN_LABEL, SOFT_DRAIN_LABEL, NodeHeartbeat, epoch_retirements, parse_iso_datetime,
 )
 from .registry import (
     HeartbeatReceiptResult,
@@ -48,14 +48,14 @@ CONTINUITY_VERIFIED_THROUGH = "ucloud-sandboxes/controller-continuity-verified-t
 _QUARANTINE_KEYS = {QUARANTINE_REASON, QUARANTINE_EPOCH}
 SOFT_DRAIN = SOFT_DRAIN_LABEL
 _CONTROLLER_KEYS = _QUARANTINE_KEYS | {
-    SOFT_DRAIN, CONTINUITY_VERIFIED_THROUGH, EPOCH_RETIREMENTS_LABEL,
+    SOFT_DRAIN, OPERATOR_DRAIN_LABEL, CONTINUITY_VERIFIED_THROUGH, EPOCH_RETIREMENTS_LABEL,
 }
 
 
 def _placement_heartbeat(heartbeat: NodeHeartbeat) -> NodeHeartbeat:
     return (
         replace(heartbeat, admission_open=False)
-        if heartbeat.labels.get(QUARANTINE_REASON)
+        if heartbeat.labels.get(QUARANTINE_REASON) or heartbeat.labels.get(OPERATOR_DRAIN_LABEL)
         else heartbeat
     )
 
@@ -308,6 +308,13 @@ class ControlStateStore:
 
     def clear_soft_drain(self, job_id: str) -> bool:
         return self._set_controller_label(job_id, SOFT_DRAIN, None)
+
+    def set_operator_drain(self, job_id: str, since: str) -> bool:
+        """Close a worker to new work for good; the autoscaler retires it."""
+        return self._set_controller_label(job_id, OPERATOR_DRAIN_LABEL, since)
+
+    def clear_operator_drain(self, job_id: str) -> bool:
+        return self._set_controller_label(job_id, OPERATOR_DRAIN_LABEL, None)
 
     def _set_controller_label(self, job_id: str, key: str, value: str | None) -> bool:
         with self._transaction(write=True) as connection:

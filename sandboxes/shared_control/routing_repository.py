@@ -459,6 +459,15 @@ class PostgresRoutingStore(RoutingStore):
                     "DELETE FROM pending WHERE sandbox_id=? AND operation_id=ANY(?) AND failure_reason='queued_create'",
                     (sandbox_id, [str(row["command_id"]) for row in rows]),
                 )
+            return len(rows)
+
+    def open_create_commands_readonly(self, limit=1000):
+        """Queued and running creates, oldest first."""
+        with self._read() as conn:
+            return [dict(row) for row in conn.execute(
+                """SELECT sandbox_id, state, attempts, created_at, deadline, next_attempt_at
+                FROM gateway_commands WHERE kind='create' AND state!='done'
+                ORDER BY created_at LIMIT ?""", (max(1, int(limit)),))]
 
     def allocate_sandbox_create_with_pending(self, allocation, **kwargs):
         with self._transaction() as conn:

@@ -18,8 +18,10 @@ from unittest.mock import patch
 from urllib import error
 
 from sandboxes import sandbox_build
+from sandboxes.build_deadline import BUILD_CANCELLED_ERROR
 from sandboxes.sandbox_build import (BuildFailed, BuildRunner, ContextTree, ExternalImages, Spool, Unsupported,
                                             bundle, context_tar, parse_dockerfile, plan_build, words)
+from tests.support import wait_until
 
 TEST_TIER = "contract"
 BASE = {"Env": ["PATH=/usr/local/bin:/usr/bin:/bin", "LANG=C.UTF-8"], "Cmd": ["bash"], "Entrypoint": [],
@@ -290,7 +292,7 @@ class SpoolTests(unittest.TestCase):
             ran = []
 
             class Runner:
-                def run(self, job):
+                def run(self, job, cancelled=None):
                     ran.append(job["build_id"])
                     return {"status": "succeeded", "root": "sha256:" + "1" * 64}
 
@@ -308,27 +310,49 @@ class SpoolTests(unittest.TestCase):
             self.assertEqual((status, result["root"], ran), ("succeeded", "sha256:" + "1" * 64, ["sandbox:recipe-1:a"]))
             self.assertEqual(spool.pending(), [])
 
+    def test_a_queued_build_is_cancelled_before_it_runs(self):
+        with TemporaryDirectory() as directory:
+            spool = Spool(directory)
+            job = {"image_id": "recipe-1", "build_id": "sandbox:recipe-1:a", "repository": "r", "tag": "t:latest"}
+            spool.submit(job)
+            outcome, result = spool.cancel("recipe-1", "sandbox:recipe-1:a")
+            self.assertEqual((outcome, result["status"], result["error"]), ("cancelled", "failed", BUILD_CANCELLED_ERROR))
+            self.assertEqual(spool.pending(), [])  # serve never picks it up.
+            self.assertEqual(spool.status("recipe-1", "sandbox:recipe-1:a"), ("failed", result))
+            # Idempotent: a finished build, cancelled or not, answers with its result.
+            self.assertEqual(spool.cancel("recipe-1", "sandbox:recipe-1:a"), ("finished", result))
+            self.assertEqual(spool.cancel("recipe-1", "sandbox:recipe-1:b"), (None, None))
+
 
 class FakeGateway(sandbox_build.GatewayApi):
-    def __init__(self, *, exit_code=0):
+    def __init__(self, *, exit_code=0, hang=False):
         super().__init__("http://gateway", "token")
-        self.calls, self.exit_code, self.polls = [], exit_code, 0
+        self.calls, self.exit_code, self.polls, self.hang = [], exit_code, 0, hang
+        self.live, self.job_state = set(), None  # Sandboxes not yet deleted; the steps' job.
 
     def call(self, method, path, payload=None, *, body=None, content_type="application/json", timeout=None,
              raw=False):
         self.calls.append((method, path.split("?")[0]))
         if method == "POST" and path == "/v1/sandboxes":
             self.spec = payload
+            self.live.add(payload["id"])
             return 200, {"sandbox": {"id": payload["id"], "generation": 3}}
+        if method == "DELETE":
+            self.live.discard(self.spec["id"])
+            return 200, {}
         if path.endswith("/jobs"):
+            self.job_state = "running"
             return 200, {"job": {"state": "running"}}
+        if "/jobs/" in path and path.endswith("/signal"):
+            self.job_state = "signaled"
+            return 200, {}
         if "/jobs/" in path and "/logs/" in path:
             return 200, {"data": base64.b64encode(b"E: Unable to locate package nope\n").decode()}
         if "/jobs/" in path:
             self.polls += 1
-            done = self.polls > 1
-            return 200, {"job": {"state": "exited" if done else "running", "exit_code": self.exit_code,
-                                 "stderr_bytes": 40}}
+            if not self.hang and self.polls > 1:
+                self.job_state = "exited"
+            return 200, {"job": {"state": self.job_state, "exit_code": self.exit_code, "stderr_bytes": 40}}
         if path.split("?")[0].endswith("/files"):
             return 200, b"4 100\n"
         if path.endswith("/commit-export"):
@@ -439,6 +463,27 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(gateway.calls[-1][0], "DELETE")
         self.assertNotIn(("POST", f"/v1/sandboxes/{gateway.spec['id']}/commit-export"), gateway.calls)
 
+    def test_a_running_build_cancelled_through_the_spool_kills_its_steps_and_deletes_its_sandbox(self):
+        gateway = FakeGateway(hang=True)
+        runner = BuildRunner(gateway=gateway, registry_client=object(), converter=None, externals=None,
+                             work_root=self.work, poll=0.01)
+        job = {**self.job(), "build_id": "sandbox:recipe-" + "c" * 40 + ":abc"}
+        spool, stop = Spool(self.work / "spool"), threading.Event()
+        spool.submit(job)
+        thread = threading.Thread(target=sandbox_build.serve, args=(spool, runner), kwargs={"poll": 0.01, "stop": stop})
+        thread.start()
+        try:
+            wait_until(lambda: gateway.polls > 0)  # The steps are running in the build sandbox.
+            outcome, result = spool.cancel(job["image_id"], job["build_id"], wait_seconds=10)
+        finally:
+            stop.set()
+            thread.join()
+        self.assertEqual((outcome, result["status"], result["error"]), ("cancelled", "failed", BUILD_CANCELLED_ERROR))
+        self.assertEqual(spool.status(job["image_id"], job["build_id"]), ("failed", result))
+        self.assertEqual(gateway.job_state, "signaled")
+        self.assertEqual(gateway.live, set())
+        self.assertFalse(spool.cancel_requested(job))  # The marker went with the result.
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -503,6 +548,17 @@ class GatewaySideTests(unittest.TestCase):
         build_id = self.builds.submit(self.payload("RUN echo task\n"))
         self.assertTrue(build_id.startswith("sandbox:recipe-"))
         self.assertEqual(self.builds.status(build_id), ("running", None))
+
+    def test_a_cancelled_build_reads_as_failed(self):
+        self.released_base()
+        build_id = self.builds.submit(self.payload("RUN echo task\n"))
+        self.assertEqual(self.builds.record(build_id)["status"], "running")
+        outcome, build = self.builds.cancel(build_id)
+        self.assertEqual((outcome, build["status"], build["error"], build["sandbox_build"]),
+                         ("cancelled", "failed", BUILD_CANCELLED_ERROR, True))
+        self.assertEqual(self.builds.status(build_id), ("failed", build))  # A later ensure may resubmit.
+        self.assertEqual(self.builds.cancel(build_id), ("finished", build))
+        self.assertEqual(self.builds.cancel("sandbox:../../escape:abc"), (None, None))
 
     def test_what_stays_with_the_builders(self):
         payload = self.payload("RUN echo task\n")

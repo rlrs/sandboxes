@@ -8,6 +8,7 @@ else goes to the builders unchanged. A job is spooled for
 ``serve-sandbox-builds``; ``adopt`` records a finished image as born in the
 chunk store: an ``image_roots`` row ``released`` from the start (wave
 ``sandbox-build``) and a gateway image record naming its born identity.
+``cancel`` stops a queued or running build through the spool (``Spool.cancel``).
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ import logging
 import tarfile
 import uuid
 
+from ..images import IMAGE_ID_RE
 from ..sandbox_build import ContextTree, Spool, Unsupported, context_tar, plan_build
 
 _LOG = logging.getLogger(__name__)
@@ -87,13 +89,33 @@ class SandboxBuilds:
 
     def status(self, build_id):
         """(status, build) as RecipeEnsurer's build_status answers: None when lost."""
-        image_id = build_id[len(BUILD_PREFIX):].rpartition(":")[0]
-        status, result = self.spool.status(image_id, build_id)
+        image_id = _image_id(build_id)
+        status, result = self.spool.status(image_id, build_id) if image_id else (None, None)
         if status == "running":
             return "running", None
         if status is None:
             return None, None
         return status, {**result, "sandbox_build": True}
+
+    def record(self, build_id):
+        """The build as GET /v1/images/builds/<id> shows it, or None if unknown."""
+        status, build = self.status(build_id)
+        if status == "running":
+            return _running(build_id)
+        return build
+
+    def cancel(self, build_id):
+        """(outcome, build): ``cancelled`` (now failed), ``finished`` (already
+        terminal, including an earlier cancellation), ``stopping`` (asked to
+        stop, not stopped yet) or (None, None) if unknown. A cancelled build
+        reads as failed, so a later ensure may submit its recipe again."""
+        image_id = _image_id(build_id)
+        outcome, result = self.spool.cancel(image_id, build_id) if image_id else (None, None)
+        if outcome is None:
+            return None, None
+        if outcome == "stopping":
+            return outcome, _running(build_id)
+        return outcome, {**result, "sandbox_build": True}
 
     def adopt(self, result):
         """A finished image as born in the chunk store; returns its image record."""
@@ -112,6 +134,18 @@ class SandboxBuilds:
         return {"id": result["image_id"], "tag": result["tag"], "source": "build:sandbox", "state": "available",
                 "pushed": True, "manifest_digest": digest, "created_at": now, "updated_at": now,
                 "labels": {"ucloud-sandboxes.sandbox-build": result["build_id"]}}
+
+
+def _image_id(build_id):
+    """The image id in a ``sandbox:<image_id>:<hex>`` build id, or "" (it names spool files)."""
+    if not build_id.startswith(BUILD_PREFIX):
+        return ""
+    image_id = build_id[len(BUILD_PREFIX):].rpartition(":")[0]
+    return image_id if IMAGE_ID_RE.fullmatch(image_id) else ""
+
+
+def _running(build_id):
+    return {"build_id": build_id, "image_id": _image_id(build_id), "status": "running", "sandbox_build": True}
 
 
 def from_deployment(config, *, catalog, contexts, roots, environments, tag_for):
