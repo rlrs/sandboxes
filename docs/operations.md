@@ -249,10 +249,12 @@ them to a Slack-compatible webhook. Thresholds are `ops_watch.py` options.
 collector (port 4318), Tempo (72 h), VictoriaMetrics (14 days) and Grafana 13
 on the gateway's local disk (never on `/work`); losing the gateway loses it.
 VictoriaMetrics scrapes the fleet snapshot (`/v1/metrics/prometheus`) every
-15 s. Dashboards are files in `scripts/ops/grafana/dashboards`: **Sandboxes
-fleet** (workers, capacity, autoscaler decisions, sandbox and program states,
-queued creates, builds, registry disk) and **hot paths** (latency, errors,
-traces). Grafana's admin password is in `/etc/ucloud-sandboxes/telemetry/grafana.env`;
+15 s. The one dashboard, **Sandboxes**, fits a 1080p screen: headline
+numbers, sandboxes, workers, load and create latency, then the workers, queued
+creates and builds tables with their controls. Per-worker charts, scaling and
+programs, and requests, traces and storage are in collapsed rows. Edit
+`scripts/ops/grafana/generate_dashboard.py` and rerun it; it writes
+`dashboards/sandboxes.json`. Grafana's admin password is in `/etc/ucloud-sandboxes/telemetry/grafana.env`;
 anonymous access is off, and every Grafana account can use the controls.
 
 Grafana is public at `https://<public-host>/grafana/` with `--public-url` on

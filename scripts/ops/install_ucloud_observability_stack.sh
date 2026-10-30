@@ -268,6 +268,8 @@ EOF
 for dashboard in "$installer_dir"/grafana/dashboards/*.json; do
   install -m 0644 "$dashboard" "$config_root/grafana/dashboards/"
 done
+# Retired in 0.10.3; fleet.json shares the new dashboard's uid.
+rm -f -- "$config_root/grafana/dashboards/fleet.json" "$config_root/grafana/dashboards/platform-hot-paths.json"
 
 if [[ ! -s "$grafana_env" ]]; then
   umask 077
