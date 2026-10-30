@@ -429,6 +429,10 @@ class NodeAgentHandler(BuildContextHttpHandler):
         if parsed.path.startswith("/internal/v1/") and self.internal_routes_enabled and self.create_handoff is not None:
             self._internal_create_route(parsed.path)
             return
+        cancel_build_id = _image_build_cancel_id_from_path(parsed.path)
+        if cancel_build_id is not None:
+            self._cancel_image_build(cancel_build_id)
+            return
         if not self.sandboxes_enabled and parsed.path not in {
             "/v1/images/build",
             "/v1/images/pull",
@@ -1736,6 +1740,35 @@ class NodeAgentHandler(BuildContextHttpHandler):
             payload["push_exit_code"] = build.push_exit_code
         self._write_json(payload, status=HTTPStatus.CREATED)
 
+    def _cancel_image_build(self, build_id: str) -> None:
+        """POST /v1/images/builds/<id>:cancel (docs/api.md)."""
+        if not self.image_builds_enabled:
+            self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        try:
+            outcome, record = self.image_manager.cancel_build(build_id)
+        except (RuntimeError, ValueError) as exc:
+            self._write_exception(exc)
+            return
+        if outcome == "not_found" or record is None:
+            self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        if outcome == "unowned":
+            self._write_json(
+                {"error": "image build is not owned by this node agent", "retryable": True},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+            )
+            return
+        status = {
+            "cancelled": HTTPStatus.OK,
+            "stopping": HTTPStatus.ACCEPTED,
+            "finished": HTTPStatus.CONFLICT,
+        }[outcome]
+        payload: dict[str, Any] = {"build": record.to_dict()}
+        if outcome == "finished":
+            payload["error"] = "image build already finished"
+        self._write_json(payload, status=status)
+
     def _pull_image(self) -> None:
         started = time.monotonic()
         failed_phase = "read_request"
@@ -2514,6 +2547,14 @@ def _image_build_key_from_path(path: str) -> str | None:
         return None
     key = unquote(path[len(prefix) :])
     return key or None
+
+
+def _image_build_cancel_id_from_path(path: str) -> str | None:
+    """The build id of POST /v1/images/builds/<id>:cancel, else None."""
+    key = _image_build_key_from_path(path)
+    if key is None or not key.endswith(":cancel"):
+        return None
+    return key[: -len(":cancel")] or None
 
 
 def _file_path_from_query(parsed: Any) -> str | None:
