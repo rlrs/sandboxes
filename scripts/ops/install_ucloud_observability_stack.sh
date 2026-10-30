@@ -257,7 +257,7 @@ providers:
     orgId: 1
     folder: UCloud
     type: file
-    disableDeletion: true
+    disableDeletion: false
     updateIntervalSeconds: 30
     allowUiUpdates: false
     options:
@@ -268,6 +268,9 @@ EOF
 for dashboard in "$installer_dir"/grafana/dashboards/*.json; do
   install -m 0644 "$dashboard" "$config_root/grafana/dashboards/"
 done
+# Retired dashboards: a removed file deletes its dashboard, and fleet.json shares
+# the new dashboard's uid.
+rm -f -- "$config_root/grafana/dashboards/fleet.json" "$config_root/grafana/dashboards/platform-hot-paths.json"
 
 if [[ ! -s "$grafana_env" ]]; then
   umask 077

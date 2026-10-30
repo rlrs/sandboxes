@@ -1,0 +1,2889 @@
+{
+ "uid": "ucloud-fleet",
+ "title": "Sandboxes",
+ "tags": [
+  "ucloud"
+ ],
+ "timezone": "utc",
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "refresh": "30s",
+ "graphTooltip": 1,
+ "time": {
+  "from": "now-3h",
+  "to": "now"
+ },
+ "links": [],
+ "annotations": {
+  "list": []
+ },
+ "templating": {
+  "list": []
+ },
+ "panels": [
+  {
+   "type": "stat",
+   "title": "Workers",
+   "description": "Sandbox workers ready, booting, and the autoscaler's limit",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_autoscaler_nodes{state=\"ready\"}",
+     "legendFormat": "ready",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_autoscaler_nodes{state=\"provisioning\"}",
+     "legendFormat": "booting",
+     "refId": "B",
+     "range": false,
+     "instant": true
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_autoscaler_policy{limit=\"max_nodes\"}",
+     "legendFormat": "max",
+     "refId": "C",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "graphMode": "none",
+    "colorMode": "none",
+    "justifyMode": "center",
+    "textMode": "value_and_name",
+    "wideLayout": false,
+    "orientation": "vertical",
+    "text": {
+     "valueSize": 26,
+     "titleSize": 11
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "noValue": "0",
+     "decimals": null,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "id": 1,
+   "gridPos": {
+    "h": 3,
+    "w": 4,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Sandboxes",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_sandbox_routes{kind=\"running\"}",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "graphMode": "none",
+    "colorMode": "none",
+    "justifyMode": "center",
+    "textMode": "value",
+    "wideLayout": false,
+    "orientation": "auto",
+    "text": {
+     "valueSize": 26,
+     "titleSize": 11
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "noValue": "0",
+     "decimals": null,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "id": 2,
+   "gridPos": {
+    "h": 3,
+    "w": 3,
+    "x": 4,
+    "y": 0
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Waiting for capacity",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_pending_creates{kind=\"capacity\"}",
+     "legendFormat": "creates",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_pending_create_oldest_seconds",
+     "legendFormat": "oldest",
+     "refId": "B",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "graphMode": "none",
+    "colorMode": "value",
+    "justifyMode": "center",
+    "textMode": "value_and_name",
+    "wideLayout": false,
+    "orientation": "vertical",
+    "text": {
+     "valueSize": 26,
+     "titleSize": 11
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "noValue": "0",
+     "decimals": null,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "oldest"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       },
+       {
+        "id": "noValue",
+        "value": "\u2013"
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "text",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 60
+          },
+          {
+           "color": "red",
+           "value": 300
+          }
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "id": 3,
+   "gridPos": {
+    "h": 3,
+    "w": 4,
+    "x": 7,
+    "y": 0
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Create p95",
+   "description": "Gateway create latency over 5 minutes, including any wait for capacity",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(ucloud_platform_operation_duration_seconds_bucket{operation=\"gateway.sandbox_create\"}[5m])))",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "graphMode": "none",
+    "colorMode": "value",
+    "justifyMode": "center",
+    "textMode": "value",
+    "wideLayout": false,
+    "orientation": "auto",
+    "text": {
+     "valueSize": 26,
+     "titleSize": 11
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "noValue": "\u2013",
+     "decimals": null,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 30
+       },
+       {
+        "color": "red",
+        "value": 120
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "id": 4,
+   "gridPos": {
+    "h": 3,
+    "w": 3,
+    "x": 11,
+    "y": 0
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Failed (1h)",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "sum(increase(ucloud_platform_operation_count_total{operation=\"gateway.sandbox_create\",status=\"error\"}[1h])) or vector(0)",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "graphMode": "none",
+    "colorMode": "value",
+    "justifyMode": "center",
+    "textMode": "value",
+    "wideLayout": false,
+    "orientation": "auto",
+    "text": {
+     "valueSize": 26,
+     "titleSize": 11
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "noValue": "0",
+     "decimals": null,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       },
+       {
+        "color": "red",
+        "value": 20
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "id": 5,
+   "gridPos": {
+    "h": 3,
+    "w": 3,
+    "x": 14,
+    "y": 0
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Builds",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_image_builds_active",
+     "legendFormat": "running",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_image_builds_pending",
+     "legendFormat": "queued",
+     "refId": "B",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "graphMode": "none",
+    "colorMode": "none",
+    "justifyMode": "center",
+    "textMode": "value_and_name",
+    "wideLayout": false,
+    "orientation": "vertical",
+    "text": {
+     "valueSize": 26,
+     "titleSize": 11
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "noValue": "0",
+     "decimals": null,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "id": 6,
+   "gridPos": {
+    "h": 3,
+    "w": 4,
+    "x": 17,
+    "y": 0
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Registry disk",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_registry_disk_used_percent",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "graphMode": "none",
+    "colorMode": "value",
+    "justifyMode": "center",
+    "textMode": "value",
+    "wideLayout": false,
+    "orientation": "auto",
+    "text": {
+     "valueSize": 26,
+     "titleSize": 11
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "noValue": "\u2013",
+     "decimals": null,
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 80
+       },
+       {
+        "color": "red",
+        "value": 90
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "id": 7,
+   "gridPos": {
+    "h": 3,
+    "w": 3,
+    "x": 21,
+    "y": 0
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Sandboxes",
+   "description": "Sandboxes by state (stacked) and creates waiting for capacity",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "sum by (state) (ucloud_fleet_sandboxes)",
+     "legendFormat": "{{state}}",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_pending_creates{kind=\"capacity\"}",
+     "legendFormat": "waiting",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 20,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "waiting"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          6,
+          4
+         ]
+        }
+       },
+       {
+        "id": "custom.stacking",
+        "value": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       {
+        "id": "custom.fillOpacity",
+        "value": 0
+       }
+      ]
+     }
+    ]
+   },
+   "id": 8,
+   "gridPos": {
+    "h": 7,
+    "w": 6,
+    "x": 0,
+    "y": 3
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Workers",
+   "description": "",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_autoscaler_nodes{state=\"ready\"}",
+     "legendFormat": "ready",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_autoscaler_nodes{state=\"provisioning\"}",
+     "legendFormat": "booting",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_autoscaler_nodes{state=\"unreachable\"}",
+     "legendFormat": "unreachable",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_nodes{state=\"builder\"}",
+     "legendFormat": "builders",
+     "refId": "D",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "ucloud_fleet_autoscaler_policy{limit=\"max_nodes\"}",
+     "legendFormat": "max",
+     "refId": "E",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 20,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      }
+     },
+     "min": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "ready"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "green"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "booting"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "blue"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "unreachable"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "builders"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "purple"
+        }
+       },
+       {
+        "id": "custom.stacking",
+        "value": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       {
+        "id": "custom.fillOpacity",
+        "value": 0
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "max"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "text"
+        }
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          6,
+          4
+         ]
+        }
+       },
+       {
+        "id": "custom.stacking",
+        "value": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       {
+        "id": "custom.fillOpacity",
+        "value": 0
+       }
+      ]
+     }
+    ]
+   },
+   "id": 9,
+   "gridPos": {
+    "h": 7,
+    "w": 6,
+    "x": 6,
+    "y": 3
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Sandbox worker load",
+   "description": "Admitted: reserved by placed sandboxes. Used: measured on the workers. Averages over sandbox workers.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "100 * sum(ucloud_fleet_pool_resources{pool=\"sandbox\",resource=\"vcpu\",kind=\"used\"}) / sum(ucloud_fleet_pool_resources{pool=\"sandbox\",resource=\"vcpu\",kind=\"total\"})",
+     "legendFormat": "vCPU admitted",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "100 * sum(ucloud_fleet_pool_resources{pool=\"sandbox\",resource=\"memory_mb\",kind=\"used\"}) / sum(ucloud_fleet_pool_resources{pool=\"sandbox\",resource=\"memory_mb\",kind=\"total\"})",
+     "legendFormat": "memory admitted",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "avg(ucloud_fleet_node_cpu_percent{role=\"sandbox\"})",
+     "legendFormat": "CPU used",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "avg(ucloud_fleet_node_memory_percent{role=\"sandbox\"})",
+     "legendFormat": "memory used",
+     "refId": "D",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     },
+     "min": 0,
+     "max": 100
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "CPU used"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          6,
+          4
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "memory used"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "blue"
+        }
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          6,
+          4
+         ]
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "vCPU admitted"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "orange"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "memory admitted"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "blue"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "id": 10,
+   "gridPos": {
+    "h": 7,
+    "w": 6,
+    "x": 12,
+    "y": 3
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Create latency",
+   "description": "Gateway create latency, including any wait for capacity",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(ucloud_platform_operation_duration_seconds_bucket{operation=\"gateway.sandbox_create\"}[$__rate_interval])))",
+     "legendFormat": "p50",
+     "refId": "A",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(ucloud_platform_operation_duration_seconds_bucket{operation=\"gateway.sandbox_create\"}[$__rate_interval])))",
+     "legendFormat": "p95",
+     "refId": "B",
+     "range": true,
+     "instant": false
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "60 * sum(rate(ucloud_platform_operation_count_total{operation=\"gateway.sandbox_create\",status=\"error\"}[$__rate_interval]))",
+     "legendFormat": "errors/min",
+     "refId": "C",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "calcs": []
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 1,
+      "fillOpacity": 0,
+      "showPoints": "never",
+      "spanNulls": true,
+      "stacking": {
+       "mode": "none",
+       "group": "A"
+      }
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "errors/min"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "short"
+       },
+       {
+        "id": "min",
+        "value": 0
+       },
+       {
+        "id": "custom.axisPlacement",
+        "value": "right"
+       },
+       {
+        "id": "custom.drawStyle",
+        "value": "bars"
+       },
+       {
+        "id": "custom.fillOpacity",
+        "value": 60
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "id": 11,
+   "gridPos": {
+    "h": 7,
+    "w": 6,
+    "x": 18,
+    "y": 3
+   }
+  },
+  {
+   "type": "table",
+   "title": "Workers",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ucloud-metrics"
+   },
+   "description": "Click a row for actions. Drain: no new work, parked sandboxes move away, stopped once empty. Drain and evict: also deletes its sandboxes. Undrain: back into service.",
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "max by (job_id, role) ((5 * (1 - ucloud_fleet_node_fresh)) > 0 or (4 * ucloud_fleet_node_operator_drained) > 0 or (3 * ucloud_fleet_node_soft_drained) > 0 or (2 * ucloud_fleet_node_draining) > 0 or (1 - ucloud_fleet_node_admission_open{role=\"sandbox\"}) > 0 or 0 * ucloud_fleet_node_fresh)",
+     "legendFormat": "",
+     "refId": "S",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "max by (job_id, role) (ucloud_fleet_node_active_sandboxes)",
+     "legendFormat": "",
+     "refId": "A",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "100 * max by (job_id, role) (ucloud_fleet_node_resources{kind=\"used\",resource=\"vcpu\"}) / max by (job_id, role) (ucloud_fleet_node_resources{kind=\"total\",resource=\"vcpu\"})",
+     "legendFormat": "",
+     "refId": "V",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "100 * max by (job_id, role) (ucloud_fleet_node_resources{kind=\"used\",resource=\"memory_mb\"}) / max by (job_id, role) (ucloud_fleet_node_resources{kind=\"total\",resource=\"memory_mb\"})",
+     "legendFormat": "",
+     "refId": "M",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "max by (job_id, role) (ucloud_fleet_node_cpu_percent)",
+     "legendFormat": "",
+     "refId": "C",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "expr": "max by (job_id, role) (ucloud_fleet_node_resources{kind=\"free\",resource=\"disk_mb\"}) * 1048576",
+     "legendFormat": "",
+     "refId": "D",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      },
+      "indexByName": {
+       "job_id": 0,
+       "role": 1,
+       "State": 2,
+       "Sandboxes": 3,
+       "vCPU adm.": 4,
+       "Mem adm.": 5,
+       "CPU": 6,
+       "Disk free": 7
+      },
+      "renameByName": {
+       "job_id": "Worker",
+       "role": "Role",
+       "Value #S": "State",
+       "Value #A": "Sandboxes",
+       "Value #V": "vCPU adm.",
+       "Value #M": "Mem adm.",
+       "Value #C": "CPU",
+       "Value #D": "Disk free"
+      }
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "sortBy": [
+     {
+      "displayName": "Sandboxes",
+      "desc": true
+     }
+    ]
+   },
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "No workers",
+     "custom": {
+      "align": "auto"
+     },
+     "decimals": 0,
+     "actions": [
+      {
+       "type": "fetch",
+       "title": "Drain",
+       "confirmation": "Drain worker ${__data.fields[\"job_id\"]}? It takes no new work and is stopped once empty.",
+       "fetch": {
+        "method": "POST",
+        "url": "/grafana/ops/v1/nodes/${__data.fields[\"job_id\"]}/drain",
+        "headers": [
+         [
+          "X-UCloud-Ops",
+          "1"
+         ],
+         [
+          "Content-Type",
+          "application/json"
+         ]
+        ],
+        "queryParams": [],
+        "body": "{}"
+       }
+      },
+      {
+       "type": "fetch",
+       "title": "Drain and evict",
+       "confirmation": "Drain worker ${__data.fields[\"job_id\"]} and DELETE every sandbox on it?",
+       "fetch": {
+        "method": "POST",
+        "url": "/grafana/ops/v1/nodes/${__data.fields[\"job_id\"]}/drain",
+        "headers": [
+         [
+          "X-UCloud-Ops",
+          "1"
+         ],
+         [
+          "Content-Type",
+          "application/json"
+         ]
+        ],
+        "queryParams": [],
+        "body": "{\"evict\": true}"
+       }
+      },
+      {
+       "type": "fetch",
+       "title": "Undrain",
+       "confirmation": "Put worker ${__data.fields[\"job_id\"]} back into service?",
+       "fetch": {
+        "method": "POST",
+        "url": "/grafana/ops/v1/nodes/${__data.fields[\"job_id\"]}/undrain",
+        "headers": [
+         [
+          "X-UCloud-Ops",
+          "1"
+         ],
+         [
+          "Content-Type",
+          "application/json"
+         ]
+        ],
+        "queryParams": []
+       }
+      }
+     ]
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "State"
+      },
+      "properties": [
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "0": {
+            "text": "ready",
+            "color": "green",
+            "index": 0
+           },
+           "1": {
+            "text": "closed",
+            "color": "orange",
+            "index": 1
+           },
+           "2": {
+            "text": "draining",
+            "color": "orange",
+            "index": 2
+           },
+           "3": {
+            "text": "emptying",
+            "color": "blue",
+            "index": 3
+           },
+           "4": {
+            "text": "drained",
+            "color": "purple",
+            "index": 4
+           },
+           "5": {
+            "text": "stale",
+            "color": "red",
+            "index": 5
+           }
+          }
+         }
+        ]
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "custom.align",
+        "value": "left"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "vCPU adm."
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       },
+       {
+        "id": "min",
+        "value": 0
+       },
+       {
+        "id": "max",
+        "value": 100
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "gauge",
+         "mode": "basic",
+         "valueDisplayMode": "text"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 80
+          },
+          {
+           "color": "red",
+           "value": 95
+          }
+         ]
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "thresholds"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Mem adm."
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       },
+       {
+        "id": "min",
+        "value": 0
+       },
+       {
+        "id": "max",
+        "value": 100
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "gauge",
+         "mode": "basic",
+         "valueDisplayMode": "text"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 80
+          },
+          {
+           "color": "red",
+           "value": 95
+          }
+         ]
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "thresholds"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "CPU"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       },
+       {
+        "id": "min",
+        "value": 0
+       },
+       {
+        "id": "max",
+        "value": 100
+       },
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "gauge",
+         "mode": "basic",
+         "valueDisplayMode": "text"
+        }
+       },
+       {
+        "id": "thresholds",
+        "value": {
+         "mode": "absolute",
+         "steps": [
+          {
+           "color": "green",
+           "value": null
+          },
+          {
+           "color": "orange",
+           "value": 80
+          },
+          {
+           "color": "red",
+           "value": 95
+          }
+         ]
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "thresholds"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Disk free"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "bytes"
+       },
+       {
+        "id": "decimals",
+        "value": null
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Worker"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 95
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Role"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 70
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "State"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 80
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Sandboxes"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 100
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "vCPU adm."
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 105
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Mem adm."
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 105
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "CPU"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 105
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Disk free"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 85
+       }
+      ]
+     }
+    ]
+   },
+   "id": 12,
+   "gridPos": {
+    "h": 9,
+    "w": 14,
+    "x": 0,
+    "y": 10
+   }
+  },
+  {
+   "type": "table",
+   "title": "Queued creates",
+   "description": "Creates waiting for placement, live from the gateway. Click a row to cancel; the waiting client gets 410.",
+   "datasource": {
+    "type": "yesoreyeram-infinity-datasource",
+    "uid": "ucloud-gateway"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "yesoreyeram-infinity-datasource",
+      "uid": "ucloud-gateway"
+     },
+     "refId": "A",
+     "type": "json",
+     "source": "url",
+     "parser": "backend",
+     "format": "table",
+     "url": "/v1/creates",
+     "url_options": {
+      "method": "GET"
+     },
+     "root_selector": "creates",
+     "columns": [
+      {
+       "selector": "sandbox_id",
+       "text": "Sandbox",
+       "type": "string"
+      },
+      {
+       "selector": "state",
+       "text": "State",
+       "type": "string"
+      },
+      {
+       "selector": "attempts",
+       "text": "Tries",
+       "type": "number"
+      },
+      {
+       "selector": "age_seconds",
+       "text": "Age",
+       "type": "number"
+      }
+     ]
+    }
+   ],
+   "transformations": [],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "None",
+     "actions": [
+      {
+       "type": "fetch",
+       "title": "Cancel",
+       "confirmation": "Cancel the create of ${__data.fields[\"Sandbox\"]}?",
+       "fetch": {
+        "method": "POST",
+        "url": "/grafana/ops/v1/creates:cancel",
+        "headers": [
+         [
+          "X-UCloud-Ops",
+          "1"
+         ],
+         [
+          "Content-Type",
+          "application/json"
+         ]
+        ],
+        "queryParams": [],
+        "body": "{\"sandbox_ids\": [\"${__data.fields[\"Sandbox\"]}\"]}"
+       }
+      },
+      {
+       "type": "fetch",
+       "title": "Cancel all queued creates",
+       "confirmation": "Cancel EVERY queued create?",
+       "fetch": {
+        "method": "POST",
+        "url": "/grafana/ops/v1/creates:cancel",
+        "headers": [
+         [
+          "X-UCloud-Ops",
+          "1"
+         ],
+         [
+          "Content-Type",
+          "application/json"
+         ]
+        ],
+        "queryParams": [],
+        "body": "{\"all\": true}"
+       }
+      }
+     ]
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Age"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     }
+    ]
+   },
+   "id": 13,
+   "gridPos": {
+    "h": 9,
+    "w": 5,
+    "x": 14,
+    "y": 10
+   }
+  },
+  {
+   "type": "table",
+   "title": "Image builds",
+   "description": "Running and failed builds, live from the gateway. Click a row to cancel a running one.",
+   "datasource": {
+    "type": "yesoreyeram-infinity-datasource",
+    "uid": "ucloud-gateway"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "yesoreyeram-infinity-datasource",
+      "uid": "ucloud-gateway"
+     },
+     "refId": "A",
+     "type": "json",
+     "source": "url",
+     "parser": "backend",
+     "format": "table",
+     "url": "/v1/images/builds",
+     "url_options": {
+      "method": "GET"
+     },
+     "root_selector": "builds",
+     "columns": [
+      {
+       "selector": "build_id",
+       "text": "Build",
+       "type": "string"
+      },
+      {
+       "selector": "tag",
+       "text": "Image",
+       "type": "string"
+      },
+      {
+       "selector": "status",
+       "text": "Status",
+       "type": "string"
+      },
+      {
+       "selector": "created_at",
+       "text": "Created",
+       "type": "timestamp"
+      },
+      {
+       "selector": "error",
+       "text": "Error",
+       "type": "string"
+      }
+     ]
+    }
+   ],
+   "transformations": [
+    {
+     "id": "filterByValue",
+     "options": {
+      "type": "exclude",
+      "match": "any",
+      "filters": [
+       {
+        "fieldName": "Status",
+        "config": {
+         "id": "equal",
+         "options": {
+          "value": "succeeded"
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "id": "sortBy",
+     "options": {
+      "sort": [
+       {
+        "field": "Created",
+        "desc": true
+       }
+      ]
+     }
+    }
+   ],
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "None",
+     "actions": [
+      {
+       "type": "fetch",
+       "title": "Cancel build",
+       "confirmation": "Cancel build ${__data.fields[\"Build\"]}?",
+       "fetch": {
+        "method": "POST",
+        "url": "/grafana/ops/v1/images/builds/${__data.fields[\"Build\"]}:cancel",
+        "headers": [
+         [
+          "X-UCloud-Ops",
+          "1"
+         ],
+         [
+          "Content-Type",
+          "application/json"
+         ]
+        ],
+        "queryParams": [],
+        "body": "{}"
+       }
+      }
+     ]
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Created"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "dateTimeFromNow"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Build"
+      },
+      "properties": [
+       {
+        "id": "custom.hidden",
+        "value": true
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Status"
+      },
+      "properties": [
+       {
+        "id": "custom.width",
+        "value": 80
+       }
+      ]
+     }
+    ]
+   },
+   "id": 14,
+   "gridPos": {
+    "h": 9,
+    "w": 5,
+    "x": 19,
+    "y": 10
+   }
+  },
+  {
+   "type": "row",
+   "title": "Per worker",
+   "id": 15,
+   "collapsed": true,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 19
+   },
+   "panels": [
+    {
+     "type": "timeseries",
+     "title": "Sandboxes",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_node_active_sandboxes",
+       "legendFormat": "{{job_id}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       }
+      },
+      "overrides": []
+     },
+     "id": 16,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 0,
+      "y": 20
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "CPU used",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_node_cpu_percent",
+       "legendFormat": "{{job_id}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "percent",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       "min": 0,
+       "max": 100
+      },
+      "overrides": []
+     },
+     "id": 17,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 6,
+      "y": 20
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Pressure (PSI full, avg10)",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_node_memory_psi_full_avg10",
+       "legendFormat": "mem {{job_id}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      },
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_node_io_psi_full_avg10",
+       "legendFormat": "io {{job_id}}",
+       "refId": "B",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       "min": 0
+      },
+      "overrides": []
+     },
+     "id": 18,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 12,
+      "y": 20
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Disk free",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_node_resources{kind=\"free\",resource=\"disk_mb\"} * 1048576",
+       "legendFormat": "{{job_id}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "bytes",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       "min": 0
+      },
+      "overrides": []
+     },
+     "id": 19,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 18,
+      "y": 20
+     }
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "Scaling and programs",
+   "id": 20,
+   "collapsed": true,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 20
+   },
+   "panels": [
+    {
+     "type": "timeseries",
+     "title": "Waiting demand (vCPU)",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_pending_resources{resource=\"vcpu\"}",
+       "legendFormat": "waiting ({{kind}})",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      },
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_autoscaler_resources{resource=\"vcpu\",kind=\"deficit\"}",
+       "legendFormat": "autoscaler deficit",
+       "refId": "B",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       "min": 0
+      },
+      "overrides": []
+     },
+     "id": 21,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 0,
+      "y": 21
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Autoscaler decisions",
+     "description": "Nodes each decision creates or stops",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_autoscaler_actions",
+       "legendFormat": "{{role}} {{kind}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 80,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        },
+        "drawStyle": "bars"
+       }
+      },
+      "overrides": []
+     },
+     "id": 22,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 6,
+      "y": 21
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Programs by state",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_program_states",
+       "legendFormat": "{{state}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 20,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "normal",
+         "group": "A"
+        }
+       }
+      },
+      "overrides": []
+     },
+     "id": 23,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 12,
+      "y": 21
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Model wait",
+     "description": "Programs parked on the model relay",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_program_model_wait_p95_ms / 1000",
+       "legendFormat": "p95",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      },
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_program_response_to_wake_p95_ms / 1000",
+       "legendFormat": "response to wake p95",
+       "refId": "B",
+       "range": true,
+       "instant": false
+      },
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_program_oldest_model_wait_seconds",
+       "legendFormat": "oldest wait",
+       "refId": "C",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "s",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       "min": 0
+      },
+      "overrides": []
+     },
+     "id": 24,
+     "gridPos": {
+      "h": 7,
+      "w": 6,
+      "x": 18,
+      "y": 21
+     }
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "Requests, traces and storage",
+   "id": 25,
+   "collapsed": true,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 21
+   },
+   "panels": [
+    {
+     "type": "timeseries",
+     "title": "Slowest operations (p95)",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "topk(8, histogram_quantile(0.95, sum by (le, operation) (rate(ucloud_platform_operation_duration_seconds_bucket[$__rate_interval]))))",
+       "legendFormat": "{{operation}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "s",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       }
+      },
+      "overrides": []
+     },
+     "id": 26,
+     "gridPos": {
+      "h": 8,
+      "w": 8,
+      "x": 0,
+      "y": 22
+     }
+    },
+    {
+     "type": "table",
+     "title": "Errors in range",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "sum by (operation) (increase(ucloud_platform_operation_count_total{status=\"error\"}[$__range])) > 0",
+       "legendFormat": "",
+       "refId": "A",
+       "range": false,
+       "instant": true,
+       "format": "table"
+      }
+     ],
+     "transformations": [
+      {
+       "id": "organize",
+       "options": {
+        "excludeByName": {
+         "Time": true
+        },
+        "renameByName": {
+         "Value": "Errors",
+         "operation": "Operation"
+        }
+       }
+      }
+     ],
+     "options": {
+      "showHeader": true,
+      "cellHeight": "sm",
+      "sortBy": [
+       {
+        "displayName": "Errors",
+        "desc": true
+       }
+      ]
+     },
+     "fieldConfig": {
+      "defaults": {
+       "noValue": "None",
+       "decimals": 0
+      },
+      "overrides": []
+     },
+     "id": 27,
+     "gridPos": {
+      "h": 8,
+      "w": 6,
+      "x": 8,
+      "y": 22
+     }
+    },
+    {
+     "type": "traces",
+     "title": "Traces over 100 ms",
+     "datasource": {
+      "type": "tempo",
+      "uid": "ucloud-traces"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "tempo",
+        "uid": "ucloud-traces"
+       },
+       "limit": 50,
+       "query": "{ duration > 100ms }",
+       "queryType": "traceql",
+       "refId": "A",
+       "tableType": "traces"
+      }
+     ],
+     "id": 28,
+     "gridPos": {
+      "h": 8,
+      "w": 10,
+      "x": 14,
+      "y": 22
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Registry disk",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "ucloud_fleet_registry_disk_bytes",
+       "legendFormat": "{{kind}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "bytes",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       "min": 0
+      },
+      "overrides": []
+     },
+     "id": 29,
+     "gridPos": {
+      "h": 6,
+      "w": 8,
+      "x": 0,
+      "y": 30
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Postgres p95",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(ucloud_platform_postgres_duration_seconds_bucket[$__rate_interval])))",
+       "legendFormat": "{{service_name}}",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "s",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       }
+      },
+      "overrides": []
+     },
+     "id": 30,
+     "gridPos": {
+      "h": 6,
+      "w": 8,
+      "x": 8,
+      "y": 30
+     }
+    },
+    {
+     "type": "timeseries",
+     "title": "Telemetry drops",
+     "description": "",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ucloud-metrics"
+     },
+     "targets": [
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "sum(ucloud_fleet_telemetry_spans{kind=\"dropped\"})",
+       "legendFormat": "dropped spans",
+       "refId": "A",
+       "range": true,
+       "instant": false
+      },
+      {
+       "datasource": {
+        "type": "prometheus",
+        "uid": "ucloud-metrics"
+       },
+       "expr": "sum(ucloud_fleet_telemetry_failed_exports)",
+       "legendFormat": "failed exports",
+       "refId": "B",
+       "range": true,
+       "instant": false
+      }
+     ],
+     "options": {
+      "legend": {
+       "displayMode": "list",
+       "placement": "bottom",
+       "calcs": []
+      },
+      "tooltip": {
+       "mode": "multi",
+       "sort": "desc"
+      }
+     },
+     "fieldConfig": {
+      "defaults": {
+       "unit": "short",
+       "custom": {
+        "lineWidth": 1,
+        "fillOpacity": 0,
+        "showPoints": "never",
+        "spanNulls": true,
+        "stacking": {
+         "mode": "none",
+         "group": "A"
+        }
+       },
+       "min": 0
+      },
+      "overrides": []
+     },
+     "id": 31,
+     "gridPos": {
+      "h": 6,
+      "w": 8,
+      "x": 16,
+      "y": 30
+     }
+    }
+   ]
+  }
+ ]
+}
