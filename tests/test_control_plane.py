@@ -2717,6 +2717,37 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertFalse(authorized_metrics["telemetry"]["enabled"])
         self.assertNotIn("traces", authorized_metrics)
 
+    def test_prometheus_metrics_need_the_gateway_token(self) -> None:
+        with _temporary_root() as root:
+            gateway = _gateway_server(self,
+                root,
+                routing_file=root / "routes.sqlite",
+                gateway_bearer_token="secret-token",
+                sandbox_api_token="sandbox-api-secret",
+                metrics_file=root / "metrics.sqlite",
+            )
+            with _running_server(gateway) as base:
+                statuses = {}
+                for name, token in (("none", None), ("sdk", "sandbox-api-secret")):
+                    try:
+                        request.urlopen(request.Request(
+                            f"{base}/v1/metrics/prometheus",
+                            headers={"Authorization": f"Bearer {token}"} if token else {},
+                        ), timeout=5)
+                    except error.HTTPError as exc:
+                        statuses[name] = exc.code
+                        exc.close()
+                with request.urlopen(request.Request(
+                    f"{base}/v1/metrics/prometheus",
+                    headers={"Authorization": "Bearer secret-token"},
+                ), timeout=5) as response:
+                    content_type = response.headers.get("Content-Type")
+                    text = response.read().decode("utf-8")
+
+        self.assertEqual(statuses, {"none": 401, "sdk": 403})
+        self.assertTrue((content_type or "").startswith("text/plain; version=0.0.4"))
+        self.assertIn('ucloud_fleet_nodes{state="total"} 0', text)
+
     def test_gateway_create_burst_returns_only_retryable_json(self) -> None:
         with _temporary_root() as raw_path:
             gateway = _gateway_server(self,

@@ -1273,9 +1273,11 @@ def build_metrics_snapshot(
         for route in routing_state.sandboxes.values()
     )
     sandbox_state_counts: dict[str, int] = {}
+    worker_state_counts: dict[str, int] = {}
     for route in routing_state.sandboxes.values():
         state = str(route.state or "unknown").strip().lower() or "unknown"
         sandbox_state_counts[state] = sandbox_state_counts.get(state, 0) + 1
+        worker_state_counts[route.worker_state] = worker_state_counts.get(route.worker_state, 0) + 1
     fresh_resources = _aggregate_node_resources(fresh)
     sandbox_resources = _aggregate_node_resources(sandbox_nodes)
     builder_resources = _aggregate_node_resources(builder_nodes)
@@ -1357,6 +1359,7 @@ def build_metrics_snapshot(
             "provisional_running_routes": provisional_running,
             "stale_routes": stale_routes,
             "states": dict(sorted(sandbox_state_counts.items())),
+            "worker_states": dict(sorted(worker_state_counts.items())),
             "pending": len(capacity_pending_sandboxes),
             "pending_resources": _sum_pending_resources(
                 capacity_pending_sandboxes

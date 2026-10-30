@@ -142,6 +142,7 @@ from .metrics import (
     record_sandbox_pending_deleted,
     record_sandbox_scheduled,
 )
+from .metrics_prometheus import CONTENT_TYPE as PROMETHEUS_CONTENT_TYPE, render_snapshot
 from .telemetry import Telemetry
 from .models import (
     NodeHeartbeat,
@@ -518,6 +519,18 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 self._write_routing_store_unavailable(exc)
                 return
             self._write_json(demand_payload)
+            return
+        if parsed.path == "/v1/metrics/prometheus":
+            try:
+                body = self._metrics_response_bytes(full=False, refresh_registry=False)
+            except sqlite3.DatabaseError as exc:
+                self._write_routing_store_unavailable(exc)
+                return
+            self._write_bytes(
+                render_snapshot(json.loads(body)).encode("utf-8"),
+                PROMETHEUS_CONTENT_TYPE,
+                headers={"Cache-Control": "no-store"},
+            )
             return
         if parsed.path == "/v1/metrics":
             try:
