@@ -358,7 +358,7 @@ Restart=always
 RestartSec=5
 ExecStartPre=-/usr/bin/docker network create ucloud-telemetry
 ExecStartPre=-/usr/bin/docker rm -f ucloud-telemetry-grafana
-ExecStart=/usr/bin/docker run --name ucloud-telemetry-grafana --network ucloud-telemetry --memory 384m --cpus 0.50 --cpu-shares 256 --log-driver journald --env-file $grafana_env -e GF_AUTH_ANONYMOUS_ENABLED=false -e GF_USERS_ALLOW_SIGN_UP=false -e GF_ANALYTICS_REPORTING_ENABLED=false -e GF_ANALYTICS_CHECK_FOR_UPDATES=false -e GF_PLUGINS_PREINSTALL_SYNC=yesoreyeram-infinity-datasource@4.1.1 -e GF_PLUGINS_PREINSTALL_AUTO_UPDATE=false -e GF_SERVER_DOMAIN=$grafana_domain $grafana_public_env -p 127.0.0.1:3000:3000 -v $data_root/grafana:/var/lib/grafana -v $grafana_provisioning:/etc/grafana/provisioning:ro -v $config_root/grafana/dashboards:/var/lib/grafana/dashboards:ro -v $config_root/grafana/gateway-token:/etc/grafana/gateway-token:ro grafana/grafana:13.2.4
+ExecStart=/usr/bin/docker run --name ucloud-telemetry-grafana --network ucloud-telemetry --memory 1536m --cpus 1.0 --cpu-shares 256 --log-driver journald --env-file $grafana_env -e GF_AUTH_ANONYMOUS_ENABLED=false -e GF_USERS_ALLOW_SIGN_UP=false -e GF_ANALYTICS_REPORTING_ENABLED=false -e GF_ANALYTICS_CHECK_FOR_UPDATES=false -e GF_PLUGINS_PREINSTALL_SYNC=yesoreyeram-infinity-datasource@4.1.1 -e GF_PLUGINS_PREINSTALL_AUTO_UPDATE=false -e GF_SERVER_DOMAIN=$grafana_domain $grafana_public_env -p 127.0.0.1:3000:3000 -v $data_root/grafana:/var/lib/grafana -v $grafana_provisioning:/etc/grafana/provisioning:ro -v $config_root/grafana/dashboards:/var/lib/grafana/dashboards:ro -v $config_root/grafana/gateway-token:/etc/grafana/gateway-token:ro grafana/grafana:13.2.4
 ExecStop=/usr/bin/docker stop --time 20 ucloud-telemetry-grafana
 TimeoutStopSec=30
 
