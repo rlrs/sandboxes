@@ -71,6 +71,7 @@ All routes are JSON unless noted. "Op" means the gateway control token only.
 | **Images** | | |
 | `GET`, `PUT /v1/image-contexts/sha256:<hex>` | SDK | Probe or upload a `tar.gz` build context. |
 | `POST /v1/images/build`; `GET /v1/images/builds[/<id>]` | SDK | Build an image; list or poll builds. |
+| `POST /v1/images/builds/<id>:cancel` | Op | Cancel a queued or running build (builder or sandbox build): `200` with it now `failed`, `202` while it stops, `409` with its record once finished (a repeat cancel too), `404` if unknown. |
 | `GET /v1/images`; `POST /v1/images/pull` | SDK | Image inventory; pre-pull an image onto workers. |
 | `POST /v1/image-recipes` | SDK | Register image names and their recipes. |
 | `POST /v1/images/ensure` | SDK | Report each name's state and start missing builds. |

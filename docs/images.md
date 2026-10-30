@@ -129,7 +129,9 @@ the base bootstrap and signed. `/tmp` and `/run` are not committed. Build
 steps' apt and github.com git traffic go through the store node's package
 cache and authenticated git proxy (GitHub refuses anonymous git from the
 fleet). Only this service holds the S3 and signing keys, never the gateway's
-API processes.
+API processes. An operator cancel fails a queued job in the spool, or leaves a
+cancel marker the runner checks while it waits: it kills the steps, deletes
+the sandbox and writes a failed result, which ensure retries like any failure.
 
 **Builder builds.** Builder VMs (`serve-builder-agent`) run Docker with
 BuildKit; the gateway scales the pool up to `builder.max_nodes`. Each builder

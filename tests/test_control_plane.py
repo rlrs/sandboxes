@@ -14,6 +14,7 @@ import json
 import hashlib
 from pathlib import Path
 import sqlite3
+import sys
 import tarfile
 from urllib import error, request
 import unittest
@@ -33,6 +34,7 @@ from tests.gateway_support import gateway_services
 from sandboxes.control_plane import (
     build_server as _build_server,
 )
+from sandboxes.build_deadline import BUILD_CANCELLED_ERROR
 from sandboxes.deployment import package_version
 from sandboxes.images import (
     DockerImageRuntime,
@@ -3811,6 +3813,56 @@ class ControlPlaneTests(unittest.TestCase):
 
         self.assertEqual(response["status"], 409)
         self.assertEqual(CountingNode.creates, 0)
+
+    @requires_postgres
+    def test_operator_cancels_a_builders_build_through_the_gateway(self) -> None:
+        class SlowRuntime(DockerImageRuntime):
+            def build_command(self, spec, **kwargs):
+                return (sys.executable, "-c", "import time; time.sleep(60)")
+
+        with _temporary_root() as root:
+            builder = build_builder_node_agent_server(
+                "127.0.0.1", 0,
+                state_file=root / "builder-sandboxes.json",
+                image_file=root / "builder-images.json",
+                job_id="job-builder", node_id="builder-1",
+                image_runtime=SlowRuntime(), node_control_bearer_token="node-secret",
+            )
+            gateway = _gateway_server(self, root, routing_file=root / "routes.json",
+                                      gateway_bearer_token="gateway-secret", node_control_bearer_token="node-secret")
+            with _running_server(builder) as builder_url, _running_server(gateway) as base:
+                post_heartbeat_with_headers(
+                    f"{base}/v1/nodes/heartbeat",
+                    build_heartbeat(
+                        job_id="job-builder", node_id="builder-1",
+                        node_epoch=builder.RequestHandlerClass.node_epoch, node_url=builder_url,
+                        capabilities=("image-cache", "image-build"),
+                        total_resources=ResourceQuantity(vcpu=16, memory_mb=49152, disk_mb=200000),
+                    ),
+                    {"Authorization": "Bearer test-heartbeat-secret"},
+                )
+                context = _store_build_context(builder, _tar_gz_context({"Dockerfile": b"FROM scratch\n"}))
+                started = self._json_request(f"{builder_url}/v1/images/build", method="POST", payload={
+                    "id": "slow", "tag": "registry.example.org/slow:latest", "wait": False, **context})
+                build_id = started["build"]["build_id"]
+                admin = {"Authorization": "Bearer gateway-secret"}
+                sdk = {"Authorization": "Bearer test-sandbox-api-secret"}
+                cancel = f"{base}/v1/images/builds/{build_id}:cancel"
+
+                refused = self._json_request(cancel, method="POST", headers=sdk, allow_error=True)
+                self.assertEqual(refused["status"], 403)  # Operators only; the SDK may only read builds.
+                missing = self._json_request(f"{base}/v1/images/builds/missing:cancel", method="POST",
+                                             headers=admin, allow_error=True)
+                self.assertEqual(missing["status"], 404)
+
+                cancelled = self._json_request(cancel, method="POST", headers=admin)["build"]
+                self.assertEqual((cancelled["build_id"], cancelled["status"], cancelled["error"], cancelled["location"]),
+                                 (build_id, "failed", BUILD_CANCELLED_ERROR, "builder-1"))
+                again = self._json_request(cancel, method="POST", headers=admin, allow_error=True)
+                self.assertEqual((again["status"], again["body"]["build"]["status"], again["body"]["build"]["error"]),
+                                 (409, "failed", BUILD_CANCELLED_ERROR))
+                shown = self._json_request(f"{base}/v1/images/builds/{build_id}", headers=sdk)["build"]
+                self.assertEqual((shown["status"], shown["error"]), ("failed", BUILD_CANCELLED_ERROR))
 
     def _json_request(
         self,

@@ -102,6 +102,7 @@ from .gateway.registry_refs import (
 )
 from .gateway.request_parsing import (
     _builder_prepare_id_from_path, _exec_session_id_from_path, _image_build_key_from_path,
+    _image_build_cancel_key_from_path,
     _prepare_id_from_path, _prepared_resources_from_payload, _sandbox_detach_id_from_path,
     _sandbox_id_from_path, _sandbox_migration_id_from_path, _strict_positive_integer,
     _truthy_query_param, _validate_prepared_resources,
@@ -215,6 +216,9 @@ _BUILD_CONTEXT_PROBE_MIN_BYTES = 1024 * 1024
 DEFAULT_MAX_BUILD_CONTEXT_ENTRIES = 8192
 DEFAULT_MAX_BUILD_CONTEXT_AGE_SECONDS = 24 * 60 * 60
 NODE_RECONCILE_PROXY_TIMEOUT_SECONDS = 5
+# Above the builder's own wait for a cancelled build to stop
+# (images.BUILD_CANCEL_WAIT_SECONDS), which then answers 202.
+IMAGE_BUILD_CANCEL_PROXY_TIMEOUT_SECONDS = 15
 NODE_RECOVERY_PROXY_TIMEOUT_SECONDS = 5
 SANDBOX_GENERATION_HEADER = "X-UCloud-Sandbox-Generation"
 SANDBOX_OPERATION_ID_HEADER = "X-UCloud-Sandbox-Operation-Id"
@@ -721,6 +725,10 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             return True
         if path.startswith("/v1/image-index") and self.command == "GET":
             self._read_image_index(path)
+            return True
+        cancel_build_key = _image_build_cancel_key_from_path(path)
+        if cancel_build_key is not None and self.command == "POST":
+            self._cancel_image_build(cancel_build_key)
             return True
         build_key = _image_build_key_from_path(path)
         if build_key is not None and self.command == "GET":
@@ -2143,6 +2151,13 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         self._write_json({"builds": self._image_build_records_across_nodes()})
 
     def _get_image_build(self, build_key: str) -> None:
+        if self.sandbox_builds is not None and build_key.startswith("sandbox:"):
+            build = self.sandbox_builds.record(build_key)
+            if build is None:
+                self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            else:
+                self._write_json({"build": build})
+            return
         try:
             builds = self._image_build_records_for_key(build_key)
         except ImageBuildLookupUnavailableError as exc:
@@ -2176,6 +2191,71 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             self.routing_store.clear_pending_image_build(selected_image_id)
         self._record_successful_build_image(selected)
         self._write_json({"build": selected})
+
+    def _cancel_image_build(self, build_key: str) -> None:
+        """POST /v1/images/builds/<id>:cancel (docs/api.md): a spool build
+        through the spool, a builder's build on the builder that owns it."""
+        def unavailable(error: str) -> None:
+            self._write_json(
+                {"error": error, "error_code": "image_build_cancel_unavailable", "retryable": True},
+                status=HTTPStatus.SERVICE_UNAVAILABLE,
+                headers={"Retry-After": "2", "X-UCloud-Sandbox-Retryable": "true"},
+            )
+
+        statuses = {"cancelled": HTTPStatus.OK, "stopping": HTTPStatus.ACCEPTED,
+                    "finished": HTTPStatus.CONFLICT}
+        if build_key.startswith("sandbox:"):
+            outcome, build = (self.sandbox_builds.cancel(build_key) if self.sandbox_builds is not None
+                              else (None, None))
+            if outcome is None:
+                self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            payload = {"build": build}
+            if outcome == "finished":
+                payload["error"] = "image build already finished"
+            self._write_json(payload, status=statuses[outcome])
+            return
+        try:
+            builds = self._image_build_records_for_key(build_key)
+        except ImageBuildLookupUnavailableError as exc:
+            unavailable(str(exc))
+            return
+        build = next((item for item in builds if item.get("build_id") == build_key), None)
+        if build is None:
+            self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        owner = next((heartbeat for heartbeat in self.services.fleet.ready_heartbeats()
+                      if "image-build" in heartbeat.capabilities
+                      and heartbeat.node_id == build.get("location")), None)
+        if owner is None:
+            unavailable("the builder that owns this build is not ready")
+            return
+        try:
+            response = self._proxy_request(
+                owner.node_url or "",
+                "/v1/images/builds/" + quote(build_key, safe="") + ":cancel",
+                method="POST",
+                timeout_seconds=IMAGE_BUILD_CANCEL_PROXY_TIMEOUT_SECONDS,
+            )
+            payload = response.json()
+        except (OSError, ValueError) as exc:
+            unavailable(f"the builder did not answer the cancellation: {exc}")
+            return
+        record = payload.get("build") if isinstance(payload, dict) else None
+        if response.status == HTTPStatus.NOT_FOUND:
+            self._write_json({"error": "image build not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        if response.status not in statuses.values() or not isinstance(record, dict):
+            unavailable(str((payload or {}).get("error") or f"the builder answered {response.status}"))
+            return
+        record = {**record, "location": owner.node_id, "node": _node_metadata(owner)}
+        if _image_build_response_terminal({"build": record}):
+            self.routing_store.clear_pending_image_build(str(record.get("image_id") or ""))
+            self._record_successful_build_image(record)
+        answer: dict[str, Any] = {"build": record}
+        if response.status == HTTPStatus.CONFLICT:
+            answer["error"] = "image build already finished"
+        self._write_json(answer, status=response.status)
 
     def _image_build_records_for_key(self, build_key: str) -> list[dict[str, Any]]:
         """Read one build, using an incarnation-checked owner hint for exact IDs.

@@ -52,6 +52,14 @@ def _image_build_key_from_path(path: str) -> str | None:
     return _collection_id_from_path(path, "/v1/images/builds/")
 
 
+def _image_build_cancel_key_from_path(path: str) -> str | None:
+    """The build id of POST /v1/images/builds/<id>:cancel, else None."""
+    key = _image_build_key_from_path(path)
+    if key is None or not key.endswith(":cancel") or "/" in path[len("/v1/images/builds/"):]:
+        return None
+    return key[: -len(":cancel")] or None
+
+
 def _exec_session_id_from_path(path: str) -> str | None:
     return _collection_id_from_path(path, "/v1/exec/")
 
