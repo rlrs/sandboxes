@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.10.2 - 2026-10-30 (gateway; workers; builders)
+
+- **Grafana replaces the built-in operator dashboard.** `sandboxes/dashboard/`
+  is gone, and `GET /` and `/dashboard` now need a token like every route except
+  `/healthz`. `GET /v1/metrics` stays.
+  - **New route:** `GET /v1/metrics/prometheus` (gateway token) renders the same
+    snapshot as `ucloud_fleet_*` gauges for VictoriaMetrics.
+  - **Snapshot fields:** the snapshot gains `sandboxes.worker_states` and
+    per-node `operator_drained` and `soft_drained`.
+  - **Installer:** `install_ucloud_observability_stack.sh` now installs:
+    - Grafana 13.2.4, with anonymous access off and 1.5 GiB of memory;
+    - `--public-url` for a sub-path behind TLS;
+    - the Infinity data source 4.1.1 as a gateway data source;
+    - a 15 s scrape of the new endpoint.
+  - **Gateway token:** the scraper and Grafana read it from root-owned copies.
+  - **Dashboards:** they are files in `scripts/ops/grafana/dashboards`; the new
+    one is "Sandboxes fleet".
+  - **Ingress:** `configure_hetzner_sdk_ingress.sh --grafana-port` publishes
+    Grafana under `/grafana/`. It also publishes `/grafana/ops/`, which forwards
+    a short list of operator routes with the gateway token. Only a signed-in
+    Grafana session that sends `X-UCloud-Ops: 1` can use it.
+  - **Removed:** `install_hetzner_otlp_stack.sh`; it installed the same units.
+  - **Rollback to 0.10.1** needs nothing on the gateway. Grafana and the ingress
+    keep working, but the fleet panels and controls stop answering.
+- **Operator controls** (gateway token only):
+  - **Drain:** `POST /v1/nodes/<job>/drain` sets a controller-owned heartbeat
+    label. Placement reads it as closed admission at once. The autoscaler then
+    retires the worker as it does a failing host: no capacity, parks moved
+    away, and a stop through the drain handshake once idle.
+  - **Evict:** `{"evict": true}` also deletes the worker's sandboxes.
+  - **Undrain:** `DELETE` undoes the drain.
+  - **Queued creates:** `GET /v1/creates` lists them, and
+    `POST /v1/creates:cancel` cancels the named ones or all of them. Each
+    waiting POST is answered 410.
+  - **Build cancel:** `POST /v1/images/builds/<id>:cancel` stops a builder build
+    or a spool build. It answers 200 once the build is failed with "image build
+    cancelled by an operator", 202 while it stops, and 409 once finished.
+    `GET /v1/images/builds/<sandbox:...>` now answers from the spool.
+  - **Bundles:** cancelling a builder build needs a builder initialized with
+    this release's bundle.
+- **Soft drain no longer waits out all pending demand.** The new flag
+  `policy.drain_on_park_with_pending_enabled` (default off) lets a surplus
+  worker drain while pending creates fit on the others.
+
 ## 0.10.1 - 2026-10-24 (gateway; workers; builders)
 
 - **Sandbox workers only run immutable environments; their Docker image path
