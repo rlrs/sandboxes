@@ -352,6 +352,24 @@ map \$http_upgrade \$ucloud_connection_upgrade {
         proxy_set_header Host \$host;
     }
 
+    # Panel actions send only GET or POST: POST .../undrain is DELETE .../drain.
+    location ~ ^/grafana/ops/v1/nodes/(?<ucloud_ops_job>[^/]+)/undrain\$ {
+        if (\$http_x_ucloud_ops != 1) {
+            return 403;
+        }
+        auth_request /_ucloud_grafana_session;
+        include $ops_token_conf;
+        proxy_method DELETE;
+        proxy_pass http://127.0.0.1:$gateway_port/v1/nodes/\$ucloud_ops_job/drain;
+        proxy_pass_request_body off;
+        proxy_http_version 1.1;
+        proxy_set_header Content-Length \"\";
+        proxy_set_header Host \$host;
+        proxy_set_header Cookie \"\";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+
     location ~ ^/grafana/ops(?<ucloud_ops_path>/v1/(?:nodes/[^/]+/drain|creates|creates:cancel|images/builds|images/builds/[^/]+:cancel))\$ {
         if (\$http_x_ucloud_ops != 1) {
             return 403;
