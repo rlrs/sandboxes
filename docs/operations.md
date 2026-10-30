@@ -246,19 +246,30 @@ recovery. Alerts go to `journalctl -u ucloud-sandbox-ops-watch`; set
 them to a Slack-compatible webhook. Thresholds are `ops_watch.py` options.
 
 **Telemetry.** `install_ucloud_observability_stack.sh` runs an OTLP
-collector (port 4318), Tempo (72 h), VictoriaMetrics (14 days) and Grafana on
-the gateway's local disk (never on `/work`); losing the gateway loses it.
-The first stop is the secret-free JSON report (health, latency percentiles,
-errors, slow traces), from a checkout with the UCloud CLI logged in:
+collector (port 4318), Tempo (72 h), VictoriaMetrics (14 days) and Grafana 13
+on the gateway's local disk (never on `/work`); losing the gateway loses it.
+VictoriaMetrics scrapes the fleet snapshot (`/v1/metrics/prometheus`) every
+15 s. Dashboards are files in `scripts/ops/grafana/dashboards`: **Sandboxes
+fleet** (workers, capacity, autoscaler decisions, sandbox and program states,
+queued creates, builds, registry disk) and **hot paths** (latency, errors,
+traces). Grafana's admin password is in `/etc/ucloud-sandboxes/telemetry/grafana.env`;
+anonymous access is off, and every Grafana account can use the controls.
 
-```bash
-scripts/ops/read_ucloud_observability.sh <gateway-job-id> --window 30m --rate-window 5m --trace-limit 5
-```
+Grafana is public at `https://<public-host>/grafana/` with `--public-url` on
+the installer and `--grafana-port 3000` on `configure_hetzner_sdk_ingress.sh`;
+otherwise tunnel `-L 3000:127.0.0.1:3000`. Its table actions (drain, evict or
+undrain a worker; cancel queued creates and builds) call `/grafana/ops/`,
+which nginx forwards to the gateway's operator routes with the gateway token,
+only for a signed-in Grafana session sending `X-UCloud-Ops: 1`.
+On UCloud, the secret-free JSON report (health, latency percentiles, errors,
+slow traces) is `scripts/ops/read_ucloud_observability.sh <gateway-job-id>`.
+Sampled responses carry `X-Trace-Id`.
 
-For Grafana, tunnel `-L 3000:127.0.0.1:3000` over the SSH command that
-`ucloud jobs ssh <gateway-job-id> --print-only` prints and open
-`http://127.0.0.1:3000/d/ucloud-platform-hot-paths`. Sampled responses carry
-`X-Trace-Id`; `GET /v1/metrics` (gateway token) shows exporter drops.
+**Draining a worker.** `POST /v1/nodes/<job>/drain` (or the Grafana action)
+stops placement on it at once; the autoscaler then retires it like a failing
+host: its parks move away and it stops through the drain handshake once
+empty. `{"evict": true}` also deletes its sandboxes, so it stops without
+waiting for them. `DELETE` undoes a drain that has not stopped it yet.
 
 ## Store node
 
@@ -395,6 +406,9 @@ Required keys: `scope_id`, `network_id`, `sandbox_image`, `builder_image`
    `scripts/ops/install_hetzner_gateway.sh --public-ip <ipv4>`.
 4. `scripts/ops/configure_hetzner_sdk_ingress.sh --public-host <dns-or-ip>` (Nginx
    and Let's Encrypt; relay under `/relay/`).
+5. `install_ucloud_observability_stack.sh --private-bind-ip 10.42.0.2
+   --public-url https://<public-host>/grafana/`, then rerun step 4 with
+   `--grafana-port 3000`.
 
 Boot workers from a snapshot so the kernel matches the bundle: on a drained,
 disposable source server run
@@ -405,8 +419,8 @@ power off, snapshot, and canary one clone (create, exec, park, wake).
 
 `scripts/` holds the checks: `check.sh`, `run_tests.py`, and the two CI-only
 PostgreSQL checks. `scripts/ops/` holds the installers and operator tools for
-both providers, including `install_hetzner_otlp_stack.sh` (OTLP collector on a
-Hetzner gateway) and `qualify_hetzner_host.sh` (run by the snapshot script).
+both providers, including `qualify_hetzner_host.sh` (run by the snapshot
+script).
 `scripts/release/` builds and verifies bundles and wheels;
 `verify_heartbeat_upgrade.py` decodes retained heartbeat rows with a candidate
 package before a restart. `scripts/images/` holds the image index and

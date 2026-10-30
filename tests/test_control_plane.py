@@ -2652,7 +2652,7 @@ class ControlPlaneTests(unittest.TestCase):
         self.assertEqual(response.status, 403)
         self.assertEqual(stored, {})
 
-    def test_dashboard_assets_are_public_but_metrics_remain_protected(self) -> None:
+    def test_metrics_snapshot_needs_the_gateway_token(self) -> None:
         with _temporary_root() as root:
             gateway = _gateway_server(self,
                 root,
@@ -2661,58 +2661,18 @@ class ControlPlaneTests(unittest.TestCase):
                 metrics_file=root / "metrics.sqlite",
             )
             with _running_server(gateway) as base:
-                with request.urlopen(f"{base}/dashboard", timeout=5) as response:
-                    html = response.read().decode("utf-8")
-                    html_type = response.headers.get("Content-Type")
-                with request.urlopen(
-                    f"{base}/dashboard/dashboard.css",
-                    timeout=5,
-                ) as response:
-                    css = response.read().decode("utf-8")
-                    css_type = response.headers.get("Content-Type")
-                with request.urlopen(
-                    f"{base}/dashboard/dashboard.js",
-                    timeout=5,
-                ) as response:
-                    js = response.read().decode("utf-8")
-                    js_type = response.headers.get("Content-Type")
                 unauthorized_metrics = self._json_request(
                     f"{base}/v1/metrics",
                     allow_error=True,
                 )
+                unauthorized_root = self._json_request(f"{base}/", allow_error=True)
                 authorized_metrics = self._json_request(
                     f"{base}/v1/metrics",
                     headers={"Authorization": "Bearer secret-token"},
                 )
 
-        self.assertIn("text/html", html_type or "")
-        self.assertIn("UCloud Sandboxes", html)
-        self.assertIn("/dashboard/dashboard.js", html)
-        self.assertIn('data-page-target="scheduler"', html)
-        self.assertIn('data-page-target="nodes"', html)
-        self.assertIn('data-page-target="sandboxes"', html)
-        self.assertIn('data-page-target="registry"', html)
-        self.assertIn('id="sandboxStateFilter"', html)
-        self.assertNotIn('id="terminateAllSandboxesButton"', html)
-        self.assertNotIn('id="refreshSelect"', html)
-        self.assertNotIn('id="pauseButton"', html)
-        self.assertIn('id="refreshNowButton"', html)
-        self.assertNotIn("secret-token", html)
-        self.assertIn("text/css", css_type or "")
-        self.assertIn(".metric-grid", css)
-        self.assertIn(".sandbox-table", css)
-        self.assertIn(".registry-full-grid", css)
-        self.assertIn("application/javascript", js_type or "")
-        self.assertIn("/v1/metrics", js)
-        self.assertIn("/v1/sandboxes?refresh=true", js)
-        self.assertIn("terminateAllSandboxes", js)
-        self.assertIn("X-UCloud-Sandbox-Token", js)
-        self.assertIn("renderRegistryPage", js)
-        self.assertIn("const DEFAULT_REFRESH_INTERVAL_MS = 2000;", js)
-        self.assertIn("state.metricsRequest.abort()", js)
-        self.assertIn("scheduleNextRefresh", js)
-        self.assertNotIn("secret-token", js)
         self.assertEqual(unauthorized_metrics["status"], 401)
+        self.assertEqual(unauthorized_root["status"], 401)
         self.assertEqual(authorized_metrics["nodes"]["total"], 0)
         self.assertFalse(authorized_metrics["telemetry"]["enabled"])
         self.assertNotIn("traces", authorized_metrics)

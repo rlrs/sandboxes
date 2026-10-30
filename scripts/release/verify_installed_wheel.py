@@ -20,8 +20,6 @@ def main() -> None:
     schema = files("sandboxes.shared_control").joinpath("routing_schema.sql")
     assert schema.is_file(), "shared-control migrations are missing from the wheel"
     assert files("sandboxes.shared_control").joinpath("relay_schema.sql").is_file()
-    for name in ("index.html", "dashboard.css", "dashboard.js"):
-        assert files("sandboxes.dashboard").joinpath(name).is_file(), "dashboard assets are missing from the wheel"
 
 
 if __name__ == "__main__":

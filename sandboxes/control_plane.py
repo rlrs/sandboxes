@@ -62,7 +62,6 @@ from .build_context_store import (
     BuildContextHttpHandler,
     build_context_digest_from_path,
 )
-from .dashboard import dashboard_asset
 from .deployment import agent_version_is_schedulable, service_health
 from .storage_native_migration import (
     STORAGE_NATIVE_MIGRATION_SCHEMA,
@@ -470,25 +469,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 self._write_json(health, status=HTTPStatus.SERVICE_UNAVAILABLE)
             else:
                 self._write_json(health)
-            return
-        asset = dashboard_asset(parsed.path)
-        if asset is not None:
-            self._write_bytes(
-                asset.body,
-                asset.content_type,
-                headers={
-                    "Cache-Control": "no-store",
-                    "Content-Security-Policy": (
-                        "default-src 'self'; "
-                        "connect-src 'self'; "
-                        "script-src 'self'; "
-                        "style-src 'self'; "
-                        "object-src 'none'; "
-                        "base-uri 'none'; "
-                        "frame-ancestors 'none'"
-                    ),
-                },
-            )
             return
         if not self._check_authorized():
             return
@@ -1753,7 +1733,7 @@ class ControlPlaneHandler(BuildContextHttpHandler):
                 )
             )
             # High-rate heartbeats must not crowd the sparse provisioning
-            # and autoscaler records out of the dashboard snapshot.
+            # and autoscaler records out of the snapshot.
             supplemental = self.metrics_store.load_events(
                 max_events=2_000 if full else 500,
                 kinds=(
