@@ -624,6 +624,38 @@ class PlacementQueueHTTPTests(TestCase):
             self.assertIsNone(self.routing.get_pending("delete-queued"))
             self.assertFalse(self.create_calls)
 
+    def test_operator_lists_and_cancels_queued_creates(self):
+        names = ("operator-a", "operator-b")
+        with (
+            self.pipeline(create_claim_budget=0) as public,
+            ThreadPoolExecutor(len(names)) as requests,
+        ):
+            waiting = [requests.submit(self.request, public + "/v1/sandboxes", self.spec(name)) for name in names]
+            for name in names:
+                self.wait_for_command(name)
+            _, listed = self.request(public + "/v1/creates")
+            self.assertEqual(sorted((item["sandbox_id"], item["state"]) for item in listed["creates"]),
+                             [(name, "queued") for name in names])
+
+            with self.assertRaises(HTTPError) as invalid:
+                self.request(public + "/v1/creates:cancel", {"sandbox_ids": "operator-a"})
+            self.assertEqual(invalid.exception.code, 400)
+            invalid.exception.close()
+            self.assertEqual(
+                self.request(public + "/v1/creates:cancel", {"sandbox_ids": ["operator-a", "operator-a", "missing"]}),
+                (200, {"cancelled": ["operator-a"]}),
+            )
+            self.assertEqual(self.request(public + "/v1/creates:cancel", {"all": True}),
+                             (200, {"cancelled": ["operator-b"]}))
+            for result in waiting:
+                with self.assertRaises(HTTPError) as cancelled:
+                    result.result(5)
+                self.assertEqual(cancelled.exception.code, 410)
+                cancelled.exception.close()
+            self.assertEqual(self.request(public + "/v1/creates"), (200, {"creates": []}))
+            for name in names:
+                self.assertIsNone(self.routing.get_pending(name))
+
     def test_delete_bound_create_does_not_authorize_replay_as_new_incarnation(self):
         from urllib.error import HTTPError
 

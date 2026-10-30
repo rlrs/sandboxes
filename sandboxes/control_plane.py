@@ -79,7 +79,7 @@ from .gateway.create import (
 from .gateway.fleet import _heartbeat_has_image, _node_metadata, _requested_image_cache_keys
 from .gateway.groups import GROUP_PATH, group_id_from_path, parse_group_request
 from .gateway.heartbeats import PULL_TIMEOUT_SECONDS
-from .gateway.operator import drain_job_id_from_path
+from .gateway.operator import CREATES_CANCEL_PATH, CREATES_PATH, drain_job_id_from_path
 from .gateway.job_reads import (
     cache_parked_job, cached_job_logs_response, cached_job_status_response,
     job_read_timeout_seconds, job_read_wait_ms, project_job_response, record_job_response,
@@ -676,6 +676,18 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             else:
                 status, payload, headers = self.services.groups.delete(self, group_id)
             self._write_json(payload, status=status, headers=headers)
+            return True
+        if path == CREATES_PATH and self.command == "GET":
+            self._write_json(self.services.queued_creates.list())
+            return True
+        if path == CREATES_CANCEL_PATH and self.command == "POST":
+            try:
+                raw = self._read_json_body()
+            except ValueError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return True
+            status, payload = self.services.queued_creates.cancel(raw)
+            self._write_json(payload, status=status)
             return True
         drain_job_id = drain_job_id_from_path(path)
         if drain_job_id is not None and self.command in {"POST", "DELETE"}:

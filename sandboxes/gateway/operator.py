@@ -1,11 +1,16 @@
-"""Operator drain of a worker: ``POST`` and ``DELETE /v1/nodes/<job>/drain``.
+"""Operator controls: drain a worker, and list or cancel queued creates.
 
+``POST`` and ``DELETE /v1/nodes/<job>/drain``:
 A drained worker takes no new work at once (placement reads the controller
 label as closed admission) and the autoscaler retires it as it does a failing
 host: its parks move away and it stops through the drain handshake once empty.
 ``{"evict": true}`` also deletes the sandboxes it holds, each through the
 gateway's own single-sandbox delete, so the stop does not wait for them.
 Running sandboxes are never cut off any other way.
+
+``GET /v1/creates`` lists creates still waiting for placement and
+``POST /v1/creates:cancel`` cancels some or all; each waiting POST is answered
+410, as a delete of the sandbox answers it.
 """
 from __future__ import annotations
 
@@ -63,3 +68,33 @@ class OperatorDrains:
             return HTTPStatus.NOT_FOUND, {"error": "node not found", "job_id": job_id}
         self.store.clear_operator_drain(job_id)
         return HTTPStatus.OK, {"job_id": job_id, "draining": False}
+
+
+CREATES_PATH, CREATES_CANCEL_PATH = "/v1/creates", "/v1/creates:cancel"
+
+
+class QueuedCreates:
+    def __init__(self, routing_store: Any) -> None:
+        self.routing_store = routing_store
+
+    def list(self) -> dict[str, Any]:
+        now = utc_now()
+        return {"creates": [
+            {"sandbox_id": row["sandbox_id"], "state": row["state"], "attempts": row["attempts"],
+             "created_at": row["created_at"].isoformat(), "deadline": row["deadline"].isoformat(),
+             "age_seconds": max(0, int((now - row["created_at"]).total_seconds()))}
+            for row in self.routing_store.open_create_commands_readonly()
+        ]}
+
+    def cancel(self, request: object) -> tuple[int, dict[str, Any]]:
+        if request == {"all": True}:
+            sandbox_ids = [row["sandbox_id"] for row in self.routing_store.open_create_commands_readonly()]
+        elif (isinstance(request, dict) and set(request) == {"sandbox_ids"}
+              and isinstance(request["sandbox_ids"], list)
+              and all(isinstance(item, str) and item for item in request["sandbox_ids"])):
+            sandbox_ids = request["sandbox_ids"]
+        else:
+            return HTTPStatus.BAD_REQUEST, {"error": 'the body is {"all": true} or {"sandbox_ids": [<id>, ...]}'}
+        cancelled = [sandbox_id for sandbox_id in dict.fromkeys(sandbox_ids)
+                     if self.routing_store.cancel_create_commands(sandbox_id)]
+        return HTTPStatus.OK, {"cancelled": cancelled}
