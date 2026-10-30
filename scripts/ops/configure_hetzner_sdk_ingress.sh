@@ -9,6 +9,12 @@ Options:
   --gateway-port <port>  Loopback gateway port (default: 8090)
   --relay-port <port>    Loopback model relay port, published under /relay/
                          (default: 8092)
+  --grafana-port <port>  Publish loopback Grafana under /grafana/ and its
+                         operator controls under /grafana/ops/ (signed-in
+                         Grafana sessions only; nginx adds the gateway token)
+  --gateway-token-file <path>
+                         Token /grafana/ops/ forwards with (default:
+                         /var/lib/ucloud-sandboxes/state/gateway-token)
   --email <address>      ACME account email (recommended)
   --staging              Use Let's Encrypt staging for a non-trusted test cert
 EOF
@@ -17,6 +23,8 @@ EOF
 public_host=""
 gateway_port=8090
 relay_port=8092
+grafana_port=""
+gateway_token_file=/var/lib/ucloud-sandboxes/state/gateway-token
 email=""
 staging=false
 while (($#)); do
@@ -43,6 +51,22 @@ while (($#)); do
         exit 2
       fi
       relay_port="${2:-}"
+      shift 2
+      ;;
+    --grafana-port)
+      if (($# < 2)); then
+        usage
+        exit 2
+      fi
+      grafana_port="${2:-}"
+      shift 2
+      ;;
+    --gateway-token-file)
+      if (($# < 2)); then
+        usage
+        exit 2
+      fi
+      gateway_token_file="${2:-}"
       shift 2
       ;;
     --email)
@@ -80,6 +104,15 @@ fi
 if [[ ! "$relay_port" =~ ^[0-9]+$ ]] \
   || ((relay_port < 1 || relay_port > 65535)); then
   echo "relay port must be between 1 and 65535" >&2
+  exit 2
+fi
+if [[ -n "$grafana_port" ]] && { [[ ! "$grafana_port" =~ ^[0-9]+$ ]] \
+  || ((grafana_port < 1 || grafana_port > 65535)); }; then
+  echo "grafana port must be between 1 and 65535" >&2
+  exit 2
+fi
+if [[ -n "$grafana_port" && ! -s "$gateway_token_file" ]]; then
+  echo "--gateway-token-file must name the gateway token" >&2
   exit 2
 fi
 if [[ -z "$public_host" || "$public_host" == *:* || "$public_host" == */* ]]; then
@@ -284,6 +317,57 @@ if [[ ! -s "$certificate_dir/fullchain.pem" || ! -s "$certificate_dir/privkey.pe
   "$certbot_root/bin/certbot" "${certbot_args[@]}"
 fi
 
+observability_maps=""
+observability_locations=""
+if [[ -n "$grafana_port" ]]; then
+  ops_token_conf=/etc/nginx/ucloud-sandboxes-ops-token.conf
+  (umask 077 && printf 'proxy_set_header Authorization "Bearer %s";\n' \
+    "$(tr -d '[:space:]' <"$gateway_token_file")" >"$ops_token_conf")
+  observability_maps="
+map \$http_upgrade \$ucloud_connection_upgrade {
+    default upgrade;
+    '' close;
+}
+"
+  # /grafana/ops/ carries Grafana panel actions to the gateway's operator
+  # routes (under /grafana/, where Grafana's session cookie is sent): only a
+  # signed-in session (auth_request) with the X-UCloud-Ops header reaches the
+  # few routes listed, and nginx adds the gateway token. Grafana never sees them.
+  observability_locations="
+    location /grafana/ {
+        proxy_pass http://127.0.0.1:$grafana_port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$ucloud_connection_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+
+    location = /_ucloud_grafana_session {
+        internal;
+        proxy_pass http://127.0.0.1:$grafana_port/grafana/api/user;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length \"\";
+        proxy_set_header Host \$host;
+    }
+
+    location ~ ^/grafana/ops(?<ucloud_ops_path>/v1/(?:nodes/[^/]+/drain|creates|creates:cancel|images/builds|images/builds/[^/]+:cancel))\$ {
+        if (\$http_x_ucloud_ops != 1) {
+            return 403;
+        }
+        auth_request /_ucloud_grafana_session;
+        include $ops_token_conf;
+        proxy_pass http://127.0.0.1:$gateway_port\$ucloud_ops_path\$is_args\$args;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header Cookie \"\";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+"
+fi
+
 cat >"$temporary_site" <<EOF
 # The aiohttp relay releases request admission between keep-alive requests.
 # Cache only a small idle pool per nginx worker, below its five-second timeout.
@@ -302,7 +386,7 @@ map \$request_uri \$ucloud_relay_uri {
     ~^/relay(?<rest>/.*)\$ \$rest;
     default /;
 }
-
+$observability_maps
 server {
     listen 80;
     listen [::]:80;
@@ -348,7 +432,7 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header Proxy-Authorization "";
     }
-
+$observability_locations
     location / {
         proxy_pass http://127.0.0.1:$gateway_port;
         proxy_http_version 1.1;
@@ -396,3 +480,6 @@ printf 'sdk_url=https://%s\n' "$public_host"
 printf 'relay_url=https://%s/relay\n' "$public_host"
 printf 'tls_certificate=%s\n' "$certificate_dir/fullchain.pem"
 printf 'gateway_upstream=http://127.0.0.1:%s\n' "$gateway_port"
+if [[ -n "$grafana_port" ]]; then
+  printf 'grafana_url=https://%s/grafana/\n' "$public_host"
+fi

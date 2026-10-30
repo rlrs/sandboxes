@@ -6,26 +6,39 @@ usage() {
 usage: install_ucloud_observability_stack.sh \
   --private-bind-ip <ipv4> \
   [--endpoint-host <host>] \
-  [--data-root <absolute-path>]
+  [--data-root <absolute-path>] \
+  [--public-url https://<host>/grafana/] \
+  [--gateway-url http://<host>:<port>] \
+  [--gateway-token-file <path>]
 
 Installs a bounded single-gateway observability stack for UCloud. OTLP/HTTP is
 exposed only on the supplied private IP, or with 0.0.0.0 on every interface of
 a gateway whose only non-loopback network is the private one (UCloud VMs: the
 private address changes when the VM restarts; workers then reach the collector
 at --endpoint-host, the gateway's DNS name). Grafana, Tempo, and
-VictoriaMetrics query ports remain loopback-only and are intended to be
-reached through SSH.
+VictoriaMetrics query ports remain loopback-only. With --public-url, Grafana
+serves under that sub-path for a TLS proxy in front of it (anonymous access is
+always off). VictoriaMetrics scrapes the gateway's fleet metrics
+(/v1/metrics/prometheus at --gateway-url, default http://<endpoint-host>:8090)
+with the gateway token, which Grafana's gateway data source also reads; both
+read it from a root-owned copy, never from a dashboard.
 EOF
 }
 
 private_bind_ip=""
 endpoint_host=""
 data_root=/var/lib/ucloud-sandboxes/telemetry
+public_url=""
+gateway_url=""
+gateway_token_file=/var/lib/ucloud-sandboxes/state/gateway-token
 while (($#)); do
   case "$1" in
     --private-bind-ip) private_bind_ip="${2:-}"; shift 2 ;;
     --endpoint-host) endpoint_host="${2:-}"; shift 2 ;;
     --data-root) data_root="${2:-}"; shift 2 ;;
+    --public-url) public_url="${2:-}"; shift 2 ;;
+    --gateway-url) gateway_url="${2:-}"; shift 2 ;;
+    --gateway-token-file) gateway_token_file="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) usage; exit 2 ;;
   esac
@@ -59,6 +72,29 @@ case "$data_root/" in
     ;;
 esac
 
+gateway_url="${gateway_url:-http://$endpoint_host:8090}"
+if [[ ! "$gateway_url" =~ ^http://[A-Za-z0-9.-]+:[0-9]+$ ]]; then
+  echo "--gateway-url must be http://<host>:<port>" >&2
+  exit 2
+fi
+if [[ -n "$public_url" && ! "$public_url" =~ ^https://[A-Za-z0-9.-]+/[A-Za-z0-9._-]+/$ ]]; then
+  echo "--public-url must be https://<host>/<sub-path>/" >&2
+  exit 2
+fi
+if [[ ! -s "$gateway_token_file" ]]; then
+  echo "--gateway-token-file must name the gateway token" >&2
+  exit 2
+fi
+grafana_domain=127.0.0.1
+grafana_public_env=""
+grafana_health=http://127.0.0.1:3000/api/health
+if [[ -n "$public_url" ]]; then
+  grafana_domain="${public_url#https://}"
+  grafana_domain="${grafana_domain%%/*}"
+  grafana_public_env="-e GF_SERVER_ROOT_URL=$public_url -e GF_SERVER_SERVE_FROM_SUB_PATH=true -e GF_SECURITY_COOKIE_SECURE=true -e GF_SECURITY_COOKIE_SAMESITE=strict"
+  grafana_health="http://127.0.0.1:3000/${public_url#https://*/}api/health"
+fi
+
 config_root=/etc/ucloud-sandboxes/telemetry
 grafana_provisioning="$config_root/grafana/provisioning"
 grafana_env="$config_root/grafana.env"
@@ -76,6 +112,20 @@ install -d -m 0755 \
 chmod 0700 "$data_root/tempo" "$data_root/victoria-metrics"
 chown -R 472:0 "$data_root/grafana"
 chmod 0750 "$data_root/grafana"
+# The scraper runs as root and Grafana as uid 472; each gets its own copy.
+install -m 0400 -o root -g root "$gateway_token_file" "$config_root/gateway-token"
+install -m 0400 "$gateway_token_file" "$config_root/grafana/gateway-token"
+chown 472:0 "$config_root/grafana/gateway-token"
+cat >"$config_root/scrape.yaml" <<EOF
+scrape_configs:
+  - job_name: ucloud-gateway
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /v1/metrics/prometheus
+    bearer_token_file: /etc/victoria/gateway-token
+    static_configs:
+      - targets: ["${gateway_url#http://}"]
+EOF
 
 cat >"$config_root/tempo.yaml" <<'EOF'
 stream_over_http_enabled: true
@@ -160,7 +210,7 @@ service:
       level: normal
 EOF
 
-cat >"$grafana_provisioning/datasources/ucloud.yaml" <<'EOF'
+cat >"$grafana_provisioning/datasources/ucloud.yaml" <<EOF
 apiVersion: 1
 datasources:
   - name: UCloud Metrics
@@ -186,6 +236,18 @@ datasources:
         datasourceUid: ucloud-metrics
       nodeGraph:
         enabled: true
+  # Live lists (queued creates, builds) straight from the gateway's API.
+  - name: Gateway
+    uid: ucloud-gateway
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: $gateway_url
+    editable: false
+    jsonData:
+      allowedHosts: ["$gateway_url"]
+      httpHeaderName1: Authorization
+    secureJsonData:
+      httpHeaderValue1: "Bearer \$__file{/etc/grafana/gateway-token}"
 EOF
 
 cat >"$grafana_provisioning/dashboards/ucloud.yaml" <<'EOF'
@@ -202,116 +264,10 @@ providers:
       path: /var/lib/grafana/dashboards
 EOF
 
-cat >"$config_root/grafana/dashboards/platform-hot-paths.json" <<'EOF'
-{
-  "annotations": {"list": []},
-  "editable": false,
-  "graphTooltip": 1,
-  "links": [],
-  "panels": [
-    {
-      "datasource": {"type": "prometheus", "uid": "ucloud-metrics"},
-      "description": "Completed instrumented platform operations per second.",
-      "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}}, "overrides": []},
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
-      "id": 1,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(rate(ucloud_platform_operation_count_total[$__rate_interval]))", "refId": "A"}],
-      "title": "Current operation rate",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "ucloud-metrics"},
-      "description": "Share of completed operations whose instrumented status is error.",
-      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.005}, {"color": "red", "value": 0.02}]}}, "overrides": []},
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
-      "id": 2,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "sum(rate(ucloud_platform_operation_count_total{status=\"error\"}[$__rate_interval])) / clamp_min(sum(rate(ucloud_platform_operation_count_total[$__rate_interval])), 0.000001)", "refId": "A"}],
-      "title": "Current error ratio",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "ucloud-metrics"},
-      "description": "Overall p95 across instrumented operations. Use the breakdown below to find the responsible operation.",
-      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1}, {"color": "red", "value": 5}]}}, "overrides": []},
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
-      "id": 3,
-      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(ucloud_platform_operation_duration_seconds_bucket[$__rate_interval])))", "refId": "A"}],
-      "title": "Overall latency p95",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "ucloud-metrics"},
-      "description": "Number of platform services that emitted operation metrics.",
-      "fieldConfig": {"defaults": {"decimals": 0, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 2}, {"color": "green", "value": 4}]}}, "overrides": []},
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
-      "id": 4,
-      "options": {"colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-      "targets": [{"expr": "count(count by (service_name) (ucloud_platform_operation_count_total))", "refId": "A"}],
-      "title": "Services reporting",
-      "type": "stat"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "ucloud-metrics"},
-      "description": "Tail latency by operation for the selected services. Parent operations include child time.",
-      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
-      "gridPos": {"h": 9, "w": 16, "x": 0, "y": 4},
-      "id": 5,
-      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [
-        {"expr": "histogram_quantile(0.95, sum by (le, operation) (rate(ucloud_platform_operation_duration_seconds_bucket{service_name=~\"$service\"}[$__rate_interval])))", "legendFormat": "p95 {{operation}}", "refId": "A"},
-        {"expr": "histogram_quantile(0.99, sum by (le, operation) (rate(ucloud_platform_operation_duration_seconds_bucket{service_name=~\"$service\"}[$__rate_interval])))", "legendFormat": "p99 {{operation}}", "refId": "B"}
-      ],
-      "title": "Which operation is slow?",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "ucloud-metrics"},
-      "description": "Operations with errors in the visible time range, split by service.",
-      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
-      "gridPos": {"h": 9, "w": 8, "x": 16, "y": 4},
-      "id": 6,
-      "options": {"showHeader": true, "sortBy": [{"desc": true, "displayName": "Value"}]},
-      "targets": [{"expr": "sum by (service_name, operation) (increase(ucloud_platform_operation_count_total{status=\"error\",service_name=~\"$service\"}[$__range]))", "format": "table", "instant": true, "refId": "A"}],
-      "title": "What is failing?",
-      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}, "renameByName": {"Value": "Errors", "operation": "Operation", "service_name": "Service"}}}],
-      "type": "table"
-    },
-    {
-      "datasource": {"type": "prometheus", "uid": "ucloud-metrics"},
-      "description": "Traffic split by operation and outcome. Select a service at the top to narrow it.",
-      "fieldConfig": {"defaults": {"unit": "ops"}, "overrides": []},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
-      "id": 7,
-      "options": {"legend": {"calcs": [], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
-      "targets": [{"expr": "sum by (operation, status) (rate(ucloud_platform_operation_count_total{service_name=~\"$service\"}[$__rate_interval]))", "legendFormat": "{{operation}} / {{status}}", "refId": "A"}],
-      "title": "What is the system doing?",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {"type": "tempo", "uid": "ucloud-traces"},
-      "description": "Sampled traces over 100 ms. Open one to inspect phase spans and thread CPU attributes.",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
-      "id": 8,
-      "options": {"dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": false},
-      "targets": [{"limit": 50, "query": "{ duration > 100ms }", "queryType": "traceql", "refId": "A", "tableType": "traces"}],
-      "title": "Why was it slow?",
-      "type": "traces"
-    }
-  ],
-  "refresh": "10s",
-  "schemaVersion": 41,
-  "tags": ["ucloud", "production", "hot-path"],
-  "templating": {"list": [{"allValue": ".*", "current": {"text": "All", "value": "$__all"}, "datasource": {"type": "prometheus", "uid": "ucloud-metrics"}, "definition": "label_values(ucloud_platform_operation_count_total, service_name)", "includeAll": true, "label": "Service", "multi": true, "name": "service", "options": [], "query": {"query": "label_values(ucloud_platform_operation_count_total, service_name)", "refId": "StandardVariableQuery"}, "refresh": 1, "type": "query"}]},
-  "time": {"from": "now-1h", "to": "now"},
-  "timezone": "browser",
-  "title": "UCloud production behavior",
-  "uid": "ucloud-platform-hot-paths",
-  "version": 2
-}
-EOF
+# Dashboards are files beside this installer (scripts/ops/grafana/dashboards).
+for dashboard in "$installer_dir"/grafana/dashboards/*.json; do
+  install -m 0644 "$dashboard" "$config_root/grafana/dashboards/"
+done
 
 if [[ ! -s "$grafana_env" ]]; then
   umask 077
@@ -361,7 +317,7 @@ Restart=always
 RestartSec=5
 ExecStartPre=-/usr/bin/docker network create ucloud-telemetry
 ExecStartPre=-/usr/bin/docker rm -f ucloud-telemetry-victoria
-ExecStart=/usr/bin/docker run --name ucloud-telemetry-victoria --network ucloud-telemetry --memory 384m --cpus 0.40 --cpu-shares 256 --user 0:0 --log-driver journald -p 127.0.0.1:8428:8428 -v $data_root/victoria-metrics:/victoria-metrics-data victoriametrics/victoria-metrics:v1.148.0 -storageDataPath=/victoria-metrics-data -retentionPeriod=14d -storage.minFreeDiskSpaceBytes=20GB -memory.allowedPercent=50 -selfScrapeInterval=10s
+ExecStart=/usr/bin/docker run --name ucloud-telemetry-victoria --network ucloud-telemetry --memory 384m --cpus 0.40 --cpu-shares 256 --user 0:0 --log-driver journald -p 127.0.0.1:8428:8428 -v $data_root/victoria-metrics:/victoria-metrics-data -v $config_root/scrape.yaml:/etc/victoria/scrape.yaml:ro -v $config_root/gateway-token:/etc/victoria/gateway-token:ro victoriametrics/victoria-metrics:v1.148.0 -promscrape.config=/etc/victoria/scrape.yaml -storageDataPath=/victoria-metrics-data -retentionPeriod=14d -storage.minFreeDiskSpaceBytes=20GB -memory.allowedPercent=50 -selfScrapeInterval=10s
 ExecStop=/usr/bin/docker stop --time 30 ucloud-telemetry-victoria
 TimeoutStopSec=40
 
@@ -402,7 +358,7 @@ Restart=always
 RestartSec=5
 ExecStartPre=-/usr/bin/docker network create ucloud-telemetry
 ExecStartPre=-/usr/bin/docker rm -f ucloud-telemetry-grafana
-ExecStart=/usr/bin/docker run --name ucloud-telemetry-grafana --network ucloud-telemetry --memory 384m --cpus 0.50 --cpu-shares 256 --log-driver journald --env-file $grafana_env -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer -e GF_USERS_ALLOW_SIGN_UP=false -e GF_ANALYTICS_REPORTING_ENABLED=false -e GF_ANALYTICS_CHECK_FOR_UPDATES=false -e GF_SERVER_DOMAIN=127.0.0.1 -p 127.0.0.1:3000:3000 -v $data_root/grafana:/var/lib/grafana -v $grafana_provisioning:/etc/grafana/provisioning:ro -v $config_root/grafana/dashboards:/var/lib/grafana/dashboards:ro grafana/grafana:12.3.1
+ExecStart=/usr/bin/docker run --name ucloud-telemetry-grafana --network ucloud-telemetry --memory 384m --cpus 0.50 --cpu-shares 256 --log-driver journald --env-file $grafana_env -e GF_AUTH_ANONYMOUS_ENABLED=false -e GF_USERS_ALLOW_SIGN_UP=false -e GF_ANALYTICS_REPORTING_ENABLED=false -e GF_ANALYTICS_CHECK_FOR_UPDATES=false -e GF_PLUGINS_PREINSTALL_SYNC=yesoreyeram-infinity-datasource@4.1.1 -e GF_PLUGINS_PREINSTALL_AUTO_UPDATE=false -e GF_SERVER_DOMAIN=$grafana_domain $grafana_public_env -p 127.0.0.1:3000:3000 -v $data_root/grafana:/var/lib/grafana -v $grafana_provisioning:/etc/grafana/provisioning:ro -v $config_root/grafana/dashboards:/var/lib/grafana/dashboards:ro -v $config_root/grafana/gateway-token:/etc/grafana/gateway-token:ro grafana/grafana:13.2.4
 ExecStop=/usr/bin/docker stop --time 20 ucloud-telemetry-grafana
 TimeoutStopSec=30
 
@@ -413,7 +369,7 @@ EOF
 docker pull grafana/tempo:2.10.7
 docker pull victoriametrics/victoria-metrics:v1.148.0
 docker pull otel/opentelemetry-collector-contrib:0.153.0
-docker pull grafana/grafana:12.3.1
+docker pull grafana/grafana:13.2.4
 systemctl daemon-reload
 systemctl enable \
   ucloud-telemetry-tempo.service \
@@ -431,7 +387,7 @@ for url in \
   http://127.0.0.1:3200/ready \
   http://127.0.0.1:8428/-/healthy \
   http://127.0.0.1:13133/ \
-  http://127.0.0.1:3000/api/health; do
+  "$grafana_health"; do
   for attempt in $(seq 1 90); do
     if curl -fsS "$url" >/dev/null; then break; fi
     if [[ "$attempt" == 90 ]]; then
@@ -447,7 +403,6 @@ for url in \
 done
 
 printf 'otlp_endpoint=http://%s:4318\n' "$endpoint_host"
-printf 'grafana_tunnel=ssh -L 3000:127.0.0.1:3000 <gateway>\n'
-printf 'grafana_url=http://127.0.0.1:3000/d/ucloud-platform-hot-paths\n'
+printf 'grafana_url=%s\n' "${public_url:-http://127.0.0.1:3000/ (ssh -L 3000:127.0.0.1:3000)}"
 printf 'grafana_admin_credentials=%s\n' "$grafana_env"
 printf 'tempo_retention=72h\nmetrics_retention=14d\n'

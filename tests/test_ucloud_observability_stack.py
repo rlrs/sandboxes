@@ -15,7 +15,11 @@ class UCloudObservabilityStackTests(unittest.TestCase):
             "grafana/tempo:2.10.7",
             "victoriametrics/victoria-metrics:v1.148.0",
             "otel/opentelemetry-collector-contrib:0.153.0",
-            "grafana/grafana:12.3.1",
+            "grafana/grafana:13.2.4",
+            "yesoreyeram-infinity-datasource@4.1.1",
+            "GF_PLUGINS_PREINSTALL_AUTO_UPDATE=false",
+            "-promscrape.config=/etc/victoria/scrape.yaml",
+            "metrics_path: /v1/metrics/prometheus",
             "-p $private_bind_ip:4318:4318",
             "-p 127.0.0.1:3200:3200",
             "-p 127.0.0.1:8428:8428",
@@ -24,11 +28,12 @@ class UCloudObservabilityStackTests(unittest.TestCase):
             "block_retention: 72h",
             "-retentionPeriod=14d",
             "--cpu-shares 256",
-            "GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer",
+            "GF_AUTH_ANONYMOUS_ENABLED=false",
             "/usr/local/bin/ucloud-observability-report",
         ):
             self.assertIn(required, script)
         self.assertNotIn("-p 0.0.0.0:", script)
+        self.assertNotIn("GF_AUTH_ANONYMOUS_ENABLED=true", script)
         self.assertIn("/work/*|/mnt/ucloud/*", script)
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
 
