@@ -29,7 +29,8 @@ class DashboardTests(unittest.TestCase):
                 for action in panel.get("fieldConfig", {}).get("defaults", {}).get("actions", [])]
 
         self.assertEqual(len(urls), 6)
-        self.assertTrue(all(url.startswith("/grafana/ops/v1/") for url in urls), urls)
+        # Grafana prefixes its sub-path (/grafana) to an action's URL.
+        self.assertTrue(all(url.startswith("/ops/v1/") for url in urls), urls)
 
 
 if __name__ == "__main__":

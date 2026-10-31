@@ -1332,7 +1332,7 @@
        "confirmation": "Drain worker ${__data.fields[\"job_id\"]}? It takes no new work and is stopped once empty.",
        "fetch": {
         "method": "POST",
-        "url": "/grafana/ops/v1/nodes/${__data.fields[\"job_id\"]}/drain",
+        "url": "/ops/v1/nodes/${__data.fields[\"job_id\"]}/drain",
         "headers": [
          [
           "X-UCloud-Ops",
@@ -1353,7 +1353,7 @@
        "confirmation": "Drain worker ${__data.fields[\"job_id\"]} and DELETE every sandbox on it?",
        "fetch": {
         "method": "POST",
-        "url": "/grafana/ops/v1/nodes/${__data.fields[\"job_id\"]}/drain",
+        "url": "/ops/v1/nodes/${__data.fields[\"job_id\"]}/drain",
         "headers": [
          [
           "X-UCloud-Ops",
@@ -1374,7 +1374,7 @@
        "confirmation": "Put worker ${__data.fields[\"job_id\"]} back into service?",
        "fetch": {
         "method": "POST",
-        "url": "/grafana/ops/v1/nodes/${__data.fields[\"job_id\"]}/undrain",
+        "url": "/ops/v1/nodes/${__data.fields[\"job_id\"]}/undrain",
         "headers": [
          [
           "X-UCloud-Ops",
@@ -1796,7 +1796,7 @@
        "confirmation": "Cancel the create of ${__data.fields[\"Sandbox\"]}?",
        "fetch": {
         "method": "POST",
-        "url": "/grafana/ops/v1/creates:cancel",
+        "url": "/ops/v1/creates:cancel",
         "headers": [
          [
           "X-UCloud-Ops",
@@ -1817,7 +1817,7 @@
        "confirmation": "Cancel EVERY queued create?",
        "fetch": {
         "method": "POST",
-        "url": "/grafana/ops/v1/creates:cancel",
+        "url": "/ops/v1/creates:cancel",
         "headers": [
          [
           "X-UCloud-Ops",
@@ -1955,7 +1955,7 @@
        "confirmation": "Cancel build ${__data.fields[\"Build\"]}?",
        "fetch": {
         "method": "POST",
-        "url": "/grafana/ops/v1/images/builds/${__data.fields[\"Build\"]}:cancel",
+        "url": "/ops/v1/images/builds/${__data.fields[\"Build\"]}:cancel",
         "headers": [
          [
           "X-UCloud-Ops",
