@@ -2,11 +2,16 @@ import time
 import unittest
 from threading import Event, Lock, current_thread
 
+from opentelemetry import trace
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
+from opentelemetry.trace import Status, StatusCode
 
 from sandboxes.telemetry import (
     OPERATION_DURATION_BUCKET_BOUNDARIES_SECONDS,
@@ -158,6 +163,56 @@ class TelemetryTests(unittest.TestCase):
         attributes = spans[0].attributes
         self.assertGreater(attributes["ucloud.span.thread_cpu.duration"], 0)
         provider.shutdown()
+
+    def test_turnaways_and_conflicts_are_counted_apart_from_errors(self) -> None:
+        spans = InMemorySpanExporter()
+        tracer_provider = TracerProvider()
+        tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
+        reader = InMemoryMetricReader()
+        meter_provider = MeterProvider(metric_readers=[reader])
+        telemetry = Telemetry(
+            settings=TelemetrySettings(),
+            service_name="outcomes",
+            tracer=tracer_provider.get_tracer("outcomes"),
+            meter=meter_provider.get_meter("outcomes"),
+            tracer_provider=tracer_provider,
+            meter_provider=meter_provider,
+            processor=None,
+            health=TelemetryHealth(queue_capacity=1),
+        )
+
+        with telemetry.span("create.turned_away") as span:
+            span.status = "deferred"
+            # The HTTP layer marks every 5xx response afterwards.
+            trace.get_current_span().set_status(Status(StatusCode.ERROR, "HTTP 503"))
+        with self.assertRaises(LookupError):
+            with telemetry.span("transaction.rolled_back") as span:
+                span.status = "conflict"
+                raise LookupError("serialization failure")
+        with self.assertRaises(LookupError):
+            with telemetry.span("transaction.failed"):
+                raise LookupError("connection lost")
+        with telemetry.span("create.refused") as span:
+            span.status = "error"
+
+        counted = {
+            point.attributes["operation"]: point.attributes["status"]
+            for metric in reader.get_metrics_data().resource_metrics[0].scope_metrics[0].metrics
+            if metric.name == "ucloud.platform.operation.count"
+            for point in metric.data.data_points
+        }
+        self.assertEqual(counted, {
+            "create.turned_away": "deferred",
+            "transaction.rolled_back": "conflict",
+            "transaction.failed": "error",
+            "create.refused": "error",
+        })
+        traced = {span.name: span.status.status_code for span in spans.get_finished_spans()}
+        self.assertEqual(traced["create.turned_away"], StatusCode.OK)
+        self.assertEqual(traced["transaction.rolled_back"], StatusCode.OK)
+        self.assertEqual(traced["transaction.failed"], StatusCode.ERROR)
+        tracer_provider.shutdown()
+        meter_provider.shutdown()
 
 
 if __name__ == "__main__":

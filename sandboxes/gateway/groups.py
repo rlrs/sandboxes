@@ -210,6 +210,7 @@ class GroupCreate:
             status = HTTPStatus.CONFLICT if counts.get("conflict") else HTTPStatus.BAD_GATEWAY
             return status, {**payload, "retryable": False}, {}
         if any(counts.get(status) for status in UNFINISHED):
+            root.status = "deferred"
             return HTTPStatus.SERVICE_UNAVAILABLE, {
                 **payload, "error": "some group members are not placed yet; repeat the request",
                 "error_code": reason or "sandbox_group_incomplete", "retryable": True,

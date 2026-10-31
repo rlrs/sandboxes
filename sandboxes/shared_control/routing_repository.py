@@ -713,6 +713,9 @@ class PostgresRoutingStore(RoutingStore):
                             self._current.reset(token)
                             self._capacity_touched.reset(capacity_token)
                     committed = time.monotonic()
+            except (SerializationFailure, DeadlockDetected):
+                span.status = "conflict"  # Rolled back; _transactional retries it.
+                raise
             finally:
                 ended = time.monotonic()
                 span.set_attribute(

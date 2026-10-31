@@ -207,7 +207,7 @@ class CreatePlacement:
         _pending, demand = self.routing_store.upsert_pending_with_demand(
             spec.id, request.resources, failure_reason=reason, **demand_fence,
         )
-        root.status = "error"
+        root.status = "deferred"
         root.set_attribute("outcome", "queued_no_ready_node" if route is None else "rejected_by_all")
         root.set_attribute("pending_resources", demand.pending_resources.to_dict())
         ex._write_no_ready_node(demand, reason or "no_ready_node")
