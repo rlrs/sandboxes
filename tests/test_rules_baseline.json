@@ -438,7 +438,7 @@
  },
  "test_network_policy.py": {
   "new": 3,
-  "private": 13,
+  "private": 12,
   "private_patch": 6
  },
  "test_node_agent.py": {
