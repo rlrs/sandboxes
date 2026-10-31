@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.4 - 2026-10-31 (gateway; workers)
+
+Deploys 0.10.3 as well, which was tagged but never deployed.
+
+- **Turnaways are not errors.** Operation counts and traces counted every
+  create or group turned away until capacity exists as an error, and every
+  routing transaction retried after a serialization conflict too, so a cold
+  start logged thousands of failures that clients never saw. They now count as
+  `status="deferred"` and `status="conflict"`; only `error` is a failure.
+- **Dashboard controls work.** Grafana prefixes its sub-path to an action's
+  URL, so every control posted to `/grafana/grafana/ops/...` and got 405. The
+  dashboard's actions now name `/ops/...`.
+
 ## 0.10.3 - 2026-10-31 (gateway; workers)
 
 - **Open-network sandboxes reach a relay configured by IP.** Workers drop
