@@ -350,6 +350,9 @@ map \$http_upgrade \$ucloud_connection_upgrade {
         proxy_pass_request_body off;
         proxy_set_header Content-Length \"\";
         proxy_set_header Host \$host;
+        # Grafana marks panel actions' requests with this header and refuses
+        # them on its own API (405), the session check included.
+        proxy_set_header X-Grafana-Action \"\";
     }
 
     # Panel actions send only GET or POST: POST .../undrain is DELETE .../drain.
