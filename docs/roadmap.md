@@ -27,7 +27,8 @@ under [Open decisions](#open-decisions).
   `scripts/bench/live_relay_load_benchmark.py`, flag `sandbox.direct_node_rust_admission`).
 - **Delete the Python admission ledger** one release after the flag is on
   (`transition_admission.py`, ledger/pool/growth code in `direct_service.py`, `DemandPublisher`,
-  `agent-demand.json`). `admission.py` stays for the gateway.
+  `agent-demand.json`). `admission.py` stays for the gateway. Exec already decides
+  without the ledger (`admission_decision.exec_refusal`).
 - **Drop gateway wake admission** (`wake_admission.py`, `resource_admission.py`); the node admits.
 
 ## Writable state and memory
