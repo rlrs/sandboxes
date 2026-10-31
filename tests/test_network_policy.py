@@ -13,6 +13,8 @@ from sandboxes.direct_provisioner import DirectSandboxProvisioner
 from sandboxes.network_policy import SandboxNetworkPolicy
 from sandboxes.relay_network import (
     NetworkRelay,
+    parse_network_relays,
+    relay_bridge_rules,
     relay_policy_rules,
     relay_table_rules,
 )
@@ -244,17 +246,14 @@ class RelayNetworkLifecycleTests(unittest.TestCase):
             builder.prepare_network_files(root, spec=spec, relay_hosts={})
             self.assertEqual((root / "etc/hosts").read_text(), "10.0.0.9 baked\n")
 
-    def test_a_literal_relay_needs_no_bridge(self):
-        manager = DirectNetworkManager(
-            self.root / "literal.json",
-            namespace_root=self.root / "netns",
-            network_relays={"default": "10.36.0.2:8092"},
-            nft_runner=self.nft,
-            runner=Mock(),
-        )
-        manager._refresh_relay_policies(force=True)
-        self.assertNotIn("add rule inet ucloud_relay bridge", self.nft.call_args.args[0])
-        self.assertEqual(manager.hosts_for_policy(SandboxNetworkPolicy()), {})
+    def test_direct_egress_reaches_a_literal_relay_untranslated(self):
+        rules = relay_bridge_rules(parse_network_relays({"default": "10.36.0.2:8092"}), {})
+
+        self.assertNotIn("bridge_nat ip", rules)
+        # Its flows carry the relay forward mark, so they pass the private-destination denies.
+        self.assertIn(
+            "add rule inet ucloud_relay bridge_forward ip saddr 100.96.0.0/16 ip daddr 10.36.0.2 "
+            "tcp dport 8092 meta mark set meta mark or 0x1000000 accept", rules)
 
     def test_restart_restores_guards_before_legacy_accepts(self):
         self.create()

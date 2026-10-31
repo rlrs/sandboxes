@@ -131,16 +131,22 @@ def relay_bridge_rules(
     relay forward exception lets it past the private-destination denies, as for
     relay-only traffic. A relay-only sandbox's own chains decide first (NAT and
     its egress verdicts are final), and its guard has already dropped any other
-    destination. A relay with a literal address needs no rules: its virtual
-    address is that address.
+    destination. A relay with a literal address needs no translation, its
+    virtual address is that address, but its flows still need the mark.
     """
     t = RELAY_TABLE
     rules = [f"flush chain inet {t} bridge_nat\nflush chain inet {t} bridge_forward\n"]
     for name, relay in sorted(relays.items()):
-        addresses = relay_ipv4_addresses(resolved.get(name) or ())
-        if relay.virtual_ip == relay.host or not addresses:
-            continue
         port = int(relay.port)
+        if relay.virtual_ip == relay.host:
+            rules.append(
+                f"add rule inet {t} bridge_forward ip saddr {SANDBOX_NETWORK} "
+                f"ip daddr {relay.host} tcp dport {port} meta mark set meta mark or {RELAY_FORWARD_MARK:#x} accept\n"
+            )
+            continue
+        addresses = relay_ipv4_addresses(resolved.get(name) or ())
+        if not addresses:
+            continue
         rules.append(
             f"add rule inet {t} bridge_nat ip saddr {SANDBOX_NETWORK} "
             f"ip daddr {relay.virtual_ip} tcp dport {port} dnat ip to {addresses[0]}:{port}\n"
