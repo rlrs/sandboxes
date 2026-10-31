@@ -244,11 +244,11 @@ def build():
         "options": {"showHeader": True, "cellHeight": "sm", "sortBy": [{"displayName": "Sandboxes", "desc": True}]},
         "fieldConfig": {"defaults": {"noValue": "No workers", "custom": {"align": "auto"}, "decimals": 0,
                                      "actions": [
-            action("Drain", f"/grafana/ops/v1/nodes/{job}/drain", "{}",
+            action("Drain", f"/ops/v1/nodes/{job}/drain", "{}",
                    f"Drain worker {job}? It takes no new work and is stopped once empty."),
-            action("Drain and evict", f"/grafana/ops/v1/nodes/{job}/drain", '{"evict": true}',
+            action("Drain and evict", f"/ops/v1/nodes/{job}/drain", '{"evict": true}',
                    f"Drain worker {job} and DELETE every sandbox on it?"),
-            action("Undrain", f"/grafana/ops/v1/nodes/{job}/undrain", "", f"Put worker {job} back into service?"),
+            action("Undrain", f"/ops/v1/nodes/{job}/undrain", "", f"Put worker {job} back into service?"),
         ]}, "overrides": [
             by_name("State", mappings=[{"type": "value", "options": {
                 "0": {"text": "ready", "color": GREEN, "index": 0},
@@ -272,9 +272,9 @@ def build():
         ("sandbox_id", "Sandbox", "string"), ("state", "State", "string"),
         ("attempts", "Tries", "number"), ("age_seconds", "Age", "number"),
     ], [
-        action("Cancel", "/grafana/ops/v1/creates:cancel", f'{{"sandbox_ids": ["{sandbox}"]}}',
+        action("Cancel", "/ops/v1/creates:cancel", f'{{"sandbox_ids": ["{sandbox}"]}}',
                f"Cancel the create of {sandbox}?"),
-        action("Cancel all queued creates", "/grafana/ops/v1/creates:cancel", '{"all": true}',
+        action("Cancel all queued creates", "/ops/v1/creates:cancel", '{"all": true}',
                "Cancel EVERY queued create?"),
     ], "Creates waiting for placement, live from the gateway. Click a row to cancel; the waiting client "
        "gets 410."), 5, 9, 14)
@@ -285,7 +285,7 @@ def build():
         ("build_id", "Build", "string"), ("tag", "Image", "string"), ("status", "Status", "string"),
         ("created_at", "Created", "timestamp"), ("error", "Error", "string"),
     ], [
-        action("Cancel build", f"/grafana/ops/v1/images/builds/{build_id}:cancel", "{}",
+        action("Cancel build", f"/ops/v1/images/builds/{build_id}:cancel", "{}",
                f"Cancel build {build_id}?"),
     ], "Running and failed builds, live from the gateway. Click a row to cancel a running one.", [
         {"id": "filterByValue", "options": {"type": "exclude", "match": "any", "filters": [
