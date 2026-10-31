@@ -496,11 +496,12 @@ class Telemetry:
             try:
                 yield span
             except BaseException as exc:
-                status = "error"
-                span._error = True
                 raw_span.record_exception(exc)
-                raw_span.set_status(Status(StatusCode.ERROR, str(exc)[:256]))
                 span.set_attribute("error.type", type(exc).__name__)
+                if span._outcome is None:
+                    status = "error"
+                    span._error = True
+                    raw_span.set_status(Status(StatusCode.ERROR, str(exc)[:256]))
                 raise
             finally:
                 duration = max(0.0, time.monotonic() - started)
@@ -519,8 +520,10 @@ class Telemetry:
                 raw_status = getattr(
                     getattr(raw_span, "status", None), "status_code", None
                 )
-                if span._error or raw_status is StatusCode.ERROR:
+                if span._error or (span._outcome is None and raw_status is StatusCode.ERROR):
                     status = "error"
+                elif span._outcome is not None:
+                    status = span._outcome
                 metric_attributes = {
                     "operation": metric_operation or name,
                     "status": status,
@@ -569,12 +572,20 @@ class Telemetry:
             self._meter_provider.shutdown()
 
 
+# Operation statuses besides ok and error: the operation ended as designed but
+# did nothing. "deferred": turned away until capacity exists (the client
+# retries). "conflict": a transaction rolled back by a serialization conflict
+# (it is retried).
+EXPECTED_OUTCOMES = frozenset({"deferred", "conflict"})
+
+
 class ObservedSpan:
     """Small sanitizing facade used by platform instrumentation."""
 
     def __init__(self, span: trace.Span) -> None:
         object.__setattr__(self, "_span", span)
         object.__setattr__(self, "_error", False)
+        object.__setattr__(self, "_outcome", None)
 
     @property
     def span_id(self) -> str:
@@ -593,6 +604,12 @@ class ObservedSpan:
         if value == "error":
             self._error = True
             self._span.set_status(Status(StatusCode.ERROR))
+        elif value in EXPECTED_OUTCOMES:
+            # Final: a later 5xx response or the raised conflict does not make
+            # it an error, in traces or in the operation count.
+            object.__setattr__(self, "_outcome", value)
+            self._span.set_attribute("ucloud.outcome", value)
+            self._span.set_status(Status(StatusCode.OK))
 
     def set_attribute(self, key: str, value: Any) -> None:
         encoded = _span_attributes({key: value})

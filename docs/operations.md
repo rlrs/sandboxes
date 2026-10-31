@@ -257,6 +257,11 @@ programs, and requests, traces and storage are in collapsed rows. Edit
 `dashboards/sandboxes.json`. Grafana's admin password is in `/etc/ucloud-sandboxes/telemetry/grafana.env`;
 anonymous access is off, and every Grafana account can use the controls.
 
+Operation counts (`ucloud_platform_operation_count_total`) carry a `status`:
+`ok`, `error`, `deferred` (a create or group turned away until capacity
+exists; the client retries) or `conflict` (a routing transaction rolled back
+by a serialization conflict and retried). Only `error` is a failure.
+
 Grafana is public at `https://<public-host>/grafana/` with `--public-url` on
 the installer and `--grafana-port 3000` on `configure_hetzner_sdk_ingress.sh`;
 otherwise tunnel `-L 3000:127.0.0.1:3000`. Its table actions (drain, evict or
