@@ -363,7 +363,10 @@ class EnvironmentRootfsStore:
             active, over_cache = raw["active_components"], raw["over_cache_budget"]
             if type(active) is int and active >= 0 and type(over_cache) is bool:
                 return active, over_cache
-        except (AttributeError, KeyError, TypeError, OSError, RuntimeError, ValueError):
+        except OSError as exc:
+            # Unanswered, the sweep sees no cache pressure and frees nothing.
+            _LOG.warning("environment backend did not report its cache pressure: %s", exc)
+        except (AttributeError, KeyError, TypeError, RuntimeError, ValueError):
             pass
         return self.operation_snapshot()["environment_devices_in_use"], False
 

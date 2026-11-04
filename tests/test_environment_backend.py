@@ -13,7 +13,8 @@ import unittest
 # Import the module, not the TestCase: discovery would rerun it here.
 from tests import test_environment_artifact as artifact_fixtures
 from tests.support import wait_until
-from sandboxes.environment_backend import EnvironmentBackend, EnvironmentBackendClient, EnvironmentBackendServer, mount_has_dependents
+from sandboxes.environment_backend import (EnvironmentBackend, EnvironmentBackendClient, EnvironmentBackendServer,
+                                          MountTable, mount_has_dependents)
 from sandboxes.environment_nbd import EnvironmentReadWorkers, ReadOnlyEnvironmentDevice, ReadOnlyNbdExport, REQUEST, REPLY, REQUEST_MAGIC, REPLY_MAGIC
 from sandboxes.environment_rootfs import EnvironmentRootfsStore
 from sandboxes.models import (ENVIRONMENT_IO_METRICS, RETIRED_ENVIRONMENT_IO_METRICS, NodeRuntimeMetrics,
@@ -265,6 +266,69 @@ class EnvironmentBackendTests(artifact_fixtures.EnvironmentArtifactTests):
         held["bytes"] -= MIB
         busy.clear()
         self.assertTrue(backend.ensure(digests[1]))  # Detached images attach again.
+
+    def test_one_mount_table_read_answers_for_every_mounted_component(self):
+        components = self.root / "components"
+        held, nested, bound, idle, unmounted = (
+            components / name for name in ("held", "nested", "bound", "idle", "unmounted"))
+        table = MountTable(
+            f"200 1 252:1 / {held} ro - erofs /dev/nbd1 ro\n"
+            f"201 1 252:2 / {nested} ro - erofs /dev/nbd2 ro\n"
+            f"202 1 252:3 / {bound} ro - erofs /dev/nbd3 ro\n"
+            f"203 1 252:4 / {idle} ro - erofs /dev/nbd4 ro\n"
+            # A composed image names its lowers relative to the components directory.
+            f"210 1 0:50 / /images/a/rootfs ro - overlay overlay ro,lowerdir=held:other\n"
+            f"211 1 0:51 / /sandbox rw - overlay overlay rw,lowerdir={nested}/usr,upperdir=/u,workdir=/w\n"
+            # A one-component image binds its component.
+            f"212 1 252:3 / /images/b/rootfs ro - erofs /dev/nbd3 ro\n")
+        self.assertEqual([table.holds(path) for path in (held, nested, bound, idle, unmounted)],
+                         [True, True, True, False, False])
+        self.assertFalse(MountTable(f"200 1 252:1 / {components}/hel ro - erofs /dev/nbd1 ro\n"
+                                    "210 1 0:50 / /r ro - overlay overlay ro,lowerdir=held\n").holds(components / "hel"))
+
+    def test_an_over_budget_pass_drops_only_components_nothing_holds(self):
+        digests = [self.digest]
+        for index in (1, 2, 3):
+            image = self.root / f"pass-{index}.erofs"
+            image.write_bytes(bytes([index]) * 8192)
+            digests.append(self.registry.publish(
+                image, artifact_fixtures.sign_component(image, source_image="sha256:" + str(index) * 64, signing_key=self.key),
+                tag=f"pass-{index}"))
+        mounts, overlays, stale, held, MIB = set(), set(), set(), {"bytes": 0}, 1024 ** 2
+
+        class Device:
+            def __init__(self, path):
+                self.path = path
+
+            def close(self):
+                held["bytes"] -= MIB
+
+        class Factory:
+            def __call__(self, path, component, *args, **kwargs):
+                held["bytes"] += MIB
+                return Device(path)
+
+            def cache_bytes(self):
+                return held["bytes"]
+        # ``stale`` is held by an overlay the mount-table read did not see yet.
+        backend = EnvironmentBackend(self.root / "pass", self.registry, cache_bytes=MIB,
+                                     devices=[Path(f"/dev/nbd-pass{n}") for n in range(4)], device_factory=Factory(),
+                                     mount=lambda device, target: mounts.add(target), unmount=mounts.discard,
+                                     mounted=lambda path: path in mounts,
+                                     referenced=lambda path: path in overlays or path in stale,
+                                     held=lambda: lambda path: path in overlays)
+        self.addCleanup(backend.close)
+        paths = [Path(backend.ensure(digest)) for digest in digests[:3]]
+        self.assertEqual(mounts, {paths[2]})  # Nothing held them: each attach evicted the one before.
+        overlays.add(paths[2])
+        paths[1] = Path(backend.ensure(digests[1]))
+        stale.add(paths[1])
+        paths.append(Path(backend.ensure(digests[3])))  # Over budget, but both older components are held.
+        self.assertEqual(mounts, set(paths[1:4]))
+        stale.clear()
+        paths[0] = Path(backend.ensure(digests[0]))  # Now the stale one is free: the oldest idle one goes.
+        self.assertEqual(mounts, {paths[0], paths[2]})
+        overlays.clear()  # The sandbox goes, so closing the backend may detach it.
 
     def test_a_create_burst_is_queued_not_refused_with_eagain(self):
         # The server is not accepting yet: every call must wait in its backlog.
