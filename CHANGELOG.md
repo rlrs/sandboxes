@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.6 - 2026-11-04 (gateway)
+
+Deploys 0.10.5 as well, which was tagged but rolled back: it made every
+0.10.4 worker look incompatible.
+
+- **No agent version check.** A worker took new work only if it ran exactly
+  the gateway host's release, on top of the capability checks that already
+  decide what each worker can do. Every release had to roll the whole fleet,
+  and a gateway-only release left the autoscaler with no usable workers.
+  Nodes are now chosen by capabilities alone; a worker-side feature the
+  gateway relies on adds a capability. The autoscaler no longer replaces
+  workers for running an older release, and `ucloud_fleet_nodes` drops its
+  `compatible` and `incompatible` states. Workers can stay on 0.10.4: keep
+  `node_package_root`.
+
 ## 0.10.5 - 2026-11-04 (autoscaler)
 
 - **Stuck starts give back their capacity.** A create that failed after the
