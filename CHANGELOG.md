@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.10.5 - 2026-11-04 (autoscaler)
+
+- **Stuck starts give back their capacity.** A create that failed after the
+  worker registered it, for example a workspace format timing out on an
+  overloaded worker, left the registration holding its full reservation for
+  good; on 2026-11-04 about 540 of them held most of the fleet. With
+  `autoscaler_max_stuck_start_deletes_per_cycle` above 0 the autoscaler deletes
+  planned registrations the gateway has no route for, or only a newer
+  generation of, once they have been stuck for 20 minutes. Off by default.
+- **Provider quota refusals back off.** A create refused for an account limit
+  (Hetzner `resource_limit_exceeded`) holds that role's creates for 5 minutes
+  instead of retrying every cycle, and the cycle log prints the provider's
+  error.
+
 ## 0.10.4 - 2026-10-31 (gateway; workers)
 
 Deploys 0.10.3 as well, which was tagged but never deployed.
