@@ -641,6 +641,12 @@ class GatewayError(RuntimeError):
         self.status, self.body = status, body
 
 
+def retryable(status, body):
+    """Capacity and worker-boot answers (503), and any answer the gateway
+    marks retryable (a worker that timed out: 504)."""
+    return status == 503 or (isinstance(body, dict) and body.get("retryable") is True)
+
+
 class GatewayApi:
     """The local gateway's HTTP API with its admin token (commit-export is admin-only)."""
 
@@ -674,8 +680,7 @@ class GatewayApi:
             status, body = self.call("POST", "/v1/sandboxes", spec, timeout=600)
             if 200 <= status < 300:
                 return body.get("sandbox") or body
-            retryable = status == 503 or (isinstance(body, dict) and body.get("retryable") is True)
-            if not retryable or time.monotonic() > deadline or (stop is not None and stop()):
+            if not retryable(status, body) or time.monotonic() > deadline or (stop is not None and stop()):
                 raise GatewayError(status, body)
             time.sleep(self.create_retry_seconds)
 
@@ -832,7 +837,12 @@ class BuildRunner:
         while True:
             status, body = self.gateway.call("POST", path, request_.to_dict(), timeout=600)
             if status not in (200, 202):
-                raise GatewayError(status, body)
+                # The operation ID is the replay key: a retry resumes this export.
+                if not retryable(status, body) or time.monotonic() > deadline:
+                    raise GatewayError(status, body)
+                check()
+                time.sleep(self.poll)
+                continue
             if body.get("export") is not None:
                 export = CommitExport.from_dict(body["export"])
                 if export.state == "failed":

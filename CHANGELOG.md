@@ -11,6 +11,10 @@
   uppers older than `registry_blob_grace_seconds` (2 h; builds end within
   30 min) through the registry API, and deletes their data once no repository
   links it. The registry keeps running.
+- **Builds survive a slow commit export.** The build service gave up on
+  the first 504 from the export call, which the gateway marks retryable
+  (`node_request_timeout`). It now repeats the call until the build deadline.
+  The operation ID is the replay key, so a retry resumes the same export.
 - The ops watch alerts when the registry volume passes its cleanup threshold
   (`registry_disk`), not only when a disk is full.
 - Backups keep 24 gateway and 4 chunk-index copies (were 48 and 8; about
