@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.10.7 - 2026-11-04 (workers)
+
+- **Workers keep attaching images over the cache budget.** Once a worker's
+  nydusd cache passed `environment_cache_bytes`, every attach of a new image
+  checked each attached component (hundreds) for users, with a `mountpoint`
+  call and a full mount-table read apiece, under the lock every attach needs,
+  and every concurrent attach ran its own pass. On 2026-11-04 three workers
+  crossed it under training load: attaches queued for minutes, creates and
+  builder sandboxes timed out, and the slowest worker emptied out. A pass
+  now reads the mount table once and only one runs at a time.
+- **The idle-image sweep sees cache pressure under load.** It read the
+  backend's pressure with the 1 s heartbeat timeout and, when that ran out,
+  assumed no pressure and freed nothing; it now waits up to 30 s and logs
+  when it gets no answer.
+
 ## 0.10.6 - 2026-11-04 (gateway)
 
 Deploys 0.10.5 as well, which was tagged but rolled back: it made every

@@ -17,7 +17,7 @@ import socket
 import socketserver
 import stat
 import subprocess
-from threading import BoundedSemaphore, Condition, RLock
+from threading import BoundedSemaphore, Condition, Lock, RLock
 import time
 
 from .environment_artifact import RafsEnvironmentComponent, canonical_bytes, require_digest
@@ -29,6 +29,9 @@ _LOG = logging.getLogger(__name__)
 MAX_RPC_BYTES = 64 * 1024
 # Per socket op: a stalled backend costs a heartbeat half the gateway's 2 s wake read.
 METRICS_TIMEOUT_SECONDS = 1.0
+# The agent's idle-image sweep, off the heartbeat path: a backend busy with a
+# burst of attaches must still be able to say it is over budget.
+PRESSURE_TIMEOUT_SECONDS = 30.0
 RAFS_ATTACH_CONCURRENCY = 8
 NO_BLOCK_DEVICE = "no available environment block device"
 
@@ -53,42 +56,84 @@ def _mounted(path):
 
 
 def mount_has_dependents(path, *, include_bind_mounts=True):
+    return MountTable().has_dependents(path, include_bind_mounts=include_bind_mounts)
+
+
+def _unescape(value):
+    return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
+
+
+def _with_ancestors(paths):
+    # Every path and its ancestors: something is held if a lower is it or lies under it.
+    prefixes = set()
+    for path in paths:
+        while path not in prefixes and path not in ("", "/"):
+            prefixes.add(path)
+            path = path.rsplit("/", 1)[0]
+    return prefixes
+
+
+class MountTable:
+    """One read of the mount table (``table``: mountinfo text, else this
+    process's). A node holds thousands of mounts, so a caller asking about
+    many paths reads the table once."""
+
     # umount(2) does NOT return EBUSY for an OverlayFS lower reference: the
     # detached superblock survives, and disconnecting its NBD would cause EIO.
     # All canonical overlays share this service's host mount namespace; their
     # lowerdir mount options are the kernel's physical dependency evidence.
-    target = str(path)
-    def unescape(value):
-        return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
-    device = path.stat().st_dev
-    device_identity = f"{os.major(device)}:{os.minor(device)}"
-    for line in Path("/proc/self/mountinfo").read_text().splitlines():
-        before, after = line.split(" - ", 1)
-        fields, details = before.split(), after.split()
-        if include_bind_mounts and fields[2] == device_identity and unescape(fields[4]) != target:
-            return True  # Another bind mount retains this filesystem.
+    def __init__(self, table=None):
+        if table is None:
+            table = Path("/proc/self/mountinfo").read_text()
+        self._mountpoints, self._devices, absolute, self._relative = {}, {}, set(), set()
+        for line in table.splitlines():
+            before, after = line.split(" - ", 1)
+            fields, details = before.split(), after.split()
+            mountpoint = _unescape(fields[4])
+            self._mountpoints.setdefault(fields[2], set()).add(mountpoint)
+            self._devices[mountpoint] = fields[2]  # The last mount on a path is the visible one.
+            if details[0] != "overlay":
+                continue
+            for option in details[2].split(","):
+                if option.startswith(("lowerdir=", "lowerdir+=")):
+                    for lower in option.split("=", 1)[1].split(":"):
+                        lower = _unescape(lower)
+                        (absolute if lower.startswith("/") else self._relative).add(lower)
+        self._held_absolute, self._held_relative = _with_ancestors(absolute), {}
 
-        if details[0] != "overlay":
-            continue
-        for option in details[2].split(","):
-            if option.startswith(("lowerdir=", "lowerdir+=")):
-                for lower in option.split("=", 1)[1].split(":"):
-                    lower = unescape(lower)
-                    if not lower.startswith("/"):
-                        # The kernel shows lowers as given. Composed images
-                        # name components relative to their shared directory
-                        # (EnvironmentRootfsStore); resolving any relative
-                        # lower there can only over-report a dependency.
-                        lower = str(path.parent / lower)
-                    if lower == target or lower.startswith(target + "/"):
-                        return True
-    return False
+    def has_dependents(self, path, *, include_bind_mounts=True):
+        if include_bind_mounts:
+            device = path.stat().st_dev
+            if self._bound_elsewhere(f"{os.major(device)}:{os.minor(device)}", str(path)):
+                return True  # Another bind mount retains this filesystem.
+        return self._lower(path)
+
+    def holds(self, path):
+        """Whether something holds the filesystem mounted at ``path``; False
+        when nothing is mounted there."""
+        device = self._devices.get(str(path))
+        return device is not None and (self._bound_elsewhere(device, str(path)) or self._lower(path))
+
+    def _bound_elsewhere(self, device, target):
+        return bool(self._mountpoints.get(device, set()) - {target})
+
+    def _lower(self, path):
+        target = str(path)
+        if target in self._held_absolute:
+            return True
+        # The kernel shows lowers as given. Composed images name components
+        # relative to their shared directory (EnvironmentRootfsStore);
+        # resolving any relative lower there can only over-report a dependency.
+        parent = path.parent
+        if parent not in self._held_relative:
+            self._held_relative[parent] = _with_ancestors(str(parent / lower) for lower in self._relative)
+        return target in self._held_relative[parent]
 
 
 class EnvironmentBackend:
     def __init__(self, root, registry, *, devices=None, device_factory=ReadOnlyEnvironmentDevice,
                  mount=None, unmount=None, mounted=_mounted, referenced=mount_has_dependents, cache_bytes=1024 ** 3,
-                 cache_options=None, rafs=None, attach_concurrency=1):
+                 cache_options=None, rafs=None, attach_concurrency=1, held=lambda: MountTable().holds):
         self.root, self.registry = Path(root), registry
         if not self.root.is_absolute():
             raise ValueError("environment backend root must be absolute")
@@ -116,7 +161,11 @@ class EnvironmentBackend:
         self._unmount = unmount or (lambda target: subprocess.run(["umount", str(target)], check=True))
         self._mounted = mounted
         self._referenced = referenced
+        # ``held()``: one mount-table read, a predicate over many mounted
+        # components; ``referenced`` stays the authority each drop checks.
+        self._held = held
         self._guard = RLock()
+        self._evicting = Lock()  # One cache-budget pass at a time.
         # (digest, RafsEnvironmentComponent) -> verified RafsImage; None
         # without a chunk index (docs/images.md).
         self._rafs = rafs
@@ -280,9 +329,25 @@ class EnvironmentBackend:
         usage = getattr(self._factory, "cache_bytes", None)
         if usage is None or usage() <= self.cache.max_bytes:
             return
+        # Over budget, every attach of a new component lands here. Concurrent
+        # passes would each check every attached component, under the guard
+        # every attach needs: one pass at a time, and the others go on.
+        if not self._evicting.acquire(blocking=False):
+            return
+        try:
+            self._evict_idle(keep, usage)
+        finally:
+            self._evicting.release()
+
+    def _evict_idle(self, keep, usage):
+        # One mount-table read rules out the components a sandbox holds, so
+        # only plausible candidates take the guard for ``_drop``'s own check.
+        in_use = self._held()
         with self._guard:
             order = sorted((digest for digest in self._active if digest != keep), key=lambda d: self._used.get(d, 0.0))
         for digest in order:
+            if in_use(self.mounts / digest[7:]):
+                continue
             with self._guard:
                 if digest in self._attaching or not self._drop(digest):
                     continue  # In use: an overlay still holds it.
@@ -432,7 +497,7 @@ class EnvironmentBackendClient:
         return self._call({"method": "metrics"}, METRICS_TIMEOUT_SECONDS)
 
     def pressure(self):
-        return self._call({"method": "pressure"}, METRICS_TIMEOUT_SECONDS)
+        return self._call({"method": "pressure"}, PRESSURE_TIMEOUT_SECONDS)
 
 
 def serve_backend(registry, *, root, socket_path, cache_bytes=1024 ** 3, chunk_index=None,

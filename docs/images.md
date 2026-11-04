@@ -225,7 +225,9 @@ backend to attach every component, and composes them.
   read-only overlay, shared by every sandbox of that image. Each sandbox gets
   its own writable upper plus tmpfs at `/tmp` and `/run`.
 - A deleted sandbox's image stays mounted for the next one; idle images are
-  collected LRU only when the node is over its device or cache budget.
+  collected LRU only when the node is over its device or cache budget. Over
+  the cache budget, each attach of a new component also detaches idle
+  components, one pass at a time, from one read of the mount table.
   Every read loads on demand; there is no attach-time prefetch.
 
 ## Configuration
