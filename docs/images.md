@@ -206,7 +206,10 @@ regenerated bases and the BuildKit cache. An hourly
 `registry-prune` deletes old unused tags and unreferenced roots; leases and
 durable references protect anything in use. Freeing blobs needs a sweep that
 stops the registry, so it runs only in a maintenance window (see
-[operations.md](operations.md)).
+[operations.md](operations.md)). The one exception is staged commit uppers
+(`commits/*`, one per sandbox build, up to 8 GiB each): no manifest references
+them, so the every-minute `registry-pressure` unit deletes them online once
+they are older than `registry_blob_grace_seconds`.
 
 ## On the worker
 

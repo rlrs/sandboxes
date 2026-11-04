@@ -82,6 +82,17 @@ def checks(args, config) -> dict[str, tuple[bool, str]]:
         return free >= args.root_free_percent, f"root {free:.0f}% free, project drive writable"
     guard("disks", disks)
 
+    def registry_disk():
+        # Above cleanup the registry needs a collection it can't run online; at
+        # refuse, toolkit compositions and builds fail (2026-11-04).
+        from sandboxes.registry_disk import registry_disk_usage
+        usage = registry_disk_usage(config)
+        if usage is None:
+            return True, "not measured"
+        return not usage.cleanup_needed, (f"{usage.used_percent:.0f}% used (cleanup at {usage.cleanup_percent:.0f}%, "
+                                          f"refuse at {usage.refuse_percent:.0f}%)")
+    guard("registry_disk", registry_disk)
+
     store = config.immutable_environments.chunk_store if config.immutable_environments else None
     if store is not None and store.store_node is not None:
         def store_node():
