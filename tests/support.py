@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import io
 from functools import lru_cache
 from itertools import count
 import os
@@ -12,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 from threading import Lock, current_thread
@@ -400,3 +402,26 @@ class FakeKernel:
         with self._guard:
             if path.exists():
                 self._drop_name(path)
+
+
+def write_node_bundle(path: Path, version: str | None) -> Path:
+    """A node package bundle shaped like a release's: its manifest, then the
+    agent runtime holding sandboxes ``version`` (none if ``version`` is None)."""
+
+    def add(archive: tarfile.TarFile, name: str, payload: bytes) -> None:
+        info = tarfile.TarInfo(name)
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+
+    runtime = io.BytesIO()
+    with tarfile.open(fileobj=runtime, mode="w") as inner:
+        add(inner, "bin/python3", b"")
+        if version is not None:
+            add(inner, f"site-packages/sandboxes-{version}.dist-info/METADATA",
+                f"Name: sandboxes\nVersion: {version}\n".encode())
+        add(inner, "site-packages/sandboxes/__init__.py", b"")
+    with tarfile.open(path, "w:gz") as outer:
+        add(outer, "package-bundle.json", b'{"version": 1}')
+        add(outer, "runtime/agent/node-agent-runtime.tar", runtime.getvalue())
+        add(outer, "runtime/direct/runsc", b"")
+    return path

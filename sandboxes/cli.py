@@ -71,6 +71,8 @@ from .deployment import (
     INIT_VERSION_LABEL,
     NODE_LABEL,
     package_version,
+    use_worker_bundle,
+    worker_agent_version,
 )
 from .deploy import (
     AllInOneDeployPlan,
@@ -968,6 +970,7 @@ def add_telemetry_args(parser: argparse.ArgumentParser) -> None:
 
 def load_config(args: argparse.Namespace) -> DeploymentConfig:
     config = DeploymentConfig.from_file(args.config)
+    use_worker_bundle(config.sandbox_node_package_bundle())
     session_file = getattr(args, "session_file", None)
     if session_file is None:
         return config
@@ -6423,7 +6426,7 @@ def vm_submission_options_from_args(
         labels.setdefault(NODE_LABEL, "true")
     if config.deployment_id:
         labels.setdefault(DEPLOYMENT_LABEL, config.deployment_id)
-    labels.setdefault(AGENT_VERSION_LABEL, package_version())
+    labels.setdefault(AGENT_VERSION_LABEL, worker_agent_version())
     labels.setdefault(INIT_VERSION_LABEL, DEFAULT_INIT_VERSION)
     ssh_requested = bool(getattr(args, "ssh", False))
     ssh_disabled = bool(getattr(args, "no_ssh", False))

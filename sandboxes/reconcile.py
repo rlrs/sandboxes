@@ -17,7 +17,7 @@ from .deployment import (
     RECONCILE_CYCLE_LABEL,
     RECONCILE_LABEL,
     DEFAULT_INIT_VERSION,
-    package_version,
+    worker_agent_version,
 )
 from .images import DEFAULT_MAX_ACTIVE_IMAGE_BUILDS
 from .networking import stable_hostname
@@ -100,7 +100,7 @@ def build_create_intents(
                     RECONCILE_CYCLE_LABEL: cycle_seed,
                     CREATE_INDEX_LABEL: str(index),
                     DEPLOYMENT_LABEL: config.deployment_id,
-                    AGENT_VERSION_LABEL: package_version(),
+                    AGENT_VERSION_LABEL: worker_agent_version(),
                     INIT_VERSION_LABEL: DEFAULT_INIT_VERSION,
                 },
             )

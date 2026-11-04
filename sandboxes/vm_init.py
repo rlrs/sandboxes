@@ -15,7 +15,7 @@ import time
 from typing import Literal
 from urllib.parse import urlsplit
 
-from .deployment import DEFAULT_INIT_VERSION, package_version
+from .deployment import DEFAULT_INIT_VERSION, worker_agent_version
 from .direct_network import DirectNetworkTcpEgress
 from .models import ResourceQuantity
 from .environment_config import (DEFAULT_DEVICE_BUDGET_PERCENT, NYDUSD_FEATURES, NYDUSD_INSTALL_PATH,
@@ -777,7 +777,7 @@ UCLOUD_CACHED_AGENT_RUNTIME_DIR={shlex.quote(cached_agent_runtime_dir)}
 UCLOUD_NODE_AGENT_HOST={shlex.quote(options.node_agent_host)}
 UCLOUD_NODE_AGENT_PORT={options.node_agent_port}
 UCLOUD_NODE_URL={shlex.quote(options.advertised_node_url())}
-UCLOUD_AGENT_VERSION={shlex.quote(package_version())}
+UCLOUD_AGENT_VERSION={shlex.quote(worker_agent_version())}
 UCLOUD_DEPLOYMENT_ID={shlex.quote(options.deployment_id)}
 UCLOUD_TELEMETRY_OTLP_ENDPOINT={shlex.quote(options.telemetry_otlp_endpoint)}
 UCLOUD_TELEMETRY_CLOUD_PROVIDER={shlex.quote(options.telemetry_cloud_provider)}

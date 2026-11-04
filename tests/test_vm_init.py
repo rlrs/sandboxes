@@ -14,11 +14,13 @@ from unittest.mock import Mock, patch
 from hypothesis import given, settings, strategies as st
 
 import sandboxes.vm_init as vm_init
+from sandboxes.deployment import use_worker_bundle
 from sandboxes.models import ResourceQuantity
 from sandboxes.providers.ucloud.bootstrap import (
     bootstrap_access_from_payload,
     extract_ssh_command,
 )
+from tests.support import write_node_bundle
 from sandboxes.vm_init import (
     BUILDER_RUNTIME_PACKAGES,
     PINNED_STORAGE_NATIVE_AGENTENV_COMMIT,
@@ -112,6 +114,15 @@ def write_bundle(root: Path, role: str) -> dict:
 
 
 class VmInitTests(unittest.TestCase):
+    def test_a_new_worker_reports_the_release_its_bundle_installs(self):
+        with TemporaryDirectory() as raw:
+            self.addCleanup(use_worker_bundle, Path(raw) / "absent.tar.gz")
+            use_worker_bundle(write_node_bundle(Path(raw) / "bundle.tar.gz", "0.0.1"))
+
+            script = render_vm_init_script(self._options())
+
+        self.assertIn("UCLOUD_AGENT_VERSION=0.0.1\n", script)
+
     def test_finishing_capacity_reaches_builder_service_and_is_bounded(self):
         script = render_vm_init_script(self._options(role="builder", max_finishing_image_builds=2))
         self.assertIn("--max-finishing-image-builds 2", script)

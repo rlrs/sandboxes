@@ -166,9 +166,12 @@ dependencies; when `runtime/noded` changed, pass `--noded-build-dir` with the
 output of `runtime/noded/build_pinned.sh`. A bundle's modules match exactly one kernel; replace the closure
 whenever the kernel changes.
 
-**Every release repacks both bundles.** Placement only sends work to nodes
-whose agent version equals the gateway's, so a gateway upgrade without new
-bundles leaves the fleet unschedulable.
+**Workers must run the configured bundle's release.** The gateway and
+autoscaler read the release inside `node_package_root`'s sandbox bundle when
+they load their config, send work only to nodes reporting it, and replace the
+rest. A release that changes only the gateway host can keep the old
+`node_package_root`; one that changes workers repacks both bundles and points
+`node_package_root` at them.
 
 ### Upgrading
 
@@ -188,8 +191,8 @@ and inspect.
 
    Copy changed unit files from the package's `systemd/` directory to
    `/etc/systemd/system/`.
-5. Point `node_package_root` at the new release directory and apply any config
-   change `CHANGELOG.md` calls for. Apply new PostgreSQL tables before
+5. Point `node_package_root` at the new release directory (unless the release
+   leaves workers alone) and apply any config change `CHANGELOG.md` calls for. Apply new PostgreSQL tables before
    restarting (`python -m sandboxes.shared_control migrate ...`).
 6. Run `gateway-reconcile`, confirm `/healthz` reports the new version, and
    `systemctl start ucloud-sandbox-registry-prune.timer`.
