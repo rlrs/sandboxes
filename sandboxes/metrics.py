@@ -11,7 +11,7 @@ from threading import Condition, RLock, Thread
 import time
 from typing import Any
 
-from .deployment import BUILDER_LABEL, agent_version_is_schedulable
+from .deployment import BUILDER_LABEL
 from .models import (
     LiveScaleSignals,
     NodeHeartbeat,
@@ -1248,11 +1248,6 @@ def build_metrics_snapshot(
         for heartbeat in heartbeat_items
         if heartbeat.is_fresh(now, heartbeat_ttl_seconds)
     ]
-    compatible = [
-        heartbeat
-        for heartbeat in fresh
-        if agent_version_is_schedulable(heartbeat.agent_version)
-    ]
     sandbox_nodes = [
         heartbeat for heartbeat in fresh if "sandbox" in heartbeat.capabilities
     ]
@@ -1261,13 +1256,13 @@ def build_metrics_snapshot(
     ]
     schedulable_sandbox_nodes = [
         heartbeat
-        for heartbeat in compatible
+        for heartbeat in fresh
         if "sandbox" in heartbeat.capabilities
         and not heartbeat.draining
         and heartbeat.admission_open
     ]
     schedulable_builder_nodes = [
-        heartbeat for heartbeat in compatible if "image-build" in heartbeat.capabilities
+        heartbeat for heartbeat in fresh if "image-build" in heartbeat.capabilities
     ]
     routing_state = routing_state or RoutingState({}, {}, {})
     fresh_sandbox_nodes = {heartbeat.node_id: heartbeat for heartbeat in sandbox_nodes}
@@ -1338,8 +1333,6 @@ def build_metrics_snapshot(
         "nodes": {
             "total": len(heartbeat_items),
             "fresh": len(fresh),
-            "compatible": len(compatible),
-            "incompatible": max(0, len(fresh) - len(compatible)),
             "sandbox": len(sandbox_nodes),
             "sandbox_ready": len(schedulable_sandbox_nodes),
             "sandbox_draining": sum(
@@ -1507,9 +1500,6 @@ def _node_metrics(
     return {
         **_heartbeat_metrics(heartbeat),
         "fresh": heartbeat.is_fresh(now, heartbeat_ttl_seconds),
-        "agent_version_compatible": agent_version_is_schedulable(
-            heartbeat.agent_version
-        ),
         "age_seconds": max(0, int((now - heartbeat.updated_at).total_seconds())),
     }
 

@@ -30,16 +30,6 @@ def package_version() -> str:
         return __version__
 
 
-def agent_version_is_schedulable(
-    agent_version: str,
-    *,
-    expected: str | None = None,
-) -> bool:
-    """Return whether an agent may accept newly placed sandbox work."""
-
-    return agent_version.strip() == (expected or package_version()).strip()
-
-
 def service_health(service: str) -> dict[str, object]:
     return {
         "ok": True,

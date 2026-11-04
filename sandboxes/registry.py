@@ -5,7 +5,6 @@ import math
 from typing import Any
 from urllib.parse import urlparse
 
-from .deployment import AGENT_VERSION_LABEL, agent_version_is_schedulable
 from .models import (
     NodeHeartbeat,
     NodeRuntimeMetrics,
@@ -359,20 +358,7 @@ def merge_jobs_and_heartbeats(
                     heartbeat.active_sandboxes if heartbeat is not None else 0
                 ),
                 heartbeat_fresh=heartbeat_fresh,
-                agent_version_compatible=_agent_version_compatible(job, heartbeat),
             )
         )
     return nodes
 
-
-def _agent_version_compatible(
-    job: ProviderInstance, heartbeat: NodeHeartbeat | None
-) -> bool:
-    version = (
-        heartbeat.agent_version
-        if heartbeat is not None and heartbeat.agent_version
-        else ""
-    )
-    if not version:
-        version = job.labels.get(AGENT_VERSION_LABEL, "")
-    return agent_version_is_schedulable(version)

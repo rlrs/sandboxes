@@ -49,24 +49,18 @@ def evaluate_scale(
         now=now,
     )[:stop_budget]
     unreachable_job_ids = {node.job_id for node in unreachable_stop_candidates}
-    incompatible_candidates = incompatible_stop_candidates(
+    retiring_candidates = retiring_stop_candidates(
         [node for node in nodes if node.job_id not in unreachable_job_ids],
         now=now,
         max_cpu_check_ms=policy.max_cpu_check_ms,
     )[: max(0, stop_budget - len(unreachable_stop_candidates))]
     pool_nodes = [node for node in nodes if _counts_as_pool_node(node, policy, now, 0)]
-    # A booting node can temporarily have no usable version label. It remains
-    # unschedulable, but receives normal time-decaying provisioning credit so
-    # transient metadata lag or a failed bootstrap cannot create replacement
-    # VMs while the first VM is already billable. A ready incompatible node
-    # contributes no capacity.
     capacity_nodes = [
         node
         for node in pool_nodes
-        if (node.agent_version_compatible or node.is_provisioning)
         # A retiring host (repeated reboots, a slow VM) keeps serving what it
         # holds while it retires; demand is planned without it.
-        and not retiring_reason(node.heartbeat, now, max_cpu_check_ms=policy.max_cpu_check_ms)
+        if not retiring_reason(node.heartbeat, now, max_cpu_check_ms=policy.max_cpu_check_ms)
     ]
     ready_nodes = [node for node in capacity_nodes if node.is_schedulable]
 
@@ -259,9 +253,9 @@ def evaluate_scale(
         )
         reasons.append(reason)
 
-    if incompatible_candidates:
-        job_ids = tuple(node.job_id for node in incompatible_candidates)
-        reason = "idle sandbox node(s) have incompatible agent version or rebooted repeatedly"
+    if retiring_candidates:
+        job_ids = tuple(node.job_id for node in retiring_candidates)
+        reason = "idle sandbox node(s) are retiring (repeated reboots or slow CPU)"
         actions.append(
             ScaleAction(
                 kind="stop",
@@ -1362,9 +1356,7 @@ def plan_soft_drain(
             reason=f"{chosen.job_id} "
             + retiring_reason(chosen.heartbeat, now, max_cpu_check_ms=policy.max_cpu_check_ms),
         )
-    capacity_nodes = [
-        node for node in pool if node.agent_version_compatible or node.is_provisioning
-    ]
+    capacity_nodes = pool
     ready_nodes = [node for node in capacity_nodes if node.is_schedulable]
     ready_job_ids = {node.job_id for node in ready_nodes}
     reported_free = _reported_free_resources(ready_nodes)
@@ -1487,21 +1479,19 @@ def plan_soft_drain(
     )
 
 
-def incompatible_stop_candidates(
+def retiring_stop_candidates(
     nodes: list[SandboxNode],
     *,
     now: datetime,
     max_cpu_check_ms: int = 0,
 ) -> list[SandboxNode]:
-    candidates: list[SandboxNode] = []
-    for node in nodes:
-        retiring = retiring_reason(node.heartbeat, now, max_cpu_check_ms=max_cpu_check_ms) is not None
-        if node.job.is_final or (node.agent_version_compatible and not retiring):
-            continue
-        if node.job.is_provisioning and not node.agent_version_compatible:
-            candidates.append(node)
-        elif node.job.is_running and node.heartbeat_fresh and node.is_idle:
-            candidates.append(node)
+    """Idle running hosts that are retiring (repeated reboots, slow CPU)."""
+
+    candidates = [
+        node for node in nodes
+        if not node.job.is_final and node.job.is_running and node.heartbeat_fresh and node.is_idle
+        and retiring_reason(node.heartbeat, now, max_cpu_check_ms=max_cpu_check_ms) is not None
+    ]
     return sorted(
         candidates,
         key=lambda node: (
