@@ -302,6 +302,14 @@ prefix; workers never reach S3 themselves. Design and config are in
 snapshot store wake elsewhere; sandboxes running on it are lost and return
 `410 node_lost`.
 
+**Stuck starts.** A create that fails after the worker registers it (for
+example a workspace format timing out on an overloaded worker) leaves a
+`planned` registration holding its reservation. With
+`autoscaler_max_stuck_start_deletes_per_cycle` above 0 the autoscaler deletes,
+fenced to their own generation, planned registrations that the gateway has no
+route for, or only a newer generation of, once they have been stuck for 20
+minutes. At 0 (the default) they stay until an operator deletes them.
+
 ### Store node lost
 
 RAFS reads stop until it returns. Keep the hostname so no config changes.
@@ -416,6 +424,10 @@ Required keys: `scope_id`, `network_id`, `sandbox_image`, `builder_image`
 5. `install_ucloud_observability_stack.sh --private-bind-ip 10.42.0.2
    --public-url https://<public-host>/grafana/`, then rerun step 4 with
    `--grafana-port 3000`.
+
+Hetzner caps dedicated cores per project; past the cap creates fail with
+`resource_limit_exceeded` (the autoscaler logs `Create failed:`) and the
+autoscaler holds that role's creates for 5 minutes before trying again.
 
 Boot workers from a snapshot so the kernel matches the bundle: on a drained,
 disposable source server run

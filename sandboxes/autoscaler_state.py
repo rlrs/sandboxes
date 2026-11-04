@@ -351,6 +351,31 @@ class AutoscalerStateStore:
                 [(deployment, *key, now_us) for key in selected[:max(0, budget)]])
         return selected[:max(0, budget)]
 
+    def track_stuck_starts(
+        self, *, deployment_id: str, keys: Collection[tuple[str, str, int, str]],
+        now: datetime | None = None,
+    ) -> dict[tuple[str, str, int, str], datetime]:
+        """Return when each candidate was first seen, forgetting any not seen now.
+
+        A candidate missing from one cycle starts over: only an unbroken run of
+        sightings counts toward its age.
+        """
+        deployment = _required("deployment_id", deployment_id)
+        now_us = _datetime_to_us(_normalized_now(now))
+        current = set(keys)
+        with self._transaction() as conn:
+            seen = {(row[0], row[1], int(row[2]), row[3]): int(row[4]) for row in conn.execute(
+                "SELECT job_id, sandbox_id, generation, operation_id, first_seen_us "
+                "FROM stuck_start_sightings WHERE deployment_id = ?", (deployment,))}
+            conn.executemany(
+                "DELETE FROM stuck_start_sightings WHERE deployment_id = ? AND job_id = ? "
+                "AND sandbox_id = ? AND generation = ? AND operation_id = ?",
+                [(deployment, *key) for key in seen if key not in current])
+            conn.executemany(
+                "INSERT INTO stuck_start_sightings VALUES (?, ?, ?, ?, ?, ?)",
+                [(deployment, *key, now_us) for key in current if key not in seen])
+        return {key: _us_to_datetime(seen.get(key, now_us)) for key in current}
+
     def get_drain_intent(
         self,
         deployment_id: str,
@@ -887,6 +912,13 @@ class AutoscalerStateStore:
                 "CREATE TABLE IF NOT EXISTS pending_delete_attempts (deployment_id TEXT NOT NULL,"
                 " sandbox_id TEXT NOT NULL, delete_operation_id TEXT NOT NULL, attempted_at_us"
                 " INTEGER NOT NULL, PRIMARY KEY (deployment_id, sandbox_id, delete_operation_id))"
+            )
+            # Additive: older controllers ignore it and never delete stuck starts.
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS stuck_start_sightings (deployment_id TEXT NOT NULL,"
+                " job_id TEXT NOT NULL, sandbox_id TEXT NOT NULL, generation INTEGER NOT NULL,"
+                " operation_id TEXT NOT NULL, first_seen_us INTEGER NOT NULL,"
+                " PRIMARY KEY (deployment_id, job_id, sandbox_id, generation, operation_id))"
             )
             conn.execute(
                 """

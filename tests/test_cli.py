@@ -3,10 +3,12 @@ from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import replace
 from datetime import timedelta
 from functools import wraps
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import io
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import threading
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -843,6 +845,70 @@ class CliTests(unittest.TestCase):
         self.assertEqual(fourth["blockedCreateRoles"], [])
         self.assertEqual(fourth["createdJobIds"], ["replacement-job"])
         self.assertEqual(remaining, [])
+
+    @requires_postgres
+    def test_reconcile_deletes_starts_stuck_past_the_minimum_age(self) -> None:
+        deletes: list[tuple[str, str | None, str | None, str | None]] = []
+
+        class Worker(BaseHTTPRequestHandler):
+            def do_DELETE(self) -> None:
+                deletes.append((
+                    self.path, self.headers.get("X-UCloud-Sandbox-Generation"),
+                    self.headers.get("X-UCloud-Sandbox-Operation-Id"), self.headers.get("Authorization"),
+                ))
+                body = b'{"deleted": null}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args) -> None:
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Worker)
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+
+        def planned(sandbox_id: str, generation: int = 1) -> SandboxInventoryEntry:
+            return SandboxInventoryEntry(
+                sandbox_id=sandbox_id, generation=generation, state="planned",
+                operation_id=f"create-{sandbox_id}-{generation}", spec_hash="a" * 64,
+            )
+
+        live = sandbox_route("live", node_id="node-owned", job_id="owned",
+                             node_url=f"http://127.0.0.1:{server.server_port}")
+        with temporary_root() as root:
+            jobs_file = write_jobs(root, owned_node_job(agent_version=True))
+            heartbeat_file = root / "control-state.sqlite"
+            save_heartbeats(heartbeat_file, {"owned": owned_heartbeat(
+                node_url=f"http://127.0.0.1:{server.server_port}", inventory_complete=True,
+                inventory=(planned("orphan", 2), planned("young"), planned("live")),
+            )})
+            config = ucloud_config(
+                project_id="project-1", deployment_id="prod-a",
+                ucloud_session_file=str(root / "session.json"), data_root=str(root),
+                autoscaler_max_stuck_start_deletes_per_cycle=4,
+            )
+            state = AutoscalerStateStore(root / "autoscaler-state.sqlite")
+            # Both were stuck as long ago as the minimum age; "young" is new.
+            state.track_stuck_starts(
+                deployment_id="prod-a",
+                keys=[("owned", "orphan", 2, "create-orphan-2"), ("owned", "live", 1, "create-live-1")],
+                now=utc_now() - timedelta(minutes=21),
+            )
+
+            result = reconcile(
+                config, autoscaler_args(jobs_file, heartbeat_file), state,
+                sandbox_routes=(live,), routing_store=routing_store_for(self, root / "routes.json"),
+            )
+
+        self.assertEqual(deletes, [("/v1/sandboxes/orphan", "2", "create-orphan-2", "Bearer test-token")])
+        self.assertEqual(
+            [(item["sandbox_id"], item["deleted"]) for item in result["stuck_start_results"]],
+            [("orphan", True)],
+        )
 
     def test_reconcile_detaches_park_before_provider_stop(self) -> None:
         terminate_calls: list[tuple[str, ...]] = []
