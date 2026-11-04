@@ -91,8 +91,8 @@ class FakeClock:
 
 
 class FleetViewTests(unittest.TestCase):
-    def test_ready_keeps_fresh_admitting_current_sandbox_workers(self):
-        good = heartbeat("good")
+    def test_ready_keeps_fresh_admitting_sandbox_workers_of_any_release(self):
+        good, older = heartbeat("good"), heartbeat("older-release", agent_version="0.0.0-old")
         view = FleetView.ready([
             good,
             heartbeat("stale", received_at=NOW - timedelta(seconds=121)),
@@ -100,9 +100,9 @@ class FleetViewTests(unittest.TestCase):
             heartbeat("closed", admission_open=False),
             heartbeat("no-url", node_url=None),
             heartbeat("builder", capabilities=("image-build",)),
-            heartbeat("old-agent", agent_version="0.0.0-old"),
+            older,
         ], now=NOW, ttl_seconds=120)
-        self.assertEqual(view.nodes, (good,))
+        self.assertEqual(view.nodes, (good, older))
         self.assertEqual(view.routes.routes_for(good), [])
 
 

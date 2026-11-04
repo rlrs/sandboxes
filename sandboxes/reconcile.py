@@ -30,7 +30,7 @@ from .models import (
     utc_now,
 )
 from .policy import (
-    incompatible_stop_candidates,
+    retiring_stop_candidates,
     past_idle_grace,
     planned_stops,
     unreachable_node_stop_ready,
@@ -140,7 +140,7 @@ def evaluate_builder_scale(
         if unreachable_node_stop_ready(node, policy, now=now)
     ][:stop_budget]
     unreachable_job_ids = {node.job_id for node in unreachable_stop_candidates}
-    incompatible_candidates = incompatible_stop_candidates(
+    retiring_candidates = retiring_stop_candidates(
         [node for node in builder_nodes if node.job_id not in unreachable_job_ids],
         now=now,
     )[: max(0, stop_budget - len(unreachable_stop_candidates))]
@@ -180,9 +180,9 @@ def evaluate_builder_scale(
         )
         reasons.append(reason)
 
-    if incompatible_candidates:
-        job_ids = tuple(node.job_id for node in incompatible_candidates)
-        reason = "idle builder node(s) have incompatible agent version"
+    if retiring_candidates:
+        job_ids = tuple(node.job_id for node in retiring_candidates)
+        reason = "idle builder node(s) are retiring (repeated reboots)"
         actions.append(
             ScaleAction(
                 kind="stop",

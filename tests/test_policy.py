@@ -41,7 +41,6 @@ def node(
     heartbeat_updated_at=None,
     heartbeat_present: bool = True,
     inventory_complete: bool = False,
-    agent_version_compatible: bool = True,
     draining: bool = False,
     admission_open: bool = True,
     runtime_metrics: NodeRuntimeMetrics | None = None,
@@ -94,7 +93,6 @@ def node(
         heartbeat=heartbeat,
         active_sandboxes=active,
         heartbeat_fresh=fresh,
-        agent_version_compatible=agent_version_compatible,
     )
 
 
@@ -869,42 +867,7 @@ class ScalePolicyTests(unittest.TestCase):
 
         self.assertEqual(decision.stops, ("never-ready",))
 
-    def test_stops_idle_incompatible_node_without_idle_grace(self) -> None:
-        decision = evaluate_scale(
-            [
-                node(
-                    "old-idle",
-                    agent_version_compatible=False,
-                )
-            ],
-            demand(),
-            ScalePolicy(max_stop_per_cycle=1, scale_down_idle_seconds=600),
-        )
-
-        self.assertEqual(decision.stops, ("old-idle",))
-        self.assertEqual(decision.total_nodes, 1)
-
-    def test_active_incompatible_node_is_not_stopped_or_counted_as_capacity(
-        self,
-    ) -> None:
-        decision = evaluate_scale(
-            [
-                node(
-                    "old-active",
-                    active=1,
-                    agent_version_compatible=False,
-                )
-            ],
-            demand(pending_resources=ResourceQuantity(vcpu=1, memory_mb=512)),
-            ScalePolicy(max_nodes=5, max_create_per_cycle=5, max_stop_per_cycle=5),
-        )
-
-        self.assertEqual(decision.stops, ())
-        self.assertEqual(decision.creates, 1)
-        self.assertEqual(decision.total_nodes, 1)
-        self.assertEqual(decision.projected_free_resources, ResourceQuantity())
-
-    def test_booting_unversioned_node_prevents_replacement_stampede(self) -> None:
+    def test_booting_node_prevents_replacement_stampede(self) -> None:
         now = utc_now()
         decision = evaluate_scale(
             [
@@ -913,7 +876,6 @@ class ScalePolicyTests(unittest.TestCase):
                     state="RUNNING",
                     fresh=False,
                     heartbeat_present=False,
-                    agent_version_compatible=False,
                     started_at=now - timedelta(seconds=30),
                 )
             ],

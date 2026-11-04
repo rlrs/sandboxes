@@ -27,7 +27,6 @@ import time
 from typing import Any, Callable, Iterable, Mapping, NamedTuple
 
 from .capabilities import has_capability
-from .deployment import agent_version_is_schedulable
 from .models import NodeHeartbeat, ResourceQuantity, is_soft_drained
 from .placement_accounting import (
     PlacementRecord, PlacementReservation, PlacementRouteIndex,
@@ -68,14 +67,13 @@ class FleetView:
     @classmethod
     def ready(
         cls, heartbeats: Iterable[NodeHeartbeat], *, now: datetime, ttl_seconds: int,
-        routes: Iterable[PlacementRecord] = (), agent_version: str | None = None,
+        routes: Iterable[PlacementRecord] = (),
     ) -> FleetView:
         return cls(tuple(
             heartbeat for heartbeat in heartbeats
             if heartbeat.node_url and not heartbeat.draining and heartbeat.admission_open
             and has_capability(heartbeat.capabilities, "sandbox")
             and heartbeat.is_fresh(now, ttl_seconds)
-            and agent_version_is_schedulable(heartbeat.agent_version, expected=agent_version)
         ), _placement_route_index(list(routes)))
 
 

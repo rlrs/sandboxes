@@ -62,7 +62,7 @@ from .build_context_store import (
     BuildContextHttpHandler,
     build_context_digest_from_path,
 )
-from .deployment import agent_version_is_schedulable, service_health
+from .deployment import service_health
 from .storage_native_migration import (
     STORAGE_NATIVE_MIGRATION_SCHEMA,
     SUPPORTED_STORAGE_NATIVE_MIGRATION_SCHEMAS,
@@ -4886,8 +4886,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         for heartbeat in self.services.fleet.ready_heartbeats():
             if "image-cache" not in heartbeat.capabilities:
                 continue
-            if not agent_version_is_schedulable(heartbeat.agent_version):
-                continue
             if sandbox_nodes_only and "sandbox" not in heartbeat.capabilities:
                 continue
             if _has_resource_values(resources) and "sandbox" in heartbeat.capabilities:
@@ -4913,7 +4911,6 @@ class ControlPlaneHandler(BuildContextHttpHandler):
             for heartbeat in self.services.fleet.ready_heartbeats()
             if "image-build" in heartbeat.capabilities
             and "sandbox" not in heartbeat.capabilities
-            and agent_version_is_schedulable(heartbeat.agent_version)
         ]
         if not candidates:
             return None

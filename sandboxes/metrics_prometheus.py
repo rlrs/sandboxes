@@ -80,7 +80,7 @@ def render_snapshot(snapshot: dict[str, Any]) -> str:
 
 
 def _nodes(out: _Exposition, nodes: dict[str, Any]) -> None:
-    for state in ("total", "fresh", "compatible", "incompatible", "sandbox", "sandbox_ready",
+    for state in ("total", "fresh", "sandbox", "sandbox_ready",
                   "sandbox_draining", "sandbox_admission_closed", "builder"):
         out.add("nodes", "Nodes by heartbeat state", nodes.get(state), state=state)
     for item in nodes.get("items") or []:

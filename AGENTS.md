@@ -85,6 +85,9 @@ with `--update` to lower `tests/test_rules_baseline.json`.
 
 - Behaviour changes come with tests (see above). Rust ports of Python logic are
   pinned by golden files; regenerate them with the script next to them.
+- Workers and the gateway may run different releases; nodes are chosen by the
+  capabilities they advertise. A worker-side feature the gateway relies on adds
+  a capability, and the gateway checks it before using the feature.
 - Risky behaviour ships behind a config flag that defaults off. Once production runs
   it and there's no way back, make it the default and delete the old path.
 - Update the doc that describes what you changed; keep docs short. Open work goes in

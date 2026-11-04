@@ -857,7 +857,6 @@ class SandboxNode:
     heartbeat: NodeHeartbeat | None
     active_sandboxes: int
     heartbeat_fresh: bool
-    agent_version_compatible: bool = True
 
     @property
     def job_id(self) -> str:
@@ -876,7 +875,6 @@ class SandboxNode:
         heartbeat = self.heartbeat
         return bool(
             self.is_ready
-            and self.agent_version_compatible
             and heartbeat is not None
             and not heartbeat.draining
             and heartbeat.admission_open

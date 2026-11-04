@@ -166,9 +166,11 @@ dependencies; when `runtime/noded` changed, pass `--noded-build-dir` with the
 output of `runtime/noded/build_pinned.sh`. A bundle's modules match exactly one kernel; replace the closure
 whenever the kernel changes.
 
-**Every release repacks both bundles.** Placement only sends work to nodes
-whose agent version equals the gateway's, so a gateway upgrade without new
-bundles leaves the fleet unschedulable.
+**Workers and the gateway host can run different releases.** Nodes are
+chosen by the capabilities their heartbeats advertise, not by version, so a
+worker-side feature the gateway relies on must add a capability and the
+gateway must check it. A release that changes only the gateway host keeps the
+old bundles and `node_package_root`.
 
 ### Upgrading
 
@@ -194,12 +196,10 @@ and inspect.
 6. Run `gateway-reconcile`, confirm `/healthz` reports the new version, and
    `systemctl start ucloud-sandbox-registry-prune.timer`.
 7. Workers and builders take the new bundle at their next VM init. Old nodes
-   keep their sandboxes but get no new placements; drain them or let idle
-   scale-down replace them.
+   keep taking work; drain them to move the fleet onto the new bundle sooner.
 
 **Rollback:** reinstall the previous wheel and config and reconcile; restore
-the pre-upgrade backup if the release changed database contents. Do not roll
-back only the gateway while newer workers are still admitted.
+the pre-upgrade backup if the release changed database contents.
 
 ### Replaying VM init
 
