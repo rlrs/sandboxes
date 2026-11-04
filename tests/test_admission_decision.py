@@ -2,6 +2,8 @@
 from dataclasses import replace
 import unittest
 
+from hypothesis import given, strategies as st
+
 from sandboxes.admission_decision import (
     CLOSED,
     PROJECTED,
@@ -14,6 +16,7 @@ from sandboxes.admission_decision import (
     Refuse,
     Wait,
     decide,
+    exec_refusal,
     gate,
 )
 from sandboxes.models import NodeRuntimeMetrics, ResourceQuantity, utc_now
@@ -189,6 +192,31 @@ class DeadlineTests(unittest.TestCase):
         self.assertEqual(first, Wait(PROJECTED, RETRY_SECONDS))
         self.assertEqual(decide(metrics(4096), ledger, item), first)
         self.assertEqual(ledger.snapshot(), before)
+
+
+class ExecTests(unittest.TestCase):
+    def test_exec_refuses_on_drain_then_the_physical_floor_only(self):
+        self.assertIsInstance(exec_refusal(False, False, None), SandboxAdmissionClosedError)
+        self.assertIsNone(exec_refusal(True, False, None))
+        busy = metrics(2048, psi=99.0, cpu_percent=99.0)
+        self.assertIsNone(exec_refusal(True, True, busy))
+        for node, reason in ((None, NO_METRICS), (metrics(2047), PHYSICAL)):
+            refused = exec_refusal(True, True, node)
+            self.assertIsInstance(refused, SandboxCapacityUnavailableError)
+            self.assertEqual(str(refused), reason)
+
+    @given(st.booleans(), st.booleans(), st.none() | st.builds(
+        metrics, st.integers(0, 8192), total_mb=st.sampled_from([0, 65536]), swap_total_mb=st.integers(0, 4096),
+        swap_free_mb=st.integers(0, 4096), psi=st.floats(0, 100), cpu_percent=st.floats(0, 100)))
+    def test_exec_decides_as_the_guard_did_with_an_empty_ungated_request(self, open, configured, node):
+        old = request(open=open, capacity=SHAPE_64G if configured else None, requested=ResourceQuantity(),
+                      check_shape=False, check_memory_pressure=False, deadline=100.0)
+        decision = gate(old) or decide(node, TransitionLedger(), old)
+        refused = exec_refusal(open, configured, node)
+        if decision == Grant():
+            self.assertIsNone(refused)
+        else:
+            self.assertEqual((type(refused), str(refused)), (type(decision.error()), decision.reason))
 
 
 if __name__ == "__main__":

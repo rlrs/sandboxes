@@ -21,12 +21,14 @@ from uuid import uuid4
 from .admission import CREATE_ADMISSION_WAIT, FairCapacity
 from .admission_backend import LocalAdmission
 from .admission_decision import (
+    CLOSED as _ADMISSION_CLOSED,
     RETRY_SECONDS as _ADMISSION_RETRY_SECONDS,
     AdmissionNode,
     AdmissionRequest,
     Grant,
     Refuse,
     decide,
+    exec_refusal,
     fences,
     gate,
 )
@@ -2937,19 +2939,27 @@ class DirectSandboxService:
                     "exec generation does not own direct sandbox"
                 )
 
-        # An existing sandbox already shares CPU through its cgroup. Rejecting
-        # commands (including file reads) at a sampled CPU percentage prevents
-        # that workload from making progress without adding physical capacity.
-        # PSI includes cache reclaim and stalls inside limited sandboxes. It is
-        # a placement signal, not proof that a resident sandbox cannot run its
-        # next command. Let cgroups govern its workload; retain the physical
-        # memory floor, generation ownership and full-lifetime fencing.
-        with self._active_admission_guard(
-            ResourceQuantity(),
-            check_shape=False,
-            check_memory_pressure=False,
-            validate_owner=validate_owner,
-        ):
+        # exec_refusal is the decision (drain, then the memory floor); this
+        # samples outside the lock and rechecks drain and owner after it.
+        with self._capacity_guard:
+            if not self._admission_open:
+                raise SandboxAdmissionClosedError(_ADMISSION_CLOSED)
+            metrics_provider = self._runtime_metrics_provider if self._active_capacity is not None else None
+        metrics = metrics_provider() if metrics_provider is not None else None
+        validate_owner()
+        with self._capacity_guard:
+            capacity_configured = self._active_capacity is not None
+            if (
+                self._admission_open
+                and capacity_configured
+                and metrics_provider is not self._runtime_metrics_provider
+            ):
+                raise SandboxCapacityUnavailableError(
+                    "direct node runtime metrics provider changed during admission"
+                )
+            refused = exec_refusal(self._admission_open, capacity_configured, metrics)
+            if refused is not None:
+                raise refused
             # Keep a zero-resource lease so drain fencing, idle parking and
             # active-operation telemetry still cover the full exec lifetime.
             self._active_exec_reservations[token] = (key, ResourceQuantity())
