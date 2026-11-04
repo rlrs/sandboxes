@@ -161,6 +161,32 @@ def run_registry_sweep_locked(
     return result
 
 
+def run_staged_commit_collection(
+    config: DeploymentConfig,
+    *,
+    lock_file: Path = REGISTRY_MAINTENANCE_LOCK,
+) -> dict[str, Any] | None:
+    """Online: staged commit uppers past the blob grace (registry_staging).
+
+    Skipped while prune or a quiescent sweep holds the maintenance lock; the
+    every-minute pressure timer comes back soon after.
+    """
+
+    if config.registry_store.kind != "filesystem":
+        return None
+    from .managed_registry import RegistryClient, RegistryMaintenanceBusy
+    from .registry_staging import collect_staged_commits
+
+    try:
+        with registry_maintenance_lock(lock_file, blocking=False):
+            return collect_staged_commits(
+                config.registry_data_dir(), RegistryClient(config.registry_url).delete_blob,
+                grace_seconds=config.registry_blob_grace_seconds,
+            ).to_dict()
+    except RegistryMaintenanceBusy:
+        return {"skipped": "registry maintenance is active"}
+
+
 def run_registry_sweep(
     *,
     config: DeploymentConfig,
@@ -664,6 +690,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = DeploymentConfig.from_file(args.config)
     if args.command in {"registry-gc", "registry-pressure"}:
         require_registry_mount(config)
+        staged = run_staged_commit_collection(config)
+        if staged is not None:
+            print(json.dumps({"staged_commits": staged}, sort_keys=True))
         # A timer is not a maintenance window. Even a read-only mark phase
         # fences Distribution and interrupts reads/uploads for the full scan.
         # Keep online age/reference pruning in its separate prune unit; don't

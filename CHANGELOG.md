@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.10 - 2026-11-04 (gateway)
+
+- **Sandbox builds no longer fill the registry.** Each build stages its
+  sandbox's raw upper (up to 8 GiB) as a lone blob in `commits/<hash>`, and
+  nothing deleted it: only the quiescent sweep could, and that needs a
+  maintenance window. On 2026-11-04 1,140 of them (333 GB) filled the 500 GB
+  registry volume. Toolkit compositions then failed and roughly 40% of creates
+  were refused. The every-minute `registry-pressure` unit now unlinks staged
+  uppers older than `registry_blob_grace_seconds` (2 h; builds end within
+  30 min) through the registry API, and deletes their data once no repository
+  links it. The registry keeps running.
+- **Builds survive a slow commit export.** The build service gave up on
+  the first 504 from the export call, which the gateway marks retryable
+  (`node_request_timeout`). It now repeats the call until the build deadline.
+  The operation ID is the replay key, so a retry resumes the same export.
+- The ops watch alerts when the registry volume passes its cleanup threshold
+  (`registry_disk`), not only when a disk is full.
+- Backups keep 24 gateway and 4 chunk-index copies (were 48 and 8; about
+  130 GB on the registry volume).
+
 ## 0.10.9 - 2026-11-04 (gateway: worker init)
 
 - **Workers see their image devices after a reboot.** The image backend

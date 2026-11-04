@@ -180,7 +180,7 @@ and inspect.
 
 1. Stage the wheel, both bundles and the config in a new release directory on
    the project drive.
-2. Back up: `sudo /usr/local/libexec/ucloud-sandboxes/backup_gateway_state.py gateway --dest <backups> --keep 48`.
+2. Back up: `sudo /usr/local/libexec/ucloud-sandboxes/backup_gateway_state.py gateway --dest <backups> --keep 24`.
 3. `sudo systemctl stop ucloud-sandbox-registry-prune.timer`.
 4. Install the wheel and any changed units:
 

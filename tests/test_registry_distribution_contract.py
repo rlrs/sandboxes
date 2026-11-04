@@ -22,6 +22,22 @@ def _digest(payload: bytes) -> str:
     "set UCLOUD_TEST_REGISTRY_URL to run the Distribution contract",
 )
 class RegistryDistributionContractTests(unittest.TestCase):
+    def test_a_deleted_lone_blob_is_gone_from_its_repository(self) -> None:
+        # A staged commit upper: one blob, no manifest (registry_staging).
+        client = RegistryClient(REGISTRY_URL, timeout_seconds=10)
+        repository = "commits/contract-staged"
+        payload = b"staged upper " + os.urandom(8)
+        digest = _digest(payload)
+        location = client.start_blob_upload(repository)
+        location = client.upload_blob_chunk(location, payload)
+        client.finish_blob_upload(location, digest)
+        self.assertTrue(client.blob_exists(repository, digest))
+
+        client.delete_blob(repository, digest)
+        client.delete_blob(repository, digest)  # already gone
+
+        self.assertFalse(client.blob_exists(repository, digest))
+
     def test_blob_manifest_listing_and_delete_contract(self) -> None:
         client = RegistryClient(REGISTRY_URL, timeout_seconds=10)
         repository = "ucloud-contract/image"

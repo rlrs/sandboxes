@@ -523,6 +523,20 @@ class RegistryClient:
         )
         response.close()
 
+    def delete_blob(self, repository: str, digest: str) -> None:
+        """Remove ``repository``'s link to the blob; data stays until collected. Gone is fine."""
+        normalized = _validate_lease_digest(digest)
+        try:
+            response = self._request(
+                f"/v2/{_quote_repository(repository)}/blobs/{quote(normalized, safe=':')}",
+                method="DELETE",
+            )
+        except RegistryRequestError as exc:
+            if exc.status_code == 404:
+                return
+            raise
+        response.close()
+
     def blob_exists(self, repository: str, digest: str) -> bool:
         normalized = _validate_lease_digest(digest)
         path = (

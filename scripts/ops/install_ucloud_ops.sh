@@ -58,11 +58,11 @@ WantedBy=timers.target
 EOF
 }
 unit ucloud-sandbox-backup-gateway "Back up gateway PostgreSQL and state" \
-  "$python $libexec/backup_gateway_state.py gateway --dest $backups/gateway --keep 48" \
+  "$python $libexec/backup_gateway_state.py gateway --dest $backups/gateway --keep 24" \
   "OnCalendar=hourly
 RandomizedDelaySec=300"
 unit ucloud-sandbox-backup-chunk-index "Back up the store node's chunk index" \
-  "$python $libexec/backup_gateway_state.py chunk-index --dest $backups/chunk-index --keep 8" \
+  "$python $libexec/backup_gateway_state.py chunk-index --dest $backups/chunk-index --keep 4" \
   "OnCalendar=00/6:20"
 unit ucloud-sandbox-ops-watch "Control plane health watch" \
   "$python $libexec/ops_watch.py --backups $backups --public-gateway '$public_gateway' --public-relay '$public_relay'" \

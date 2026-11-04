@@ -485,6 +485,34 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual([result["status"] for result in results], ["succeeded"] * 3, results)
         self.assertEqual(peak[0], 1)
 
+    def test_an_export_the_worker_timed_out_on_is_resumed(self):
+        class TimesOutOnce(FakeGateway):
+            requests = []
+
+            def call(self, method, path, payload=None, **options):
+                if path.endswith("/commit-export"):
+                    self.requests.append(payload)
+                    if len(self.requests) == 1:
+                        return 504, {"error": "sandbox node request timed out", "code": "node_request_timeout",
+                                     "retryable": True}
+                return super().call(method, path, payload, **options)
+
+        class Converter:
+            def extend(self, parent, layer, diff_id, *, image_config, repository):
+                return {"root": "sha256:" + "e" * 64, "config": "sha256:" + "f" * 64, "config_size": 9, "metrics": {}}
+
+        def filtered(client, commit, root, timeout_seconds):
+            from sandboxes.commit_policy import FilterResult
+            Path(root, "filtered.tar").write_bytes(b"layer")
+            return FilterResult("sha256:" + "9" * 64, 5, 1, {})
+
+        gateway = TimesOutOnce()
+        with patch("sandboxes.environment_prepare.prepare_commit_in_subprocess", filtered):
+            result = self.runner(gateway, Converter()).run(self.job())
+        self.assertEqual(result["status"], "succeeded", result)
+        self.assertEqual({request["operation_id"] for request in gateway.requests},
+                         {gateway.requests[0]["operation_id"]})
+
     def test_a_failed_step_is_the_recipes_failure_and_the_sandbox_goes(self):
         gateway = FakeGateway(exit_code=1)
         result = self.runner(gateway, None).run(self.job())
