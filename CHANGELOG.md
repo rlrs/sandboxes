@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.8 - 2026-11-04 (workers, build service)
+
+- **The idle-image sweep no longer waits on shared components.** Dropping a
+  collected image's components took each one's exclusive lease and waited
+  for it. Under load, base components shared by many images are leased by
+  some mount nearly all the time, and the wait never ended: the sweep froze,
+  with the agent's deletion loop it runs in, and nothing freed the cache. A
+  busy component now stays attached for a later sweep or the backend's
+  cache budget.
+- **Workers come back from a reboot.** systemd created `/run/ucloud-sandboxes`
+  0755 as the parent of storage-native's runtime directory, and the memory
+  filesystem refused it, so storage-native never started again. Init now
+  installs a tmpfiles entry that creates it 0700 at boot, and repairs it when
+  replayed. Workers take this at their next init.
+- **Builder sandboxes retry retryable answers.** The build service retried
+  only 503s when creating its sandbox; a 504 the gateway marks retryable
+  (a worker that timed out) failed the build.
+
 ## 0.10.7 - 2026-11-04 (workers)
 
 - **Workers keep attaching images over the cache budget.** Once a worker's

@@ -324,6 +324,37 @@ class SpoolTests(unittest.TestCase):
             self.assertEqual(spool.cancel("recipe-1", "sandbox:recipe-1:b"), (None, None))
 
 
+class ScriptedCreates(sandbox_build.GatewayApi):
+    """Answers each create with the next scripted (status, body)."""
+    create_retry_seconds = 0
+
+    def __init__(self, answers):
+        super().__init__("http://gateway", "token")
+        self.answers = list(answers)
+
+    def call(self, method, path, payload=None, **_options):
+        return self.answers.pop(0)
+
+
+class BuilderCreateTests(unittest.TestCase):
+    def test_capacity_and_retryable_answers_are_retried_until_the_sandbox_starts(self):
+        timed_out = (504, {"error": "sandbox node request timed out", "code": "node_request_timeout",
+                           "retryable": True})
+        gateway = ScriptedCreates([(503, {"error": "node_startup_busy"}), timed_out,
+                                   (201, {"sandbox": {"id": "sbuild-a"}})])
+        self.assertEqual(gateway.create({"id": "sbuild-a"}, deadline=float("inf")), {"id": "sbuild-a"})
+
+    def test_other_answers_fail_at_once(self):
+        for answer in ((504, {"error": "gateway timeout"}), (400, {"error": "bad spec", "retryable": False})):
+            with self.subTest(status=answer[0]), self.assertRaises(sandbox_build.GatewayError) as raised:
+                ScriptedCreates([answer, (201, {"sandbox": {}})]).create({"id": "x"}, deadline=float("inf"))
+            self.assertEqual(raised.exception.status, answer[0])
+
+    def test_retries_stop_at_the_deadline(self):
+        with self.assertRaises(sandbox_build.GatewayError):
+            ScriptedCreates([(503, {}), (201, {"sandbox": {}})]).create({"id": "x"}, deadline=0.0)
+
+
 class FakeGateway(sandbox_build.GatewayApi):
     def __init__(self, *, exit_code=0, hang=False):
         super().__init__("http://gateway", "token")
