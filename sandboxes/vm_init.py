@@ -52,6 +52,8 @@ DEFAULT_MANAGED_INIT = "/usr/local/libexec/ucloud-sandbox-init"
 DEFAULT_NODED = "/usr/local/libexec/ucloud-noded"
 # The Python agent's socket behind ucloud-noded, the node's front door.
 NODE_AGENT_SOCKET = "/run/ucloud-sandboxes/node-agent/agent.sock"
+# Creates /run/ucloud-sandboxes private at boot, before any unit runs.
+RUNTIME_TMPFILES = "/etc/tmpfiles.d/ucloud-sandboxes.conf"
 DEFAULT_STORAGE_NATIVE_BACKEND = "/usr/local/libexec/ucloud-storage-native-backend"
 DEFAULT_STORAGE_NATIVE_BACKEND_SOCKET = (
     "/run/ucloud-sandboxes/storage-native/backend.sock"
@@ -1932,6 +1934,12 @@ printf '#!/bin/sh\nexec env PYTHONPATH=%q /usr/bin/python3 -m sandboxes.storage_
 $SUDO install -m 0755 -o root -g root "$UCLOUD_STORAGE_AGENT_LAUNCHER" "$UCLOUD_STORAGE_AGENT_BIN"
 rm -f "$UCLOUD_STORAGE_AGENT_LAUNCHER"
 if [ "$UCLOUD_NODE_ROLE" = sandbox ]; then
+  # The memory filesystem requires a private /run/ucloud-sandboxes. After a
+  # reboot, storage-native's RuntimeDirectory would create it 0755 first and
+  # its ExecStartPre would refuse it: make every boot create it 0700.
+  printf 'd /run/ucloud-sandboxes 0700 root root -\\n' | $SUDO tee {RUNTIME_TMPFILES} >/dev/null
+  $SUDO install -d -m 0700 -o root -g root /run/ucloud-sandboxes
+  $SUDO chmod 0700 /run/ucloud-sandboxes
   UCLOUD_RAM_MEMORY_ARGS=()
   if [ "$UCLOUD_DIRECT_RAM_MEMORY_BACKING" -eq 1 ]; then
     UCLOUD_RAM_MEMORY_ARGS=(--ram-root "$UCLOUD_APPLICATION_MEMORY_ROOT" --ram-capacity-bytes "$UCLOUD_APPLICATION_MEMORY_CAPACITY_BYTES" --ram-swappable)

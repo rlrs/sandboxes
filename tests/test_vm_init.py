@@ -367,6 +367,16 @@ else:
         # The swapfile is the existing swap_gb file, prepared before zswap.
         self.assertLess(on.index('fallocate -l "${UCLOUD_SWAP_GB}G"'), on.index("zswap/parameters/enabled"))
 
+    def test_every_boot_creates_the_memory_filesystem_parent_private(self):
+        # Otherwise storage-native's RuntimeDirectory creates it 0755 after a
+        # reboot and the memory filesystem's ExecStartPre refuses to start.
+        script = render_vm_init_script(self._options(direct_ram_memory_backing=True))
+        self.assertIn("printf 'd /run/ucloud-sandboxes 0700 root root -\\n' | $SUDO tee "
+                      "/etc/tmpfiles.d/ucloud-sandboxes.conf", script)
+        # Replayed after a reboot, init repairs the directory before its own provisioning.
+        self.assertLess(script.index("$SUDO chmod 0700 /run/ucloud-sandboxes"),
+                        script.index('--hard-capacity-bytes "$UCLOUD_STORAGE_NATIVE_HARD_CAPACITY_BYTES"'))
+
     def test_split_checkpoint_rejects_s3_before_rendering_worker(self):
         with self.assertRaisesRegex(ValueError, "requires registry checkpoint"):
             render_vm_init_script(self._options(storage_native_snapshot_backend="s3"))

@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -266,6 +267,18 @@ class IdleImageSweepTests(unittest.TestCase):
         self.assertEqual(store.collect_idle(), (first,))
         self.assertEqual(self.attached, {"sha256:" + "0" * 64, "sha256:" + "2" * 64})
         self.assertIn(self.rootfs(second), self.mounts)
+
+    def test_a_component_a_mount_is_leasing_never_stalls_the_sweep(self):
+        store = self.store(percent=1)
+        idle = self.image(store, "a", "0", "1", used=1.0)
+        shared = "0" * 64
+        descriptor = os.open(store.locks / f"{shared}.lock", os.O_CREAT | os.O_RDWR, 0o600)
+        self.addCleanup(os.close, descriptor)
+        fcntl.flock(descriptor, fcntl.LOCK_SH)  # Another image's mount holds the shared base component.
+        self.assertEqual(store.collect_idle(), (idle,))
+        self.assertEqual(self.attached, {"sha256:" + shared})  # Left for a later sweep.
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        self.assertNotIn(self.rootfs(idle), self.mounts)
 
     def test_a_device_cache_over_its_bytes_collects_idle_images_until_under(self):
         store = self.store()

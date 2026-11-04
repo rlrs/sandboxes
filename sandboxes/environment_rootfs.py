@@ -151,12 +151,13 @@ class EnvironmentRootfsStore:
             # A many-layer image can exhaust the pool halfway through mounting.
             # Release unused exports before placement retries elsewhere, or the
             # failed admission itself keeps the node full. Upgrade to exclusive
-            # leases only after releasing the shared ones; concurrent composers
-            # finish first, and the backend retains their kernel dependencies.
+            # leases only after releasing the shared ones, and without waiting:
+            # a component another composer leases is in use, not unused.
             for digest in components:
                 try:
-                    with self._lease(digest, exclusive=True):
-                        self.backend.drop(digest)
+                    with self._lease(digest, exclusive=True, blocking=False) as owned:
+                        if owned:
+                            self.backend.drop(digest)
                 except Exception:
                     _LOG.warning("could not release component after device exhaustion: %s", digest, exc_info=True)
             raise
@@ -346,8 +347,15 @@ class EnvironmentRootfsStore:
             self._mounted_components.pop(image_id, None)
             self._last_used.pop(image_id, None)
         for digest in environment.components:
-            with self._lease(digest, exclusive=True):
-                self.backend.drop(digest)  # Other composed lowers return EBUSY.
+            # Never wait: a base component shared by many images is leased by
+            # some mount nearly always under load, and an exclusive flock
+            # waiting behind a stream of shared ones never gets it, which
+            # stalled this sweep and the deletion loop it runs in. A busy
+            # component stays attached for a later sweep or the backend's
+            # cache budget.
+            with self._lease(digest, exclusive=True, blocking=False) as owned:
+                if owned:
+                    self.backend.drop(digest)  # Other composed lowers return EBUSY.
         return True
 
     def note_used(self, image_id):

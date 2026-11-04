@@ -664,16 +664,20 @@ class GatewayApi:
                 parsed = {"error": content[:300].decode(errors="replace")}
             return exc.code, parsed
 
+    create_retry_seconds = 5
+
     def create(self, spec, *, deadline, stop=None):
-        """Retries capacity and worker-boot answers (503) until ``deadline``
-        or until ``stop()`` is true."""
+        """Retries capacity and worker-boot answers (503), and any answer the
+        gateway marks retryable (a worker that timed out: 504), until
+        ``deadline`` or until ``stop()`` is true."""
         while True:
             status, body = self.call("POST", "/v1/sandboxes", spec, timeout=600)
             if 200 <= status < 300:
                 return body.get("sandbox") or body
-            if status != 503 or time.monotonic() > deadline or (stop is not None and stop()):
+            retryable = status == 503 or (isinstance(body, dict) and body.get("retryable") is True)
+            if not retryable or time.monotonic() > deadline or (stop is not None and stop()):
                 raise GatewayError(status, body)
-            time.sleep(5)
+            time.sleep(self.create_retry_seconds)
 
     def sandbox_path(self, sandbox_id, suffix=""):
         return f"/v1/sandboxes/{parse.quote(sandbox_id, safe='')}{suffix}"
