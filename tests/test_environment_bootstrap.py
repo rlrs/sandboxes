@@ -155,8 +155,17 @@ class EnvironmentBootstrapTests(unittest.TestCase):
             worker = render_vm_init_script(vm_fixtures.VmInitTests._options(**common))
             self.assertIn("serve-environment-io", worker)
             self.assertIn("LimitNOFILE=65536", worker.split("ENVIRONMENT_IO_SERVICE")[1])  # Not 1024 (512-burst EMFILE).
-            self.assertIn("systemctl start ucloud-environment-io.service", worker)
-            self.assertNotIn("systemctl restart ucloud-environment-io.service", worker)
+            # Never restarted beneath live devices; restarted only when this init
+            # loaded nbd, so a backend started at boot without devices sees them.
+            restart_once = ('if [ "$UCLOUD_NBD_LOADED_NOW" -eq 1 ]; then $SUDO systemctl restart '
+                            "ucloud-environment-io.service; else $SUDO systemctl start ucloud-environment-io.service; fi")
+            self.assertIn(restart_once, worker)
+            self.assertEqual(worker.count("systemctl restart ucloud-environment-io.service"), 1)
+            loaded = worker.index("modprobe nbd nbds_max=1024 max_part=0; UCLOUD_NBD_LOADED_NOW=1; fi")
+            self.assertLess(worker.index("UCLOUD_NBD_LOADED_NOW=0"), loaded)
+            self.assertLess(loaded, worker.index(restart_once))
+            # Later boots load nbd before any unit starts.
+            self.assertIn("printf 'nbd\\n' | $SUDO tee /etc/modules-load.d/ucloud-sandboxes-nbd.conf", worker)
             self.assertNotIn("PartOf=", worker)
             self.assertIn("PrivateMounts=no", worker)
             self.assertIn("require a fresh worker", worker)

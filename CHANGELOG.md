@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.10.9 - 2026-11-04 (gateway: worker init)
+
+- **Workers see their image devices after a reboot.** The image backend
+  (`ucloud-environment-io`) counts its NBD devices once, at startup. After a
+  reboot it started before init loaded `nbd`, and init only starts it (never
+  restarts it, so live devices survive upgrades), so it ran with no devices
+  and every create was refused with "no available environment block
+  device". Init now loads `nbd` at every boot (`modules-load.d`) and, when
+  it loads `nbd` itself, restarts the backend, which cannot hold anything
+  without devices. Install on the gateway host; workers take it at their
+  next init.
+
 ## 0.10.8 - 2026-11-04 (workers, build service)
 
 - **The idle-image sweep no longer waits on shared components.** Dropping a

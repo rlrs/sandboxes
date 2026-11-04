@@ -9,6 +9,7 @@ TRUST_FILE = "/etc/ucloud-sandboxes/environment/producers.json"
 KEY_FILE = "/etc/ucloud-sandboxes/environment/producer.pem"
 SOCKET = "/run/ucloud-environment/io.sock"
 SERVICE = "ucloud-environment-io.service"
+NBD_MODULES_LOAD = "/etc/modules-load.d/ucloud-sandboxes-nbd.conf"
 CHUNK_TOKEN_FILE = "/etc/ucloud-sandboxes/environment/chunk-index.token"
 WRITE_TOKEN_FILE = "/etc/ucloud-sandboxes/environment/chunk-index-write.token"  # Builders only.
 BUNDLED_NYDUS_IMAGE = "runtime/nydus/nydus-image"  # In the builder bundle.
@@ -58,7 +59,11 @@ $SUDO modprobe erofs
 # One device serves each distinct mounted component, so the pool bounds the
 # distinct components a worker mounts at once: per-layer images share their
 # base components but add one or more of their own (hundreds at target density).
-if [ ! -d /sys/module/nbd ]; then $SUDO modprobe nbd nbds_max=1024 max_part=0; fi
+UCLOUD_NBD_LOADED_NOW=0
+if [ ! -d /sys/module/nbd ]; then $SUDO modprobe nbd nbds_max=1024 max_part=0; UCLOUD_NBD_LOADED_NOW=1; fi
+# Every later boot loads it before any unit starts: the backend counts its
+# devices once, at startup.
+printf 'nbd\\n' | $SUDO tee {NBD_MODULES_LOAD} >/dev/null
 test -b /dev/nbd0
 $SUDO touch "$UCLOUD_STATE_DIR/environment-adapter"
 {chunk_setup}$SUDO tee /etc/systemd/system/{SERVICE} >/dev/null <<ENVIRONMENT_IO_SERVICE
@@ -85,7 +90,11 @@ WantedBy=multi-user.target
 ENVIRONMENT_IO_SERVICE
 '''
     # Start (never restart): active filesystem devices outlive frontend upgrades.
-    start = f"$SUDO systemctl enable {SERVICE}\n$SUDO systemctl start {SERVICE}\n"
+    # Unless this init just loaded nbd: a backend already running (started at
+    # boot) found no devices, so it holds nothing and must restart to see them.
+    start = (f"$SUDO systemctl enable {SERVICE}\n"
+             f'if [ "$UCLOUD_NBD_LOADED_NOW" -eq 1 ]; then $SUDO systemctl restart {SERVICE}; '
+             f"else $SUDO systemctl start {SERVICE}; fi\n")
     rafs = " --environment-rafs" if options.environment_chunk_store_url else ""
     budget = options.environment_device_budget_percent
     # Absent at the default, so the rendered init is unchanged.
