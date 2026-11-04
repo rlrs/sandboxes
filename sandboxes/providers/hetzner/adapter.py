@@ -12,6 +12,7 @@ from ..base import (
     InstanceCreateIntent,
     ProviderError,
     ProviderMutationResult,
+    QUOTA_EXCEEDED,
 )
 from .api import HetznerClient, HetznerError, HetznerHttpError
 from .config import HetznerImage
@@ -386,6 +387,9 @@ def _mutation_error_result(
         "responses": list(responses),
         "error": {"status": exc.status, "payload": exc.payload},
     }
+    api_error = exc.payload.get("error") if isinstance(exc.payload, dict) else None
+    if isinstance(api_error, dict) and api_error.get("code") == "resource_limit_exceeded":
+        response[QUOTA_EXCEEDED] = True
     deterministic = 400 <= exc.status < 500 and exc.status not in {408, 425, 429}
     if deterministic and not applied_ids:
         return ProviderMutationResult(

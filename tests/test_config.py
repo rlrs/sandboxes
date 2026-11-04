@@ -50,6 +50,17 @@ class ConfigTests(unittest.TestCase):
                     candidate = {**raw, "builder": {**raw["builder"], name: value}}
                     DeploymentConfig.from_dict(candidate)
 
+    def test_stuck_start_deletes_are_additive_and_off_by_default(self):
+        raw = self._raw()
+        raw.pop("autoscaler_max_stuck_start_deletes_per_cycle")
+        self.assertEqual(DeploymentConfig.from_dict(raw).autoscaler_max_stuck_start_deletes_per_cycle, 0)
+        for value in (-1, True, "8"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                DeploymentConfig.from_dict({**raw, "autoscaler_max_stuck_start_deletes_per_cycle": value})
+        config = DeploymentConfig.from_dict({**raw, "autoscaler_max_stuck_start_deletes_per_cycle": 32})
+        self.assertEqual(config.autoscaler_max_stuck_start_deletes_per_cycle, 32)
+        self.assertEqual(DeploymentConfig.from_dict(config.to_dict()), config)
+
     @staticmethod
     def _raw() -> dict[str, object]:
         return DeploymentConfig.default(scope_id="project-1").to_dict()

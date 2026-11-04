@@ -6,7 +6,7 @@ from unittest.mock import patch
 from sandboxes import cli
 from sandboxes.config import DeploymentConfig
 from sandboxes.models import InstancePhase
-from sandboxes.providers.base import InstanceCreateIntent, ProviderConfiguration
+from sandboxes.providers.base import QUOTA_EXCEEDED, InstanceCreateIntent, ProviderConfiguration
 from sandboxes.providers.hetzner import (
     HetznerClient,
     HetznerCreateProfile,
@@ -366,6 +366,18 @@ class HetznerProviderTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "uncertain")
         self.assertEqual(result.instance_ids, ("41",))
+
+    def test_create_marks_an_account_limit_refusal(self):
+        quota = HetznerHttpError("POST", "/servers", 403, {"error": {
+            "code": "resource_limit_exceeded", "message": "dedicated core limit exceeded"}})
+        invalid = HetznerHttpError("POST", "/servers", 400, {"error": {"code": "invalid_input"}})
+        for failure, marked in ((quota, True), (invalid, False)):
+            client = FakeHetznerClient()
+            client.create_results = [failure]
+            result = provider(client).create({"servers": [{"name": "node"}]})
+            with self.subTest(code=failure.payload["error"]["code"]):
+                self.assertEqual(result.status, "rejected")
+                self.assertEqual(bool(result.response.get(QUOTA_EXCEEDED)), marked)
 
     def test_terminate_is_idempotent_for_not_found_and_classifies_errors(self):
         client = FakeHetznerClient()

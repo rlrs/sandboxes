@@ -60,7 +60,7 @@ from .control_state import (
     CONTINUITY_VERIFIED_THROUGH, QUARANTINE_EPOCH, QUARANTINE_REASON, ControlStateStore,
     quarantined_labels, recovered_labels,
 )
-from .control_plane import build_server
+from .control_plane import SANDBOX_GENERATION_HEADER, SANDBOX_OPERATION_ID_HEADER, build_server
 from .heartbeat_sender import DEFAULT_HEARTBEAT_INTERVAL_SECONDS, HeartbeatSenderConfig
 from .deployment import (
     AGENT_VERSION_LABEL,
@@ -156,6 +156,7 @@ from .providers.base import (
     InstanceBootstrapAccess,
     InstanceCreateIntent,
     ProviderError,
+    QUOTA_EXCEEDED,
 )
 from .providers.loader import load_external_provider
 from .providers.ucloud import (
@@ -196,6 +197,7 @@ from .routing import (
     is_worker_detachable_parked_route,
     sandbox_demand_from_routing_state,
 )
+from .stuck_starts import StuckStart, stuck_start_candidates, stuck_starts_due
 from .telemetry import Telemetry, TelemetrySettings
 from .providers.ucloud.api import (
     SessionStore,
@@ -1606,12 +1608,13 @@ def _delete_bounded_json(
     empty_token_error: str,
     timeout_seconds: float,
     response_name: str,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     base_url = str(base_url).strip().rstrip("/")
     parsed = urlparse(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError(invalid_url_error)
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", **(extra_headers or {})}
     if bearer_token is not None:
         bearer_token = bearer_token.strip()
         if not bearer_token:
@@ -3269,6 +3272,39 @@ _PENDING_DELETE_REPLAY_TIMEOUT_SECONDS = 30.0
 _PENDING_DELETE_REPLAY_CONCURRENCY = 8
 
 
+def _delete_stuck_starts(
+    items: list[StuckStart], *, bearer_token: str,
+) -> list[dict[str, Any]]:
+    """Delete each stuck registration on its worker, fenced to its own incarnation."""
+
+    def delete(item: StuckStart) -> dict[str, Any]:
+        error = ""
+        try:
+            _delete_bounded_json(
+                item.node_url, f"/v1/sandboxes/{quote(item.sandbox_id, safe='')}",
+                bearer_token=bearer_token,
+                invalid_url_error="node heartbeat has an invalid node URL",
+                empty_token_error="node control bearer token cannot be empty",
+                timeout_seconds=_PENDING_DELETE_REPLAY_TIMEOUT_SECONDS,
+                response_name="node stuck start delete",
+                extra_headers={
+                    SANDBOX_GENERATION_HEADER: str(item.generation),
+                    SANDBOX_OPERATION_ID_HEADER: item.operation_id,
+                },
+            )
+        except Exception as exc:
+            error = str(exc)
+        return {
+            "job_id": item.job_id, "sandbox_id": item.sandbox_id, "generation": item.generation,
+            "operation_id": item.operation_id, "deleted": not error, "error": error,
+        }
+
+    if not items:
+        return []
+    with ThreadPoolExecutor(min(_PENDING_DELETE_REPLAY_CONCURRENCY, len(items))) as pool:
+        return list(pool.map(delete, items))
+
+
 def _replay_pending_deletes(
     routes: list[SandboxRoute], *, skip_job_ids: set[str], provider_state: AutoscalerStateStore,
     deployment_id: str, budget: int, gateway_url: str, bearer_token: str | None,
@@ -3517,6 +3553,23 @@ def _builder_capacity_operation_succeeded(
     return count > 0 and existing_builders + count >= desired_builders
 
 
+# An account limit does not lift within a cycle. Retrying it every cycle spends
+# the provider's API rate limit, which inventory and stops share.
+CREATE_QUOTA_BACKOFF = timedelta(minutes=5)
+
+
+def quota_blocked_roles(
+    failed_creates: Iterable[ProviderOperation], now: datetime,
+    backoff: timedelta = CREATE_QUOTA_BACKOFF,
+) -> set[str]:
+    """Roles whose creates the provider refused for quota within ``backoff``."""
+
+    return {
+        operation.role for operation in failed_creates
+        if operation.response.get(QUOTA_EXCEEDED) and now - operation.updated_at < backoff
+    }
+
+
 def _reconcile_provider_operation_inventory(
     *,
     provider_state: AutoscalerStateStore | None,
@@ -3553,6 +3606,9 @@ def _reconcile_provider_operation_inventory(
         for item in replay_results
         if item.kind == "create" and item.state == "accepted"
     )
+    blocked_roles.update(quota_blocked_roles(
+        provider_state.list_operations(kind="create", states={"failed"}), utc_now(),
+    ))
     observed_job_ids = {job.id for job in jobs if job.id}
     guards: list[dict[str, Any]] = []
     for operation in provider_state.list_operations(
@@ -4267,6 +4323,7 @@ def run_reconcile_cycle(  # noqa: C901
     storage_native_migration_results: list[dict[str, Any]] = []
     storage_native_detach_results: list[dict[str, Any]] = []
     pending_delete_results: list[dict[str, Any]] = []
+    stuck_start_results: list[dict[str, Any]] = []
     drain_ready_stop_job_ids: list[str] = []
     canceled_drain_job_ids: list[str] = []
     detach_gateway_url = f"http://127.0.0.1:{config.gateway_port}"
@@ -4290,6 +4347,23 @@ def run_reconcile_cycle(  # noqa: C901
             gateway_url=detach_gateway_url,
             bearer_token=gateway_control_bearer_token,
         )
+        stuck_budget = config.autoscaler_max_stuck_start_deletes_per_cycle
+        if stuck_budget > 0 and routing_store is not None:
+            candidates = stuck_start_candidates(
+                [node for node in sandbox_nodes if node.job_id not in quarantined_job_ids],
+                sandbox_routes,
+            )
+            first_seen = provider_state.track_stuck_starts(
+                deployment_id=operation_deployment_id, keys=[item.key for item in candidates],
+            )
+            due = stuck_starts_due(candidates, first_seen, utc_now(), budget=stuck_budget)
+            # The cycle's route snapshot may predate a new create: re-read each.
+            due = [item for item in due if (
+                (route := routing_store.get_sandbox_readonly(item.sandbox_id)) is None
+                or route.generation > item.generation
+            )]
+            assert_provider_fence()
+            stuck_start_results = _delete_stuck_starts(due, bearer_token=node_control_bearer_token)
     remaining_detach_budget = max(
         0,
         config.autoscaler_max_storage_native_detaches_per_cycle,
@@ -4738,6 +4812,7 @@ def run_reconcile_cycle(  # noqa: C901
         ],
         "drainResults": drain_results,
         "pending_delete_results": pending_delete_results,
+        "stuck_start_results": stuck_start_results,
         "storage_native_migration_results": storage_native_migration_results,
         "storage_native_detach_results": storage_native_detach_results,
         "softDrain": soft_drain_result,
@@ -6058,6 +6133,12 @@ def print_reconcile(
                 else f"failed: {move.get('error')}"
             )
             print(f"- move {move['sandboxId']}: {outcome}")
+    for item in result.get("stuck_start_results", []):
+        outcome = "deleted" if item.get("deleted") else f"failed: {item.get('error')}"
+        print(
+            f"Stuck start {item['sandbox_id']} (generation {item['generation']}) "
+            f"on {item['job_id']}: {outcome}"
+        )
     print("Bootstrap intents:")
     bootstrap_intents = result.get("rawBootstrapIntents", [])
     if not bootstrap_intents:
@@ -6086,6 +6167,11 @@ def print_reconcile(
         created = result.get("createdJobIds", [])
         created_label = ", ".join(created) if created else "(none returned)"
         print(f"Submitted create jobs: {created_label}")
+        for error in dict.fromkeys(
+            item["error"] for item in submitted_operations
+            if item.get("kind") == "create" and item.get("state") == "failed" and item.get("error")
+        ):
+            print(f"Create failed: {error}")
     elif create_intents:
         print("Create dry-run only. Re-run with --execute to submit planned VMs.")
     if any(item.get("kind") == "stop" for item in submitted_operations):

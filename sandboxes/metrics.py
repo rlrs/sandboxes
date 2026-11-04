@@ -847,6 +847,16 @@ def _autoscaler_execution_summary(result: dict[str, Any]) -> dict[str, Any]:
                     ("error", "error"),
                 ),
             ),
+            "stuck_start_deletes": _bounded_result_summaries(
+                result.get("stuck_start_results"),
+                (
+                    ("job_id", "job_id"),
+                    ("sandbox_id", "sandbox_id"),
+                    ("generation", "generation"),
+                    ("deleted", "deleted"),
+                    ("error", "error"),
+                ),
+            ),
             "orphaned_migration_reconciles": _bounded_result_summaries(
                 result.get("orphanedMigrationReconciles"),
                 (

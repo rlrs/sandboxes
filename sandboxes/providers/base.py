@@ -87,6 +87,10 @@ class InstanceCreateIntent:
         }
 
 
+# Response key: the provider refused a create for an account resource limit.
+QUOTA_EXCEEDED = "quota_exceeded"
+
+
 @dataclass(frozen=True)
 class ProviderMutationResult:
     """Normalized result of one provider mutation.
@@ -94,6 +98,8 @@ class ProviderMutationResult:
     ``uncertain`` is deliberately distinct from rejection: after a transport
     failure the provider may already have applied the request, so the
     autoscaler must recover through inventory instead of retrying blindly.
+    A rejected create whose ``response`` sets ``QUOTA_EXCEEDED`` hit an
+    account limit that retrying will not clear.
     """
 
     status: ProviderMutationStatus
