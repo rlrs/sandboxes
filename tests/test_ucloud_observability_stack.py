@@ -34,6 +34,8 @@ class UCloudObservabilityStackTests(unittest.TestCase):
             self.assertIn(required, script)
         self.assertNotIn("-p 0.0.0.0:", script)
         self.assertNotIn("GF_AUTH_ANONYMOUS_ENABLED=true", script)
+        # A store crash loop must not restart Grafana and the collector with it (2026-11-05).
+        self.assertNotIn("Requires=ucloud-telemetry-", script)
         self.assertIn("/work/*|/mnt/ucloud/*", script)
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
 
