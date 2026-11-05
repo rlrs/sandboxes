@@ -300,7 +300,7 @@ Restart=always
 RestartSec=5
 ExecStartPre=-/usr/bin/docker network create ucloud-telemetry
 ExecStartPre=-/usr/bin/docker rm -f ucloud-telemetry-tempo
-ExecStart=/usr/bin/docker run --name ucloud-telemetry-tempo --network ucloud-telemetry --memory 768m --cpus 0.60 --cpu-shares 256 --user 0:0 --log-driver journald -p 127.0.0.1:3200:3200 -v $config_root/tempo.yaml:/etc/tempo.yaml:ro -v $data_root/tempo:/var/tempo grafana/tempo:2.10.7 -config.file=/etc/tempo.yaml
+ExecStart=/usr/bin/docker run --name ucloud-telemetry-tempo --network ucloud-telemetry --memory 2g --cpus 0.60 --cpu-shares 256 --user 0:0 --log-driver journald -p 127.0.0.1:3200:3200 -v $config_root/tempo.yaml:/etc/tempo.yaml:ro -v $data_root/tempo:/var/tempo grafana/tempo:2.10.7 -config.file=/etc/tempo.yaml
 ExecStop=/usr/bin/docker stop --time 30 ucloud-telemetry-tempo
 TimeoutStopSec=40
 
@@ -333,7 +333,7 @@ cat >/etc/systemd/system/ucloud-telemetry-collector.service <<EOF
 Description=UCloud OpenTelemetry Collector
 After=docker.service network-online.target ucloud-telemetry-tempo.service ucloud-telemetry-victoria.service
 Wants=docker.service network-online.target
-Requires=ucloud-telemetry-tempo.service ucloud-telemetry-victoria.service
+Wants=ucloud-telemetry-tempo.service ucloud-telemetry-victoria.service
 
 [Service]
 Restart=always
@@ -353,7 +353,7 @@ cat >/etc/systemd/system/ucloud-telemetry-grafana.service <<EOF
 Description=UCloud Grafana observability UI
 After=docker.service network-online.target ucloud-telemetry-tempo.service ucloud-telemetry-victoria.service
 Wants=docker.service network-online.target
-Requires=ucloud-telemetry-tempo.service ucloud-telemetry-victoria.service
+Wants=ucloud-telemetry-tempo.service ucloud-telemetry-victoria.service
 RequiresMountsFor=$data_root
 
 [Service]

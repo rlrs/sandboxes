@@ -248,6 +248,7 @@ them to a Slack-compatible webhook. Thresholds are `ops_watch.py` options.
 **Telemetry.** `install_ucloud_observability_stack.sh` runs an OTLP
 collector (port 4318), Tempo (72 h), VictoriaMetrics (14 days) and Grafana 13
 on the gateway's local disk (never on `/work`); losing the gateway loses it.
+Grafana and the collector keep running when Tempo or VictoriaMetrics restarts.
 VictoriaMetrics scrapes the fleet snapshot (`/v1/metrics/prometheus`) every
 15 s. The one dashboard, **Sandboxes**, fits a 1080p screen: headline
 numbers, sandboxes, workers, load and create latency, then the workers, queued
