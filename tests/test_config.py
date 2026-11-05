@@ -50,16 +50,18 @@ class ConfigTests(unittest.TestCase):
                     candidate = {**raw, "builder": {**raw["builder"], name: value}}
                     DeploymentConfig.from_dict(candidate)
 
-    def test_stuck_start_deletes_are_additive_and_off_by_default(self):
-        raw = self._raw()
-        raw.pop("autoscaler_max_stuck_start_deletes_per_cycle")
-        self.assertEqual(DeploymentConfig.from_dict(raw).autoscaler_max_stuck_start_deletes_per_cycle, 0)
-        for value in (-1, True, "8"):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                DeploymentConfig.from_dict({**raw, "autoscaler_max_stuck_start_deletes_per_cycle": value})
-        config = DeploymentConfig.from_dict({**raw, "autoscaler_max_stuck_start_deletes_per_cycle": 32})
-        self.assertEqual(config.autoscaler_max_stuck_start_deletes_per_cycle, 32)
-        self.assertEqual(DeploymentConfig.from_dict(config.to_dict()), config)
+    def test_registration_deletes_are_additive_and_off_by_default(self):
+        for name in ("autoscaler_max_stuck_start_deletes_per_cycle",
+                     "autoscaler_max_unrouted_sandbox_deletes_per_cycle"):
+            raw = self._raw()
+            raw.pop(name)
+            self.assertEqual(getattr(DeploymentConfig.from_dict(raw), name), 0)
+            for value in (-1, True, "8"):
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    DeploymentConfig.from_dict({**raw, name: value})
+            config = DeploymentConfig.from_dict({**raw, name: 32})
+            self.assertEqual(getattr(config, name), 32)
+            self.assertEqual(DeploymentConfig.from_dict(config.to_dict()), config)
 
     @staticmethod
     def _raw() -> dict[str, object]:

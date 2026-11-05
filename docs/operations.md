@@ -311,6 +311,13 @@ fenced to their own generation, planned registrations that the gateway has no
 route for, or only a newer generation of, once they have been stuck for 20
 minutes. At 0 (the default) they stay until an operator deletes them.
 
+**Sandboxes with no route.** A delete that reaches the worker while it is
+still resolving a create's image finds nothing to delete; the create then
+finishes with no route. The gateway deletes that incarnation when the late
+success arrives. As a backstop, `autoscaler_max_unrouted_sandbox_deletes_per_cycle`
+above 0 has the autoscaler delete, the same way, worker sandboxes in any state
+whose id has had no route for 20 minutes (default 0, off).
+
 ### Store node lost
 
 RAFS reads stop until it returns. Keep the hostname so no config changes.

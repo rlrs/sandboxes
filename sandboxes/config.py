@@ -598,6 +598,8 @@ class DeploymentConfig:
     # Worker registrations a failed create left in ``planned`` (stuck_starts.py);
     # 0 leaves them for an operator.
     autoscaler_max_stuck_start_deletes_per_cycle: int
+    # Worker sandboxes in later states whose id has no route; 0 leaves them.
+    autoscaler_max_unrouted_sandbox_deletes_per_cycle: int
     autoscaler_max_orphaned_migration_reconciles_per_cycle: int
     autoscaler_max_storage_native_detaches_per_cycle: int
     heartbeat_interval_seconds: int
@@ -656,6 +658,7 @@ class DeploymentConfig:
             autoscaler_init_timeout_seconds=1800,
             autoscaler_max_pending_delete_retries_per_cycle=16,
             autoscaler_max_stuck_start_deletes_per_cycle=0,
+            autoscaler_max_unrouted_sandbox_deletes_per_cycle=0,
             autoscaler_max_orphaned_migration_reconciles_per_cycle=128,
             autoscaler_max_storage_native_detaches_per_cycle=2,
             heartbeat_interval_seconds=20,
@@ -683,7 +686,7 @@ class DeploymentConfig:
     def from_dict(cls, raw: object) -> "DeploymentConfig":
         if not isinstance(raw, dict):
             raise ValueError("deployment config must be a JSON object")
-        raw = {"node_package_root": DEFAULT_INSTALL_ROOT + "/release", "relay_postgres": None, "immutable_environments": None, "upstream_mirror": None, "gateway_processes": 1, "autoscaler_max_stuck_start_deletes_per_cycle": 0, **_REGISTRY_GUARD_DEFAULTS, **raw}
+        raw = {"node_package_root": DEFAULT_INSTALL_ROOT + "/release", "relay_postgres": None, "immutable_environments": None, "upstream_mirror": None, "gateway_processes": 1, "autoscaler_max_stuck_start_deletes_per_cycle": 0, "autoscaler_max_unrouted_sandbox_deletes_per_cycle": 0, **_REGISTRY_GUARD_DEFAULTS, **raw}
         # Configs written for 0.9.75 and earlier may still name the placement.
         placement = raw.pop("gateway_create_placement", "power_of_k")
         if placement != "power_of_k":
@@ -806,6 +809,11 @@ class DeploymentConfig:
             autoscaler_max_stuck_start_deletes_per_cycle=_require_int(
                 "autoscaler_max_stuck_start_deletes_per_cycle",
                 raw["autoscaler_max_stuck_start_deletes_per_cycle"],
+                minimum=0,
+            ),
+            autoscaler_max_unrouted_sandbox_deletes_per_cycle=_require_int(
+                "autoscaler_max_unrouted_sandbox_deletes_per_cycle",
+                raw["autoscaler_max_unrouted_sandbox_deletes_per_cycle"],
                 minimum=0,
             ),
             autoscaler_max_orphaned_migration_reconciles_per_cycle=_require_int(
@@ -1067,6 +1075,9 @@ class DeploymentConfig:
             ),
             "autoscaler_max_stuck_start_deletes_per_cycle": (
                 self.autoscaler_max_stuck_start_deletes_per_cycle
+            ),
+            "autoscaler_max_unrouted_sandbox_deletes_per_cycle": (
+                self.autoscaler_max_unrouted_sandbox_deletes_per_cycle
             ),
             "autoscaler_max_orphaned_migration_reconciles_per_cycle": (
                 self.autoscaler_max_orphaned_migration_reconciles_per_cycle

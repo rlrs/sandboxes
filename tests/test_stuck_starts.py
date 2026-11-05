@@ -21,6 +21,7 @@ from sandboxes.stuck_starts import (
     StuckStart,
     stuck_start_candidates,
     stuck_starts_due,
+    unowned,
 )
 
 
@@ -82,6 +83,28 @@ class StuckStartCandidateTests(unittest.TestCase):
         self.assertEqual(found[1].generation, 2)
         self.assertEqual(found[1].operation_id, "create-superseded-2")
         self.assertEqual(found[0].node_url, "http://node-a:8090")
+
+    def test_later_states_count_only_when_asked_and_only_without_a_route(self):
+        inventory = (
+            entry("leaked", state="running"),                 # created after its route was deleted
+            entry("moving", generation=1, state="running"),   # its route moved to generation 2
+            entry("routed", state="parked"),
+            entry("orphan"),
+        )
+        routes = [route("moving", 2), route("routed", 1)]
+
+        self.assertEqual([item.sandbox_id for item in stuck_start_candidates([worker("a", inventory)], routes)],
+                         ["orphan"])
+        found = stuck_start_candidates([worker("a", inventory)], routes, unrouted=True)
+        self.assertEqual([(item.sandbox_id, item.state) for item in found],
+                         [("leaked", "running"), ("orphan", "planned")])
+
+    @given(st.sampled_from(["planned", "running", "parked"]), st.integers(min_value=1, max_value=5),
+           st.integers(min_value=1, max_value=5))
+    def test_no_route_or_only_an_older_one_never_owns_less(self, state, generation, routed):
+        self.assertTrue(unowned(state, generation, None))
+        if routed <= generation:  # The route's incarnation or an older one: still owned.
+            self.assertFalse(unowned(state, generation, route("s", routed)))
 
     def test_stale_or_partial_inventories_are_not_trusted(self):
         nodes = [

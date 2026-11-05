@@ -101,6 +101,7 @@ def parse_group_request(raw: object) -> GroupRequest:
 class GroupExchange(CreateExchange, Protocol):
     def _sandbox_record_on_node(self, node_url: str, sandbox_id: str) -> dict[str, Any] | None: ...
     def _loopback_delete(self, sandbox_id: str) -> tuple[int, dict[str, Any]]: ...
+    def _delete_unowned_create(self, created: SandboxRoute) -> None: ...
 
 
 @dataclass(eq=False)
@@ -373,6 +374,7 @@ class GroupCreate:
         ) if accepted else []
         for (member, record), route in zip(accepted, confirmed):
             if route is None:  # Deleted while it was being created.
+                ex._delete_unowned_create(_route_with_sandbox_record(member.route, record))
                 results[member.id] = _result(member.id, "deleted")
                 continue
             record_sandbox_scheduled(

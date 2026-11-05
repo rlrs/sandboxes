@@ -122,6 +122,15 @@ def _record_generation(record: object) -> int | None:
     return generation if generation > 0 else None
 
 
+def create_incarnation_unowned(current: SandboxRoute | None, created: SandboxRoute) -> bool:
+    """Whether the incarnation a create made has lost its route.
+
+    Deleted, being deleted (a delete is never undone), or replaced by a newer
+    generation: generations are never reused, so no route can own it again.
+    """
+    return current is None or bool(current.delete_operation_id) or current.generation > created.generation
+
+
 def _sandbox_record_matches_route(
     record: dict[str, Any],
     route: SandboxRoute,

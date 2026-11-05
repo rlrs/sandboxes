@@ -143,6 +143,14 @@ class ImageCatalog:
         return image
 
 
+class Hold:
+    """A one-shot pause: ``reached`` is set on arrival, then waits for ``release``."""
+
+    def __init__(self) -> None:
+        self.reached = threading.Event()
+        self.release = threading.Event()
+
+
 class LocalRootfsStore:
     backend_abi = DOCKER_OVERLAY2_ABI
 
@@ -153,6 +161,18 @@ class LocalRootfsStore:
         self.catalog = catalog
         self._guard = threading.Lock()
         self.pulled: list[str] = []
+        self._holds: dict[str, Hold] = {}
+
+    def hold(self, operation: str) -> Hold:
+        """Pause the next ``operation`` (a method name), as a slow pull would."""
+        hold = self._holds[operation] = Hold()
+        return hold
+
+    def _pause(self, operation: str) -> None:
+        hold = self._holds.pop(operation, None)
+        if hold is not None:
+            hold.reached.set()
+            hold.release.wait(30)
 
     def _materialize(self, image_ref: str) -> MaterializedRootfs:
         image = self.catalog.resolve(image_ref)
@@ -179,6 +199,7 @@ class LocalRootfsStore:
 
     @contextmanager
     def operation_lease(self, image_ref: str, environment_root=None) -> Iterator[MaterializedRootfs]:
+        self._pause("operation_lease")
         yield self._materialize(image_ref)
 
     @contextmanager

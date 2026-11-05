@@ -300,6 +300,9 @@ class FleetNode:
         self._socket_dir: Path | None = None
         self.storage_backend: FakeBlockBackend | None = None
         self.storage_host: FakeStorageHost | None = None
+        # The running in-process agent's image store (``images.LocalRootfsStore``
+        # when ``environments=False``), for holds.
+        self.rootfs_store = None
         # LocalFleet(environments=True): the node's artifact-I/O backend,
         # which outlives agent restarts as the root service does.
         self.environment_backend: FakeEnvironmentBackend | None = None
@@ -464,9 +467,10 @@ class FleetNode:
             self.post_heartbeat()
             return
         config = self._agent_config()
+        self.rootfs_store = self._rootfs_store(config)
         server, self.service = assemble_node_agent(
             config,
-            rootfs_store=self._rootfs_store(config),
+            rootfs_store=self.rootfs_store,
             fencer=None if native_pidfd_available() else SyscallPidfdFencer(proc_root=self.proc_root),
             sample_metrics=lambda: self._sample_metrics(),
         )

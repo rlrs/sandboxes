@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.11 - 2026-11-05 (gateway, autoscaler)
+
+- **A sandbox deleted while its create is still running no longer keeps
+  running on the worker.** The worker registers a sandbox only once its
+  image resolves, so a DELETE in that window found nothing to delete and the
+  gateway dropped the route. The create then finished and ran with no route
+  and no way to reach it. On 2026-11-04 a client gave up on two groups
+  waiting for a first-use build, and four sandboxes ran 11 hours. When a
+  create's success arrives for a route that is gone or now on a newer
+  generation, the gateway now deletes that incarnation, fenced to its
+  generation.
+- As a backstop, `autoscaler_max_unrouted_sandbox_deletes_per_cycle` (default
+  0, off) lets the stuck-start sweep also delete worker sandboxes in later
+  states whose id has had no route for 20 minutes.
+- Tempo gets 2 GB (was 768 MB, too small to compact a busy day's traces; it
+  was OOM-killed every few seconds), and Grafana and the collector no longer
+  restart with it. Rerun `install_ucloud_observability_stack.sh`.
+
 ## 0.10.10 - 2026-11-04 (gateway)
 
 - **Sandbox builds no longer fill the registry.** Each build stages its
