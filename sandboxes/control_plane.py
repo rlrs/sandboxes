@@ -41,6 +41,7 @@ from .placement_accounting import (
 
 from .worker_receipts import (
     _record_generation,
+    create_incarnation_unowned,
     _route_with_sandbox_record,
     _sandbox_create_request_body,
     _sandbox_inventory_from_record,
@@ -2807,7 +2808,29 @@ class ControlPlaneHandler(BuildContextHttpHandler):
         if confirmed is None:
             self._write_json({'error':'sandbox ownership ended before worker confirmation',
                 'error_code':'sandbox_observation_superseded','retryable':False},status=HTTPStatus.GONE)
+            self._delete_unowned_create(route)
         return confirmed
+
+    def _delete_unowned_create(self, created: SandboxRoute) -> None:
+        """Delete a create's incarnation that lost its route while the worker made it.
+
+        A DELETE that reached the worker before it registered the sandbox found
+        nothing to delete (2026-11-04), so nothing else removes it. Fenced to its
+        generation, so a newer incarnation on the same worker stays.
+        """
+        if not create_incarnation_unowned(self.routing_store.get_sandbox_readonly(created.sandbox_id), created):
+            return
+        operation_id = "unowned-" + hashlib.sha256(
+            f"{created.sandbox_id}\0{created.generation}".encode()).hexdigest()[:32]
+        response = self._proxy_request(
+            created.node_url, f"/v1/sandboxes/{quote(created.sandbox_id, safe='')}", method="DELETE",
+            timeout_seconds=REBOOT_REAP_TIMEOUT_SECONDS,
+            extra_headers={SANDBOX_GENERATION_HEADER: str(created.generation),
+                           SANDBOX_OPERATION_ID_HEADER: operation_id},
+        )
+        self.metrics_store.append("sandbox_unowned_create_delete", {
+            "sandbox_id": created.sandbox_id, "generation": created.generation,
+            "job_id": created.job_id, "status": int(response.status)})
 
     def _send_existing_sandbox_response(
         self,

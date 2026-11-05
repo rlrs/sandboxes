@@ -35,6 +35,8 @@ import uuid
 
 from sandboxes.storage_native import StorageNativeDevice, StorageNativeDeviceOwner
 
+from .images import Hold
+
 LAYER_FORMAT = "fake-storage-layer-v1"
 SEALED = ".fake-sealed"
 
@@ -208,14 +210,6 @@ class FakeBlockBackend:
             virtual_size=device.virtual_size,
             image_config_path=device.image_config_path,
         )
-
-
-class Hold:
-    """A one-shot pause: ``reached`` is set on arrival, then waits for ``release``."""
-
-    def __init__(self) -> None:
-        self.reached = threading.Event()
-        self.release = threading.Event()
 
 
 class FakeStorageHost:

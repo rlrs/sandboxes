@@ -197,7 +197,7 @@ from .routing import (
     is_worker_detachable_parked_route,
     sandbox_demand_from_routing_state,
 )
-from .stuck_starts import StuckStart, stuck_start_candidates, stuck_starts_due
+from .stuck_starts import StuckStart, stuck_start_candidates, stuck_starts_due, unowned
 from .telemetry import Telemetry, TelemetrySettings
 from .providers.ucloud.api import (
     SessionStore,
@@ -4348,20 +4348,23 @@ def run_reconcile_cycle(  # noqa: C901
             bearer_token=gateway_control_bearer_token,
         )
         stuck_budget = config.autoscaler_max_stuck_start_deletes_per_cycle
-        if stuck_budget > 0 and routing_store is not None:
+        unrouted_budget = config.autoscaler_max_unrouted_sandbox_deletes_per_cycle
+        if (stuck_budget > 0 or unrouted_budget > 0) and routing_store is not None:
             candidates = stuck_start_candidates(
                 [node for node in sandbox_nodes if node.job_id not in quarantined_job_ids],
-                sandbox_routes,
+                sandbox_routes, unrouted=unrouted_budget > 0,
             )
             first_seen = provider_state.track_stuck_starts(
                 deployment_id=operation_deployment_id, keys=[item.key for item in candidates],
             )
-            due = stuck_starts_due(candidates, first_seen, utc_now(), budget=stuck_budget)
+            now = utc_now()
+            due = stuck_starts_due([item for item in candidates if item.state == "planned"],
+                                   first_seen, now, budget=stuck_budget)
+            due += stuck_starts_due([item for item in candidates if item.state != "planned"],
+                                    first_seen, now, budget=unrouted_budget)
             # The cycle's route snapshot may predate a new create: re-read each.
-            due = [item for item in due if (
-                (route := routing_store.get_sandbox_readonly(item.sandbox_id)) is None
-                or route.generation > item.generation
-            )]
+            due = [item for item in due if unowned(
+                item.state, item.generation, routing_store.get_sandbox_readonly(item.sandbox_id))]
             assert_provider_fence()
             stuck_start_results = _delete_stuck_starts(due, bearer_token=node_control_bearer_token)
     remaining_detach_budget = max(

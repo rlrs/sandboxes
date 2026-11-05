@@ -847,7 +847,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(remaining, [])
 
     @requires_postgres
-    def test_reconcile_deletes_starts_stuck_past_the_minimum_age(self) -> None:
+    def test_reconcile_deletes_registrations_no_route_owns_past_the_minimum_age(self) -> None:
         deletes: list[tuple[str, str | None, str | None, str | None]] = []
 
         class Worker(BaseHTTPRequestHandler):
@@ -877,37 +877,50 @@ class CliTests(unittest.TestCase):
                 operation_id=f"create-{sandbox_id}-{generation}", spec_hash="a" * 64,
             )
 
-        live = sandbox_route("live", node_id="node-owned", job_id="owned",
-                             node_url=f"http://127.0.0.1:{server.server_port}")
+        def running(sandbox_id: str, generation: int = 1) -> SandboxInventoryEntry:
+            return replace(planned(sandbox_id, generation), state="running")
+
+        node_url = f"http://127.0.0.1:{server.server_port}"
+        live = sandbox_route("live", node_id="node-owned", job_id="owned", node_url=node_url)
+        moving = sandbox_route("moving", node_id="node-owned", job_id="owned", node_url=node_url,
+                               generation=2)
         with temporary_root() as root:
             jobs_file = write_jobs(root, owned_node_job(agent_version=True))
             heartbeat_file = root / "control-state.sqlite"
             save_heartbeats(heartbeat_file, {"owned": owned_heartbeat(
                 node_url=f"http://127.0.0.1:{server.server_port}", inventory_complete=True,
-                inventory=(planned("orphan", 2), planned("young"), planned("live")),
+                inventory=(planned("orphan", 2), planned("young"), planned("live"),
+                           running("leaked"), running("moving")),
             )})
             config = ucloud_config(
                 project_id="project-1", deployment_id="prod-a",
                 ucloud_session_file=str(root / "session.json"), data_root=str(root),
                 autoscaler_max_stuck_start_deletes_per_cycle=4,
+                autoscaler_max_unrouted_sandbox_deletes_per_cycle=4,
             )
             state = AutoscalerStateStore(root / "autoscaler-state.sqlite")
-            # Both were stuck as long ago as the minimum age; "young" is new.
+            # All but "young" were seen as long ago as the minimum age.
             state.track_stuck_starts(
                 deployment_id="prod-a",
-                keys=[("owned", "orphan", 2, "create-orphan-2"), ("owned", "live", 1, "create-live-1")],
+                keys=[("owned", "orphan", 2, "create-orphan-2"), ("owned", "live", 1, "create-live-1"),
+                      ("owned", "leaked", 1, "create-leaked-1"), ("owned", "moving", 1, "create-moving-1")],
                 now=utc_now() - timedelta(minutes=21),
             )
+            routing_store = routing_store_for(self, root / "routes.json")
+            routing_store.upsert_sandbox(moving)
 
             result = reconcile(
                 config, autoscaler_args(jobs_file, heartbeat_file), state,
-                sandbox_routes=(live,), routing_store=routing_store_for(self, root / "routes.json"),
+                sandbox_routes=(live, moving), routing_store=routing_store,
             )
 
-        self.assertEqual(deletes, [("/v1/sandboxes/orphan", "2", "create-orphan-2", "Bearer test-token")])
+        self.assertEqual(sorted(deletes), [
+            ("/v1/sandboxes/leaked", "1", "create-leaked-1", "Bearer test-token"),
+            ("/v1/sandboxes/orphan", "2", "create-orphan-2", "Bearer test-token"),
+        ])
         self.assertEqual(
-            [(item["sandbox_id"], item["deleted"]) for item in result["stuck_start_results"]],
-            [("orphan", True)],
+            sorted((item["sandbox_id"], item["deleted"]) for item in result["stuck_start_results"]),
+            [("leaked", True), ("orphan", True)],
         )
 
     def test_reconcile_detaches_park_before_provider_stop(self) -> None:

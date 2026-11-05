@@ -1,11 +1,15 @@
-"""Worker registrations a failed create left in ``planned``.
+"""Worker registrations that no route owns.
 
 A create commits ``planned`` before it prepares storage. When a later step
 fails, for example a workspace format timing out on an overloaded worker,
 nothing advances or rolls back the registration, and the worker keeps its
-reservation until someone deletes it. The gateway's route is the authority:
-a planned incarnation it has no route for, or one older than its route's
-generation, belongs to no create and no client.
+reservation until someone deletes it. A create can also finish after its
+route was deleted: a DELETE that reaches the worker before it registers the
+sandbox finds nothing to delete (2026-11-04), and the sandbox then runs with
+no route. The gateway's route is the authority: a planned incarnation it has
+no route for, or one older than its route's generation, belongs to no create
+and no client; so does an incarnation in any other state once its id has no
+route at all.
 """
 
 from __future__ import annotations
@@ -31,16 +35,31 @@ class StuckStart:
     sandbox_id: str
     generation: int
     operation_id: str
+    state: str = "planned"
 
     @property
     def key(self) -> StuckStartKey:
         return (self.job_id, self.sandbox_id, self.generation, self.operation_id)
 
 
+def unowned(state: str, generation: int, route: SandboxRoute | None) -> bool:
+    """Whether no route owns a worker incarnation in ``state``.
+
+    Past ``planned``, only a missing route counts: an incarnation older than
+    its route may still be the source of a move to the newer one.
+    """
+    if route is None:
+        return True
+    return state == "planned" and route.generation > generation
+
+
 def stuck_start_candidates(
-    nodes: Iterable[SandboxNode], routes: Iterable[SandboxRoute],
+    nodes: Iterable[SandboxNode], routes: Iterable[SandboxRoute], *, unrouted: bool = False,
 ) -> list[StuckStart]:
-    """Planned registrations that no route owns, from fresh, complete inventories."""
+    """Registrations that no route owns, from fresh, complete inventories.
+
+    Planned ones always; with ``unrouted``, also those in later states.
+    """
 
     by_id = {route.sandbox_id: route for route in routes}
     candidates = []
@@ -51,14 +70,13 @@ def stuck_start_candidates(
         if not heartbeat.node_url:
             continue
         for entry in heartbeat.inventory:
-            if entry.state != "planned":
+            if entry.state != "planned" and not unrouted:
                 continue
-            route = by_id.get(entry.sandbox_id)
-            if route is not None and route.generation <= entry.generation:
+            if not unowned(entry.state, entry.generation, by_id.get(entry.sandbox_id)):
                 continue
             candidates.append(StuckStart(
                 job_id=node.job_id, node_url=heartbeat.node_url, sandbox_id=entry.sandbox_id,
-                generation=entry.generation, operation_id=entry.operation_id,
+                generation=entry.generation, operation_id=entry.operation_id, state=entry.state,
             ))
     return candidates
 
