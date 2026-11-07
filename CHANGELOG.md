@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The package requires Python 3.14 (was `>=3.10.13`, a leftover: the gateway,
+  node bundles, store node and CI already run 3.14). Ruff now accepts 3.12+
+  syntax. The lock drops the `async-timeout` and `exceptiongroup` backports.
+
 ## 0.10.11 - 2026-11-05 (gateway, autoscaler)
 
 - **A sandbox deleted while its create is still running no longer keeps
