@@ -18,6 +18,9 @@
   timeout, and 50 builds failed this way.
 - The chunk index logs requests slower than 10 s. A client that left before
   its reply is logged as that, not as "object store unavailable".
+- The package requires Python 3.14 (was `>=3.10.13`, a leftover: the gateway,
+  node bundles, store node and CI already run 3.14). Ruff now accepts 3.12+
+  syntax. The lock drops the `async-timeout` and `exceptiongroup` backports.
 
 ## 0.10.11 - 2026-11-05 (gateway, autoscaler)
 
