@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Builder bundles carry the pinned `nydus-image` again.** Builder init
+  installs it from the bundle and stops when it is missing, but
+  `derive_builder_bundle.py` never added it. On UCloud a bundle had it by hand;
+  every Hetzner builder bundle lacked it, so no builder ever started there and
+  builds that ensure sent to the builder pool stayed queued. The script now
+  takes `--nydus-image` and `--nydus-image-sha256` (the deployment's
+  `chunk_store.nydus_image_sha256`) and refuses any other binary. Production's
+  builder bundle was repacked with it on 2026-11-07.
 - **A builder build that timed out reaching the chunk store is retried as an
   infrastructure failure**: after 30 s, doubling, up to 6 attempts, the same as
   sandbox builds. Before, it counted as a recipe failure: 10 minutes between
