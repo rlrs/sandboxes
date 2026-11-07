@@ -2,8 +2,10 @@
 """Derive a builder bundle from a qualified sandbox bundle.
 
 The two roles share the verified OS package and kernel closure. Builders add
-Docker Buildx and deliberately drop sandbox-only runsc, managed-init, and
-storage-native artifacts. The output remains deterministic and receives a
+Docker Buildx and the pinned ``nydus-image`` their builds convert with
+(``chunk_store.nydus_image_sha256``; VM init refuses a builder without it),
+and deliberately drop sandbox-only runsc, managed-init, and storage-native
+artifacts. The output remains deterministic and receives a
 fresh role-specific manifest and checksum.
 """
 
@@ -22,6 +24,7 @@ from scripts.release.repack_node_bundle import (
     sha256_file,
     validate_source_bundle,
 )
+from sandboxes.environment_bootstrap import BUNDLED_NYDUS_IMAGE
 from sandboxes.vm_init import (
     BUILDER_RUNTIME_PACKAGES,
     SANDBOX_RUNTIME_PACKAGES,
@@ -50,10 +53,25 @@ def deb_fields(path: Path) -> tuple[str, str]:
     return package, architecture
 
 
+def add_nydus_image(root: Path, runtime: dict[str, object], nydus_image: Path, sha256: str) -> None:
+    """Install the converter at BUNDLED_NYDUS_IMAGE, checked against its pin."""
+    actual = sha256_file(nydus_image)
+    if actual != sha256:
+        raise ValueError(f"nydus-image digest mismatch: expected {sha256}, got {actual}")
+    target = root / BUNDLED_NYDUS_IMAGE
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(nydus_image, target)
+    target.chmod(0o755)
+    runtime["nydus_image"] = {"file": BUNDLED_NYDUS_IMAGE, "sha256": actual, "size": target.stat().st_size}
+
+
 def derive_builder_bundle(
     source: Path,
     buildx_deb: Path,
     output: Path,
+    *,
+    nydus_image: Path,
+    nydus_image_sha256: str,
 ) -> None:
     if output.resolve() == source.resolve():
         raise ValueError("output must not replace the qualified source bundle")
@@ -95,6 +113,7 @@ def derive_builder_bundle(
             }
             for path in sorted(deb_dir.glob("*.deb"), key=lambda item: item.name)
         ]
+        add_nydus_image(root, runtime, nydus_image, nydus_image_sha256)
         for section in ("direct_runsc", "managed_init", "storage_native"):
             runtime.pop(section, None)
         for relative in ("runtime/direct", "runtime/storage-native"):
@@ -112,16 +131,22 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--buildx-deb", type=Path, required=True)
+    parser.add_argument("--nydus-image", type=Path, required=True)
+    parser.add_argument("--nydus-image-sha256", required=True,
+                        help="the deployment's immutable_environments.chunk_store.nydus_image_sha256")
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    for path in (args.source, args.buildx_deb):
+    for path in (args.source, args.buildx_deb, args.nydus_image):
         if not path.is_file():
             raise SystemExit(f"required input does not exist: {path}")
-    derive_builder_bundle(args.source, args.buildx_deb, args.output)
+    derive_builder_bundle(
+        args.source, args.buildx_deb, args.output,
+        nydus_image=args.nydus_image, nydus_image_sha256=args.nydus_image_sha256,
+    )
     print(f"bundle={args.output}")
     print(f"sha256={sha256_file(args.output)}")
 

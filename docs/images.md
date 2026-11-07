@@ -85,7 +85,10 @@ submits missing builds; it is idempotent and cheap, and callers poll it. A
 trainer ensures the next step's tasks so builds overlap the current step;
 without it training is still correct, just slower on first use. Build state is
 the gateway's, because builders forget builds when they scale down: lost
-builds are resubmitted and failures retry a few times. A built recipe image is
+builds are resubmitted. A failed build is retried after 10 minutes, at most 3
+attempts in all. A failure of the build machinery rather than the recipe (a
+sandbox build's chunk-store, S3 or registry error, or a builder's chunk store
+timeout) is retried after 30 s, doubling, at most 6 attempts. A built recipe image is
 released (OCI manifest deleted), since the recipe can always rebuild it.
 
 ## Prepared images

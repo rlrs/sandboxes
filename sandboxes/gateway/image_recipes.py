@@ -42,6 +42,8 @@ import sqlite3
 import threading
 import time
 
+from ..chunk_index import DEADLINE_EXCEEDED, TRANSPORT_FAILURE
+
 _LOG = logging.getLogger(__name__)
 
 RETENTIONS = ("pinned", "cached")
@@ -61,6 +63,10 @@ FAILURE_ATTEMPTS = 3
 # object-store outage window (minutes) then neither keeps a first-use build's
 # rollouts waiting 10 minutes nor uses up the recipe's attempts.
 INFRASTRUCTURE_ERROR = "sandbox build infrastructure:"
+# Builder builds report the chunk store client's own transport failures as they
+# read (a timeout reaching the chunk index or S3): infrastructure too.
+INFRASTRUCTURE_PREFIXES = (INFRASTRUCTURE_ERROR, TRANSPORT_FAILURE, DEADLINE_EXCEEDED)
+_INFRASTRUCTURE_SQL = "(" + " OR ".join(["COALESCE(i.error, '') LIKE ? || '%'"] * len(INFRASTRUCTURE_PREFIXES)) + ")"
 INFRASTRUCTURE_BACKOFF_SECONDS = 30
 INFRASTRUCTURE_ATTEMPTS = 6
 # The index's reads settle builds that finished since their last ensure, at most
@@ -105,7 +111,7 @@ def recipe_identity(recipe):
 def retry_policy(error, attempts):
     """(attempt limit, backoff seconds) after a build failed with ``error`` on
     its ``attempts``-th attempt."""
-    if (error or "").startswith(INFRASTRUCTURE_ERROR):
+    if (error or "").startswith(INFRASTRUCTURE_PREFIXES):
         backoff = INFRASTRUCTURE_BACKOFF_SECONDS * 2 ** max(0, attempts - 1)
         return INFRASTRUCTURE_ATTEMPTS, min(FAILURE_BACKOFF_SECONDS, backoff)
     return FAILURE_ATTEMPTS, FAILURE_BACKOFF_SECONDS
@@ -385,8 +391,8 @@ class ImageRecipeStore:
         with self._db(write=False) as db:
             for environment, kind, state, attempts, infrastructure, names in db.execute(
                     "SELECT r.environment, i.kind, i.state, i.attempts, "
-                    "COALESCE(i.error, '') LIKE ? || '%', COUNT(*) FROM recipes r "
-                    "JOIN recipe_images i USING (image_id) GROUP BY 1, 2, 3, 4, 5", (INFRASTRUCTURE_ERROR,)):
+                    f"{_INFRASTRUCTURE_SQL}, COUNT(*) FROM recipes r JOIN recipe_images i USING (image_id) GROUP BY 1, 2, 3, 4, 5",
+                    INFRASTRUCTURE_PREFIXES):
                 row = out.setdefault(environment or "(none)", {"names": 0, "tasks": 0, "prepared": 0, "recipes": 0,
                                                                "states": dict.fromkeys(NAME_STATES, 0)})
                 row["names"] += names
