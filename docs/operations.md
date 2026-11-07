@@ -158,8 +158,13 @@ are unchanged, repack instead:
 python scripts/release/repack_node_bundle.py --source <old sandbox bundle> --wheel <wheel> \
   --storage-backend ... --storage-manifest ... --storage-license ... --output <new sandbox bundle>
 python scripts/release/derive_builder_bundle.py --source <new sandbox bundle> \
-  --buildx-deb <deb> --output <new builder bundle>
+  --buildx-deb <deb> --nydus-image <nydus-image v2.4.5> \
+  --nydus-image-sha256 <chunk_store.nydus_image_sha256> --output <new builder bundle>
 ```
+
+Builders convert their builds with the bundled `nydus-image`. VM init refuses
+a builder whose bundle lacks it or carries a different binary. The gateway's
+`/usr/local/bin/nydus-image` is the pinned one.
 
 Its `--help` covers replacing `runsc`, the kernel module closure or Python
 dependencies; when `runtime/noded` changed, pass `--noded-build-dir` with the

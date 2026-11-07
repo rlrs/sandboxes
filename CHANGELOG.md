@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Builder bundles carry the pinned `nydus-image` again.** Builder init
+  installs it from the bundle and stops when it is missing, but
+  `derive_builder_bundle.py` never added it. On UCloud a bundle had it by hand;
+  every Hetzner builder bundle lacked it, so no builder ever started there and
+  builds that ensure sent to the builder pool stayed queued. The script now
+  takes `--nydus-image` and `--nydus-image-sha256` (the deployment's
+  `chunk_store.nydus_image_sha256`) and refuses any other binary. Production's
+  builder bundle was repacked with it on 2026-11-07.
+
 ## 0.10.11 - 2026-11-05 (gateway, autoscaler)
 
 - **A sandbox deleted while its create is still running no longer keeps
