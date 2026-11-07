@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.12 - 2026-11-07 (gateway, store node)
 
 - **Builder bundles carry the pinned `nydus-image` again.** Builder init
   installs it from the bundle and stops when it is missing, but
