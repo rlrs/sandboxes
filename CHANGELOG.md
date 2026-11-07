@@ -10,6 +10,14 @@
   takes `--nydus-image` and `--nydus-image-sha256` (the deployment's
   `chunk_store.nydus_image_sha256`) and refuses any other binary. Production's
   builder bundle was repacked with it on 2026-11-07.
+- **A builder build that timed out reaching the chunk store is retried as an
+  infrastructure failure**: after 30 s, doubling, up to 6 attempts, the same as
+  sandbox builds. Before, it counted as a recipe failure: 10 minutes between
+  attempts, and after 3 the recipe was failed for good. On 2026-11-07, five
+  builders converting at once kept the chunk index past its 60 s client
+  timeout, and 50 builds failed this way.
+- The chunk index logs requests slower than 10 s. A client that left before
+  its reply is logged as that, not as "object store unavailable".
 
 ## 0.10.11 - 2026-11-05 (gateway, autoscaler)
 

@@ -114,8 +114,17 @@ class ImageRecipeTests(unittest.TestCase):
 
     def test_infrastructure_failures_retry_soon_and_longer(self):
         # An object-store outage is not recipe rot: 30 s, doubling, and more attempts.
+        # Sandbox builds mark it; builders report the chunk store client's own
+        # transport failures (2026-11-07: chunk index timeouts used up attempts).
+        for error in ("sandbox build infrastructure: OSError: chunk store request failed: ReadTimeoutError",
+                      "chunk store request failed: ReadTimeoutError",
+                      "chunk store request deadline exceeded"):
+            with self.subTest(error=error):
+                self.setUp()
+                self.assert_retried_as_infrastructure(error)
+
+    def assert_retried_as_infrastructure(self, error):
         self.store.register([recipe("t:1", environment="tmax", tasks=["task_1"])])
-        error = "sandbox build infrastructure: OSError: chunk store request failed: ReadTimeoutError"
         for attempt in range(1, INFRASTRUCTURE_ATTEMPTS + 1):
             self.ensurer.ensure(["t:1"])
             self.builders.finish(f"b{attempt}", "failed", error=error)

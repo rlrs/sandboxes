@@ -48,6 +48,11 @@ STALL_SECONDS = 5.0
 STORE_RETRY_SECONDS = 300.0
 MAX_BACKOFF_SECONDS = 15.0
 SLOW_S3_SECONDS = 2.0  # Object-store calls slower than this are logged.
+SLOW_REQUEST_SECONDS = 10.0  # Index requests slower than this are logged.
+# How http_request's transport failures read, for callers that classify them
+# (the gateway retries a build that failed this way as infrastructure).
+TRANSPORT_FAILURE = "chunk store request failed:"
+DEADLINE_EXCEEDED = "chunk store request deadline exceeded"
 # Retried besides 5xx: Hetzner occasionally answers a valid presigned GET 405.
 RETRYABLE_STATUSES = frozenset({405, 408, 429})
 # Bootstraps and chunk maps are named by their digest, so they never change:
@@ -147,7 +152,7 @@ def http_request(method, url, *, headers=None, body=None, timeout=30.0, max_byte
         try:
             while size <= max_bytes:
                 if time.monotonic() >= deadline:
-                    raise TimeoutError("chunk store request deadline exceeded")
+                    raise TimeoutError(DEADLINE_EXCEEDED)
                 chunk = response.read(min(1 << 20, max_bytes + 1 - size))
                 if not chunk:
                     complete = True
@@ -159,7 +164,7 @@ def http_request(method, url, *, headers=None, body=None, timeout=30.0, max_byte
             # Only a fully read response may return its connection to the pool.
             response.release_conn() if complete else response.close()
     except urllib3.exceptions.HTTPError as exc:
-        raise OSError(f"chunk store request failed: {type(exc).__name__}") from exc
+        raise OSError(f"{TRANSPORT_FAILURE} {type(exc).__name__}") from exc
     if response.status >= 400:
         raise RegistryRequestError(response.status, method, redact(url), payload[:256].decode(errors="replace"))
     if len(payload) > max_bytes:
@@ -776,17 +781,29 @@ class _Handler(BaseHTTPRequestHandler):
         self._serve(lambda: handler(body), "application/octet-stream" if binary else "application/json")
 
     def _serve(self, call, content_type):
+        started = time.monotonic()
         try:
-            return self._reply(200, call(), content_type)
+            status, payload = 200, call()
         except MissingChunks as exc:
-            return self._reply(409, {"error": str(exc)})
+            status, payload = 409, {"error": str(exc)}
         except UnknownRoot as exc:
-            return self._reply(404, {"error": str(exc)})
+            status, payload = 404, {"error": str(exc)}
         except (ValueError, TypeError, KeyError) as exc:
-            return self._reply(400, {"error": str(exc)})
+            status, payload = 400, {"error": str(exc)}
         except (OSError, RegistryRequestError) as exc:
             _LOG.warning("chunk index request failed: %s", exc)
-            return self._reply(502, {"error": "object store unavailable"})
+            status, payload = 502, {"error": "object store unavailable"}
+        elapsed = time.monotonic() - started
+        endpoint = urlsplit(self.path).path
+        if elapsed > SLOW_REQUEST_SECONDS:
+            _LOG.warning("slow chunk index %s %s: %.1f s (%d)", self.command, endpoint, elapsed, status)
+        try:
+            self._reply(status, payload, content_type if status == 200 else "application/json")
+        except (BrokenPipeError, ConnectionResetError):
+            # The client's timeout ended it first; the work above still happened.
+            self.close_connection = True
+            _LOG.warning("chunk index client left before its %s %s reply: %.1f s (%d)",
+                         self.command, endpoint, elapsed, status)
 
 
 class ChunkIndexServer(ThreadingHTTPServer):
